@@ -417,6 +417,9 @@ export class PostgresMailboxEngine implements MailboxEngine, MailboxLeaseStore {
       case "tool.progress":
       case "agent.step.started":
       case "agent.step.completed":
+      case "agent.finding.produced":
+      case "agent.remediation.proposed":
+      case "agent.incident_report.produced":
         return currentStatus;
     }
   }
@@ -476,6 +479,9 @@ function consumersForEvent(event: MailboxEvent): InboxConsumer[] {
     case "tool.progress":
     case "gate.created":
     case "agent.response.produced":
+    case "agent.finding.produced":
+    case "agent.remediation.proposed":
+    case "agent.incident_report.produced":
       return [];
   }
 }

@@ -38,6 +38,12 @@ Run the API-driven system PoC:
 npm run system:poc
 ```
 
+Run the mock SRE north-star demo:
+
+```sh
+npm run sre:demo
+```
+
 The PoC script resets only the dedicated `agent_mailbox` schema, then verifies:
 
 - mailbox creation
@@ -62,8 +68,13 @@ Do not run `npm run poc` and `npm run system:poc` at the same time because both 
 - `src/scripts/poc.ts`: end-to-end verification script
 - `src/api-server.ts`: minimal HTTP API for mailbox sessions, events, projections, and gate resolution
 - `src/scripts/system-poc.ts`: API-driven verification with background daemons
+- `src/sre-agent.ts`: deterministic SRE investigation agent for the north-star demo
+- `src/sre-tool-worker.ts`: mock SRE observability and remediation tools
+- `src/scripts/sre-demo.ts`: API-driven SRE demo using the mailbox service and daemons
 
 The service milestone uses an explicit `agent_mailbox.mailbox_inbox` table. Event appends route wake events into per-consumer inbox rows, and daemons claim those rows before processing work.
+
+The SRE demo is fully mocked and deterministic. It exercises Axiom, Grafana, Sentry, deploy metadata, and gated infrastructure remediation without requiring real external credentials.
 
 ## Local Service Mode
 

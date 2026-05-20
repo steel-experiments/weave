@@ -8,11 +8,20 @@ export type RunnerStepResult = {
   reason?: string;
 };
 
+export type AgentPlan = {
+  resumeReason: "new-prompt" | "tool-completed" | "gate-resolved";
+  events: MailboxEvent[];
+};
+
+export type AgentPlanner = {
+  plan(mailboxId: string, events: MailboxEvent[]): AgentPlan | null;
+};
+
 export class MailboxRunner {
   constructor(
     private readonly engine: MailboxEngine,
     private readonly leases: MailboxLeaseStore,
-    private readonly agent = new DeterministicMockAgent(),
+    private readonly agent: AgentPlanner = new DeterministicMockAgent(),
     private readonly ownerId = `runner-${process.pid}`,
   ) {}
 
@@ -31,7 +40,7 @@ export class MailboxRunner {
 
       const causationId = newestEvent(history)?.eventId;
       const runnerResumed: MailboxEvent = {
-        eventId: eventKey(mailboxId, "runner.resumed", plan.resumeReason),
+        eventId: eventKey(mailboxId, "runner.resumed", `${plan.resumeReason}:${causationId ?? history.length}`),
         mailboxId,
         type: "runner.resumed",
         occurredAt: nowIso(),

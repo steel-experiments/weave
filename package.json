@@ -7,6 +7,7 @@
     "db:migrate": "tsx src/scripts/migrate.ts",
     "poc": "tsx src/scripts/poc.ts",
     "system:poc": "tsx src/scripts/system-poc.ts",
+    "sre:demo": "tsx src/scripts/sre-demo.ts",
     "server": "tsx src/scripts/server.ts",
     "daemon:runner": "tsx src/scripts/runner-daemon.ts",
     "daemon:tool": "tsx src/scripts/tool-daemon.ts",

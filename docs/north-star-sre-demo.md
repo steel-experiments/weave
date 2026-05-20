@@ -622,3 +622,27 @@ The next implementation step should be:
 Do not start with real Slack or real credentials.
 
 First make the mocked SRE workflow excellent and fully traceable.
+
+## Current Implementation Status
+
+The first runnable version of this north-star path exists as `npm run sre:demo`.
+
+It currently includes:
+
+- API-driven mailbox session creation
+- deterministic SRE agent adapter
+- mock Axiom log search tool
+- mock Grafana metrics query tool
+- mock Sentry issue lookup tool
+- mock deploy metadata tool
+- manual approval gate before remediation
+- mock `infra.rebuildNode` remediation tool
+- final incident report event
+- timeline and Mermaid output
+
+It does not yet include:
+
+- real Slack ingress or egress
+- real credential policy
+- real Axiom, Grafana, or Sentry APIs
+- real remediation actions

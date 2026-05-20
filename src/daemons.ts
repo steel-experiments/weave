@@ -2,6 +2,10 @@ import type { PostgresMailboxEngine } from "./postgres-engine.js";
 import { MailboxRunner } from "./runner.js";
 import { MockAsyncToolWorker } from "./mock-tool-worker.js";
 
+type ToolWorker = {
+  processOnce(mailboxId: string): Promise<{ acted: boolean; eventType?: string }>;
+};
+
 export class RunnerDaemon {
   private timer: NodeJS.Timeout | undefined;
   private running = false;
@@ -57,7 +61,7 @@ export class ToolWorkerDaemon {
 
   constructor(
     private readonly engine: PostgresMailboxEngine,
-    private readonly worker: MockAsyncToolWorker,
+    private readonly worker: ToolWorker = new MockAsyncToolWorker(engine),
     private readonly intervalMs = 100,
   ) {}
 

@@ -33,20 +33,98 @@ export const AgentStepStartedPayloadSchema = z.object({
 
 export const AgentStepCompletedPayloadSchema = z.object({
   stepId: z.string().uuid(),
-  outcome: z.enum(["requested-tool", "created-gate", "produced-response", "no-op"]),
+  outcome: z.enum([
+    "requested-tool",
+    "created-gate",
+    "produced-finding",
+    "proposed-remediation",
+    "produced-response",
+    "no-op",
+  ]),
 });
 
-export const ToolRequestedPayloadSchema = z.object({
+export const EnvironmentSchema = z.enum(["staging", "production"]);
+
+export const ToolNameSchema = z.enum([
+  "mock.async-progress",
+  "axiom.searchLogs",
+  "grafana.queryMetrics",
+  "sentry.findIssues",
+  "deploy.inspectRecentChanges",
+  "infra.rebuildNode",
+]);
+
+const MockAsyncToolRequestedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),
   toolName: z.literal("mock.async-progress"),
+  args: z.object({ jobLabel: z.string().min(1) }),
+});
+
+const AxiomSearchLogsRequestedPayloadSchema = z.object({
+  toolCallId: z.string().uuid(),
+  toolName: z.literal("axiom.searchLogs"),
   args: z.object({
-    jobLabel: z.string().min(1),
+    environment: EnvironmentSchema,
+    query: z.string().min(1),
+    timeRangeMinutes: z.number().int().positive(),
+    limit: z.number().int().positive().max(1000),
   }),
 });
 
+const GrafanaQueryMetricsRequestedPayloadSchema = z.object({
+  toolCallId: z.string().uuid(),
+  toolName: z.literal("grafana.queryMetrics"),
+  args: z.object({
+    environment: EnvironmentSchema,
+    service: z.string().min(1),
+    metrics: z.array(z.string().min(1)).min(1),
+    timeRangeMinutes: z.number().int().positive(),
+  }),
+});
+
+const SentryFindIssuesRequestedPayloadSchema = z.object({
+  toolCallId: z.string().uuid(),
+  toolName: z.literal("sentry.findIssues"),
+  args: z.object({
+    environment: EnvironmentSchema,
+    project: z.string().min(1),
+    query: z.string().min(1),
+    timeRangeMinutes: z.number().int().positive(),
+  }),
+});
+
+const DeployInspectRecentChangesRequestedPayloadSchema = z.object({
+  toolCallId: z.string().uuid(),
+  toolName: z.literal("deploy.inspectRecentChanges"),
+  args: z.object({
+    environment: EnvironmentSchema,
+    service: z.string().min(1),
+    timeRangeMinutes: z.number().int().positive(),
+  }),
+});
+
+const InfraRebuildNodeRequestedPayloadSchema = z.object({
+  toolCallId: z.string().uuid(),
+  toolName: z.literal("infra.rebuildNode"),
+  args: z.object({
+    environment: EnvironmentSchema,
+    nodeId: z.string().min(1),
+    reason: z.string().min(1),
+  }),
+});
+
+export const ToolRequestedPayloadSchema = z.discriminatedUnion("toolName", [
+  MockAsyncToolRequestedPayloadSchema,
+  AxiomSearchLogsRequestedPayloadSchema,
+  GrafanaQueryMetricsRequestedPayloadSchema,
+  SentryFindIssuesRequestedPayloadSchema,
+  DeployInspectRecentChangesRequestedPayloadSchema,
+  InfraRebuildNodeRequestedPayloadSchema,
+]);
+
 export const ToolStartedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),
-  toolName: z.literal("mock.async-progress"),
+  toolName: ToolNameSchema,
 });
 
 export const ToolProgressPayloadSchema = z.object({
@@ -60,6 +138,7 @@ export const ToolCompletedPayloadSchema = z.object({
   output: z.object({
     summary: z.string().min(1),
     requiresManualApproval: z.boolean(),
+    data: z.unknown().optional(),
   }),
 });
 
@@ -72,8 +151,9 @@ export const ToolFailedPayloadSchema = z.object({
 export const GateCreatedPayloadSchema = z.object({
   gateId: z.string().uuid(),
   gateType: z.literal("manual-approval"),
-  reason: z.literal("tool-result-requires-approval"),
-  relatedToolCallId: z.string().uuid(),
+  reason: z.enum(["tool-result-requires-approval", "risky-remediation"]),
+  relatedToolCallId: z.string().uuid().optional(),
+  proposedAction: z.string().optional(),
 });
 
 export const GateResolvedPayloadSchema = z.object({
@@ -88,6 +168,34 @@ export const RunnerResumedPayloadSchema = z.object({
 
 export const AgentResponseProducedPayloadSchema = z.object({
   message: z.string().min(1),
+});
+
+export const AgentFindingProducedPayloadSchema = z.object({
+  findingId: z.string().uuid(),
+  severity: z.enum(["info", "warning", "critical"]),
+  summary: z.string().min(1),
+  evidence: z.array(
+    z.object({
+      source: z.string().min(1),
+      summary: z.string().min(1),
+    }),
+  ),
+});
+
+export const AgentRemediationProposedPayloadSchema = z.object({
+  remediationId: z.string().uuid(),
+  actionToolName: z.literal("infra.rebuildNode"),
+  summary: z.string().min(1),
+  risk: z.enum(["low", "medium", "high"]),
+  requiresApproval: z.boolean(),
+});
+
+export const AgentIncidentReportProducedPayloadSchema = z.object({
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  rootCause: z.string().min(1),
+  actions: z.array(z.string().min(1)),
+  evidence: z.array(z.string().min(1)),
 });
 
 const SessionStartedEventSchema = EventEnvelopeBaseSchema.extend({
@@ -155,6 +263,21 @@ const AgentResponseProducedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: AgentResponseProducedPayloadSchema,
 });
 
+const AgentFindingProducedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("agent.finding.produced"),
+  payload: AgentFindingProducedPayloadSchema,
+});
+
+const AgentRemediationProposedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("agent.remediation.proposed"),
+  payload: AgentRemediationProposedPayloadSchema,
+});
+
+const AgentIncidentReportProducedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("agent.incident_report.produced"),
+  payload: AgentIncidentReportProducedPayloadSchema,
+});
+
 export const MailboxEventSchema = z.discriminatedUnion("type", [
   SessionStartedEventSchema,
   PromptReceivedEventSchema,
@@ -169,6 +292,9 @@ export const MailboxEventSchema = z.discriminatedUnion("type", [
   GateResolvedEventSchema,
   RunnerResumedEventSchema,
   AgentResponseProducedEventSchema,
+  AgentFindingProducedEventSchema,
+  AgentRemediationProposedEventSchema,
+  AgentIncidentReportProducedEventSchema,
 ]);
 
 export type MailboxEvent = z.infer<typeof MailboxEventSchema>;
