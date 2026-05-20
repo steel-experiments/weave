@@ -54,6 +54,27 @@ create table if not exists agent_mailbox.mailbox_gate (
 
 create index if not exists mailbox_gate_pending_idx
   on agent_mailbox.mailbox_gate(mailbox_id, status);
+
+create table if not exists agent_mailbox.mailbox_inbox (
+  id bigserial primary key,
+  mailbox_id text not null references agent_mailbox.mailbox(id) on delete cascade,
+  consumer text not null check (consumer in ('runner', 'mock-tool-worker')),
+  event_seq integer not null,
+  state text not null check (state in ('pending', 'claimed', 'done')),
+  visible_at timestamptz not null default now(),
+  claimed_by text,
+  claimed_until timestamptz,
+  attempts integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (mailbox_id, consumer, event_seq)
+);
+
+create index if not exists mailbox_inbox_pending_idx
+  on agent_mailbox.mailbox_inbox(consumer, state, visible_at, id);
+
+create index if not exists mailbox_inbox_mailbox_idx
+  on agent_mailbox.mailbox_inbox(mailbox_id, consumer, state);
 `;
 
 export async function migrate(pool: Pool, options: { reset?: boolean } = {}): Promise<void> {

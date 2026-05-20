@@ -124,6 +124,14 @@ In the strongest version of this project:
 
 The long-term ambition is to become the shared event and control substrate for open agent systems.
 
+## North Star Demo
+
+The first product-shaped north-star demo is an SRE agent harness.
+
+An engineer should be able to tag an SRE agent in Slack, ask it to investigate an incident, and watch it use mailbox-scoped observability tools and approval gates to diagnose and safely act.
+
+See `north-star-sre-demo.md` for the detailed plan.
+
 ## Principles
 
 - event-first

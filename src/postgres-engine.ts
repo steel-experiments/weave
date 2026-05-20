@@ -4,6 +4,8 @@ import type {
   AppendOptions,
   AppendResult,
   FollowCursor,
+  InboxConsumer,
+  InboxWorkItem,
   Lease,
   MailboxEngine,
   MailboxLeaseStore,
@@ -100,6 +102,8 @@ export class PostgresMailboxEngine implements MailboxEngine, MailboxLeaseStore {
             JSON.stringify(event.payload),
           ],
         );
+
+        await this.routeInboxEvent(client, mailboxId, seq, event);
 
         nextStatus = await this.applyProjectionSideEffects(client, mailboxId, event, nextStatus);
       }
@@ -217,37 +221,62 @@ export class PostgresMailboxEngine implements MailboxEngine, MailboxLeaseStore {
     });
   }
 
-  async listRunnerCandidateMailboxIds(limit = 20): Promise<string[]> {
-    const result = await this.pool.query<{ id: string }>(
-      `select id
-       from agent_mailbox.mailbox
-       where status = 'waiting'
-       order by updated_at asc
-       limit $1`,
-      [limit],
+  async claimInbox(consumer: InboxConsumer, ownerId: string, limit = 20, ttlMs = 10_000): Promise<InboxWorkItem[]> {
+    const result = await this.pool.query<{
+      id: string;
+      mailbox_id: string;
+      consumer: InboxConsumer;
+      event_seq: number;
+      attempts: number;
+    }>(
+      `with candidates as (
+         select id
+         from agent_mailbox.mailbox_inbox
+         where consumer = $1
+           and visible_at <= now()
+           and (
+             state = 'pending'
+             or (state = 'claimed' and claimed_until <= now())
+           )
+         order by id asc
+         limit $2
+         for update skip locked
+       )
+       update agent_mailbox.mailbox_inbox inbox
+       set state = 'claimed',
+           claimed_by = $3,
+           claimed_until = now() + ($4 * interval '1 millisecond'),
+           attempts = attempts + 1,
+           updated_at = now()
+       from candidates
+       where inbox.id = candidates.id
+       returning inbox.id, inbox.mailbox_id, inbox.consumer, inbox.event_seq, inbox.attempts`,
+      [consumer, limit, ownerId, ttlMs],
     );
 
-    return result.rows.map((row) => row.id);
+    return result.rows.map((row) => ({
+      id: Number(row.id),
+      mailboxId: row.mailbox_id,
+      consumer: row.consumer,
+      eventSeq: row.event_seq,
+      attempts: row.attempts,
+    }));
   }
 
-  async listToolCandidateMailboxIds(limit = 20): Promise<string[]> {
-    const result = await this.pool.query<{ mailbox_id: string }>(
-      `select distinct requested.mailbox_id
-       from agent_mailbox.mailbox_event requested
-       where requested.type = 'tool.requested'
-         and not exists (
-           select 1
-           from agent_mailbox.mailbox_event terminal
-           where terminal.mailbox_id = requested.mailbox_id
-             and terminal.type in ('tool.completed', 'tool.failed')
-             and terminal.payload_json->>'toolCallId' = requested.payload_json->>'toolCallId'
-         )
-       order by requested.mailbox_id
-       limit $1`,
-      [limit],
-    );
+  async completeInbox(ids: number[], ownerId: string): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
 
-    return result.rows.map((row) => row.mailbox_id);
+    await this.pool.query(
+      `update agent_mailbox.mailbox_inbox
+       set state = 'done',
+           claimed_until = null,
+           updated_at = now()
+       where id = any($1::bigint[])
+         and claimed_by = $2`,
+      [ids, ownerId],
+    );
   }
 
   async acquireLease(mailboxId: string, ownerId: string, ttlMs: number): Promise<Lease | null> {
@@ -392,6 +421,24 @@ export class PostgresMailboxEngine implements MailboxEngine, MailboxLeaseStore {
     }
   }
 
+  private async routeInboxEvent(
+    client: PoolClient,
+    mailboxId: string,
+    seq: number,
+    event: MailboxEvent,
+  ): Promise<void> {
+    const consumers = consumersForEvent(event);
+
+    for (const consumer of consumers) {
+      await client.query(
+        `insert into agent_mailbox.mailbox_inbox(mailbox_id, consumer, event_seq, state)
+         values ($1, $2, $3, 'pending')
+         on conflict (mailbox_id, consumer, event_seq) do nothing`,
+        [mailboxId, consumer, seq],
+      );
+    }
+  }
+
   private rowToEvent(row: Record<string, unknown>): MailboxEvent {
     const occurredAt = row.occurred_at instanceof Date ? row.occurred_at.toISOString() : String(row.occurred_at);
     return MailboxEventSchema.parse({
@@ -409,6 +456,27 @@ export class PostgresMailboxEngine implements MailboxEngine, MailboxLeaseStore {
       },
       payload: row.payload_json,
     });
+  }
+}
+
+function consumersForEvent(event: MailboxEvent): InboxConsumer[] {
+  switch (event.type) {
+    case "prompt.received":
+    case "tool.completed":
+    case "tool.failed":
+    case "gate.resolved":
+      return ["runner"];
+    case "tool.requested":
+      return ["mock-tool-worker"];
+    case "session.started":
+    case "runner.resumed":
+    case "agent.step.started":
+    case "agent.step.completed":
+    case "tool.started":
+    case "tool.progress":
+    case "gate.created":
+    case "agent.response.produced":
+      return [];
   }
 }
 

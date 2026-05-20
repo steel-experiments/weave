@@ -27,6 +27,16 @@ export type Lease = {
   expiresAt: string;
 };
 
+export type InboxConsumer = "runner" | "mock-tool-worker";
+
+export type InboxWorkItem = {
+  id: number;
+  mailboxId: string;
+  consumer: InboxConsumer;
+  eventSeq: number;
+  attempts: number;
+};
+
 export interface MailboxEngine {
   createMailbox(mailboxId: string): Promise<void>;
   append(events: MailboxEvent[], options?: AppendOptions): Promise<AppendResult>;

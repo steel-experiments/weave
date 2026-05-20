@@ -58,10 +58,12 @@ Do not run `npm run poc` and `npm run system:poc` at the same time because both 
 - `src/mock-agent.ts`: deterministic mock agent adapter
 - `src/mock-tool-worker.ts`: async mock tool worker with progress events
 - `src/runner.ts`: one-step mailbox runner
+- `src/daemons.ts`: runner and tool worker daemons backed by explicit inbox claims
 - `src/scripts/poc.ts`: end-to-end verification script
 - `src/api-server.ts`: minimal HTTP API for mailbox sessions, events, projections, and gate resolution
-- `src/daemons.ts`: polling runner and tool worker daemons
 - `src/scripts/system-poc.ts`: API-driven verification with background daemons
+
+The service milestone uses an explicit `agent_mailbox.mailbox_inbox` table. Event appends route wake events into per-consumer inbox rows, and daemons claim those rows before processing work.
 
 ## Local Service Mode
 
