@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import {
+  CompositeObservabilitySink,
   ContractToolWorker,
   MailboxRunner,
   MailboxService,
@@ -12,6 +13,7 @@ import {
   createPool,
   getAgent,
   migrate,
+  otlpFromEnv,
   toMermaidTimeline,
   toTextTimeline,
   type MailboxEvent,
@@ -25,7 +27,11 @@ try {
   await migrate(pool, { reset: true });
 
   const engine = new PostgresMailboxEngine(pool);
-  const observability = new PostgresObservabilitySink(pool);
+  const postgresObservability = new PostgresObservabilitySink(pool);
+  const otlpObservability = otlpFromEnv({ serviceName: "agent-mailbox-sre-demo" });
+  const observability = otlpObservability
+    ? new CompositeObservabilitySink([postgresObservability, otlpObservability])
+    : postgresObservability;
   const runtimeApp = { ...sreDemoApp, observability };
   const service = new MailboxService(engine);
   const server = createApiServer(engine, service);
@@ -86,8 +92,8 @@ try {
     });
 
     const events = await getEvents(baseUrl, created.mailboxId);
-    const spans = await observability.listSpans(created.mailboxId);
-    const logs = await observability.listLogs(created.mailboxId);
+    const spans = await postgresObservability.listSpans(created.mailboxId);
+    const logs = await postgresObservability.listLogs(created.mailboxId);
     assertToolSequence(events, [
       "axiom.searchLogs",
       "grafana.queryMetrics",
@@ -134,6 +140,7 @@ try {
     console.log("observability:");
     console.log(`- spans=${spans.length}`);
     console.log(`- logs=${logs.length}`);
+    console.log(`- otlp=${otlpObservability ? "enabled" : "disabled"}`);
     for (const span of spans.filter((item) => item.kind === "tool" || item.kind === "credential")) {
       console.log(`- span ${span.name} status=${span.status}`);
     }

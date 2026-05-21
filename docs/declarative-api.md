@@ -25,6 +25,15 @@ Observability is a parallel signal plane, not a replacement for mailbox events.
 
 The first internal sink is `PostgresObservabilitySink`, which writes queryable spans and logs into `agent_mailbox.observability_span` and `agent_mailbox.observability_log` for the future admin panel.
 
+External collectors use `OtlpHttpObservabilitySink`, which exports OTLP/HTTP JSON traces and logs. `otlpFromEnv()` reads standard OpenTelemetry-style environment variables:
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: collector base URL, such as `http://localhost:4318`
+- `OTEL_EXPORTER_OTLP_HEADERS`: comma-separated headers, such as `authorization=Bearer token`
+- `OTEL_RESOURCE_ATTRIBUTES`: comma-separated resource attributes, such as `deployment.environment=local`
+- `OTEL_SERVICE_NAME`: service name override
+
+The SRE demo always writes observability to Postgres and also fans out to OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+
 ## Deferred Primitive
 
 `defineMailbox` is intentionally not implemented yet.

@@ -14,6 +14,7 @@ export * from "./postgres-observability.js";
 export * from "./runner.js";
 export * from "./credentials.js";
 export * from "./observability.js";
+export * from "./otlp-observability.js";
 export * from "./timeline.js";
 export * from "./tool-contract.js";
 export * from "./tool-worker.js";
