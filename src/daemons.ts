@@ -1,6 +1,7 @@
 import type { PostgresMailboxEngine } from "./postgres-engine.js";
 import { MailboxRunner } from "./runner.js";
 import { MockAsyncToolWorker } from "./mock-tool-worker.js";
+import type { InboxConsumer } from "./contracts.js";
 
 type ToolWorker = {
   processOnce(mailboxId: string): Promise<{ acted: boolean; eventType?: string }>;
@@ -63,6 +64,7 @@ export class ToolWorkerDaemon {
     private readonly engine: PostgresMailboxEngine,
     private readonly worker: ToolWorker = new MockAsyncToolWorker(engine),
     private readonly intervalMs = 100,
+    private readonly consumer: InboxConsumer = "tool-worker",
   ) {}
 
   start(): void {
@@ -86,7 +88,7 @@ export class ToolWorkerDaemon {
 
     this.running = true;
     try {
-      const items = await this.engine.claimInbox("mock-tool-worker", this.ownerId, 20, 30_000);
+      const items = await this.engine.claimInbox(this.consumer, this.ownerId, 20, 30_000);
       const byMailbox = groupByMailbox(items);
 
       for (const [mailboxId, mailboxItems] of byMailbox) {

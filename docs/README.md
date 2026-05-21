@@ -15,6 +15,7 @@ This directory is the working source of truth for the project direction, archite
 - `similar-systems.md`: comparison of adjacent systems and how Agent Mailbox differs
 - `positioning.md`: product framing for Agent Mailbox as a control plane above engines
 - `engines-and-integrations.md`: classification of execution engines, storage engines, companions, and adapters
+- `declarative-api.md`: current `defineTool`, `defineAgent`, and `defineMailboxApp` authoring API, plus deferred `defineMailbox` note
 - `poc-scope.md`: fixed decisions and success criteria for the first proof of concept
 - `engine-contracts.md`: typed engine contracts for the first Postgres-backed implementation
 - `event-taxonomy.md`: strongly typed PoC event set using Zod-style schemas
@@ -43,12 +44,13 @@ These docs are meant to:
 7. `similar-systems.md`
 8. `positioning.md`
 9. `engines-and-integrations.md`
-10. `poc-scope.md`
-11. `engine-contracts.md`
-12. `event-taxonomy.md`
-13. `poc-components-and-flow.md`
-14. `runnable-inbox.md`
-15. `mvp.md`
-16. `roadmap.md`
-17. `agent-mailbox-research.md`
-18. `s2-engine-research.md`
+10. `declarative-api.md`
+11. `poc-scope.md`
+12. `engine-contracts.md`
+13. `event-taxonomy.md`
+14. `poc-components-and-flow.md`
+15. `runnable-inbox.md`
+16. `mvp.md`
+17. `roadmap.md`
+18. `agent-mailbox-research.md`
+19. `s2-engine-research.md`

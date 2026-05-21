@@ -2,22 +2,17 @@ import {
   deterministicUuid,
   eventKey,
   nowIso,
+  type AgentPlan,
+  type AgentPlanner,
   type MailboxEvent,
-} from "./events.js";
-import type { AgentPlan, AgentPlanner } from "./runner.js";
+} from "@agent-mailbox/core";
+import type { SreToolName } from "./tools.js";
 
 type PromptReceivedEvent = Extract<MailboxEvent, { type: "prompt.received" }>;
 type ToolRequestedEvent = Extract<MailboxEvent, { type: "tool.requested" }>;
 type ToolCompletedEvent = Extract<MailboxEvent, { type: "tool.completed" }>;
 type GateCreatedEvent = Extract<MailboxEvent, { type: "gate.created" }>;
 type GateResolvedEvent = Extract<MailboxEvent, { type: "gate.resolved" }>;
-
-type SreToolName =
-  | "axiom.searchLogs"
-  | "grafana.queryMetrics"
-  | "sentry.findIssues"
-  | "deploy.inspectRecentChanges"
-  | "infra.rebuildNode";
 
 export class DeterministicSreAgent implements AgentPlanner {
   plan(mailboxId: string, events: MailboxEvent[]): AgentPlan | null {
@@ -123,8 +118,7 @@ export class DeterministicSreAgent implements AgentPlanner {
     toolName: SreToolName,
     args: Record<string, unknown>,
   ): AgentPlan {
-    const semanticKey = `request:${toolName}`;
-    const stepId = deterministicUuid("sre-step", mailboxId, semanticKey);
+    const stepId = deterministicUuid("sre-step", mailboxId, `request:${toolName}`);
     const toolCallId = deterministicUuid("sre-tool-call", mailboxId, toolName);
 
     return {
@@ -139,7 +133,7 @@ export class DeterministicSreAgent implements AgentPlanner {
           correlationId: cause.correlationId,
           causationId: cause.eventId,
           actor: { type: "agent", id: "sre-mock-agent" },
-          payload: { toolCallId, toolName, args } as Extract<ToolRequestedEvent["payload"], { toolName: typeof toolName }>,
+          payload: { toolCallId, toolName, args },
         },
         this.stepCompleted(mailboxId, cause, stepId, "requested-tool"),
       ],

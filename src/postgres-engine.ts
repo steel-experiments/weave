@@ -415,6 +415,9 @@ export class PostgresMailboxEngine implements MailboxEngine, MailboxLeaseStore {
         return "completed";
       case "tool.started":
       case "tool.progress":
+      case "credential.requested":
+      case "credential.resolved":
+      case "credential.failed":
       case "agent.step.started":
       case "agent.step.completed":
       case "agent.finding.produced":
@@ -470,13 +473,16 @@ function consumersForEvent(event: MailboxEvent): InboxConsumer[] {
     case "gate.resolved":
       return ["runner"];
     case "tool.requested":
-      return ["mock-tool-worker"];
+      return ["tool-worker"];
     case "session.started":
     case "runner.resumed":
     case "agent.step.started":
     case "agent.step.completed":
     case "tool.started":
     case "tool.progress":
+    case "credential.requested":
+    case "credential.resolved":
+    case "credential.failed":
     case "gate.created":
     case "agent.response.produced":
     case "agent.finding.produced":

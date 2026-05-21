@@ -45,82 +45,13 @@ export const AgentStepCompletedPayloadSchema = z.object({
 
 export const EnvironmentSchema = z.enum(["staging", "production"]);
 
-export const ToolNameSchema = z.enum([
-  "mock.async-progress",
-  "axiom.searchLogs",
-  "grafana.queryMetrics",
-  "sentry.findIssues",
-  "deploy.inspectRecentChanges",
-  "infra.rebuildNode",
-]);
+export const ToolNameSchema = z.string().min(1);
 
-const MockAsyncToolRequestedPayloadSchema = z.object({
+export const ToolRequestedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),
-  toolName: z.literal("mock.async-progress"),
-  args: z.object({ jobLabel: z.string().min(1) }),
+  toolName: ToolNameSchema,
+  args: z.unknown(),
 });
-
-const AxiomSearchLogsRequestedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
-  toolName: z.literal("axiom.searchLogs"),
-  args: z.object({
-    environment: EnvironmentSchema,
-    query: z.string().min(1),
-    timeRangeMinutes: z.number().int().positive(),
-    limit: z.number().int().positive().max(1000),
-  }),
-});
-
-const GrafanaQueryMetricsRequestedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
-  toolName: z.literal("grafana.queryMetrics"),
-  args: z.object({
-    environment: EnvironmentSchema,
-    service: z.string().min(1),
-    metrics: z.array(z.string().min(1)).min(1),
-    timeRangeMinutes: z.number().int().positive(),
-  }),
-});
-
-const SentryFindIssuesRequestedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
-  toolName: z.literal("sentry.findIssues"),
-  args: z.object({
-    environment: EnvironmentSchema,
-    project: z.string().min(1),
-    query: z.string().min(1),
-    timeRangeMinutes: z.number().int().positive(),
-  }),
-});
-
-const DeployInspectRecentChangesRequestedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
-  toolName: z.literal("deploy.inspectRecentChanges"),
-  args: z.object({
-    environment: EnvironmentSchema,
-    service: z.string().min(1),
-    timeRangeMinutes: z.number().int().positive(),
-  }),
-});
-
-const InfraRebuildNodeRequestedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
-  toolName: z.literal("infra.rebuildNode"),
-  args: z.object({
-    environment: EnvironmentSchema,
-    nodeId: z.string().min(1),
-    reason: z.string().min(1),
-  }),
-});
-
-export const ToolRequestedPayloadSchema = z.discriminatedUnion("toolName", [
-  MockAsyncToolRequestedPayloadSchema,
-  AxiomSearchLogsRequestedPayloadSchema,
-  GrafanaQueryMetricsRequestedPayloadSchema,
-  SentryFindIssuesRequestedPayloadSchema,
-  DeployInspectRecentChangesRequestedPayloadSchema,
-  InfraRebuildNodeRequestedPayloadSchema,
-]);
 
 export const ToolStartedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),
@@ -144,6 +75,35 @@ export const ToolCompletedPayloadSchema = z.object({
 
 export const ToolFailedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
+});
+
+export const CredentialKindSchema = z.enum(["secret", "delegated-identity", "scoped-token", "browser-session"]);
+
+export const CredentialRequestedPayloadSchema = z.object({
+  toolCallId: z.string().uuid(),
+  credentialName: z.string().min(1),
+  kind: CredentialKindSchema,
+  provider: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+  scopes: z.array(z.string().min(1)).optional(),
+  scope: z.record(z.string(), z.string()).optional(),
+});
+
+export const CredentialResolvedPayloadSchema = z.object({
+  toolCallId: z.string().uuid(),
+  credentialName: z.string().min(1),
+  kind: CredentialKindSchema,
+  source: z.string().min(1),
+  subject: z.string().min(1).optional(),
+  expiresAt: z.string().datetime().optional(),
+});
+
+export const CredentialFailedPayloadSchema = z.object({
+  toolCallId: z.string().uuid(),
+  credentialName: z.string().min(1),
+  kind: CredentialKindSchema,
   errorCode: z.string().min(1),
   message: z.string().min(1),
 });
@@ -184,7 +144,7 @@ export const AgentFindingProducedPayloadSchema = z.object({
 
 export const AgentRemediationProposedPayloadSchema = z.object({
   remediationId: z.string().uuid(),
-  actionToolName: z.literal("infra.rebuildNode"),
+  actionToolName: ToolNameSchema,
   summary: z.string().min(1),
   risk: z.enum(["low", "medium", "high"]),
   requiresApproval: z.boolean(),
@@ -243,6 +203,21 @@ const ToolFailedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: ToolFailedPayloadSchema,
 });
 
+const CredentialRequestedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("credential.requested"),
+  payload: CredentialRequestedPayloadSchema,
+});
+
+const CredentialResolvedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("credential.resolved"),
+  payload: CredentialResolvedPayloadSchema,
+});
+
+const CredentialFailedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("credential.failed"),
+  payload: CredentialFailedPayloadSchema,
+});
+
 const GateCreatedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("gate.created"),
   payload: GateCreatedPayloadSchema,
@@ -288,6 +263,9 @@ export const MailboxEventSchema = z.discriminatedUnion("type", [
   ToolProgressEventSchema,
   ToolCompletedEventSchema,
   ToolFailedEventSchema,
+  CredentialRequestedEventSchema,
+  CredentialResolvedEventSchema,
+  CredentialFailedEventSchema,
   GateCreatedEventSchema,
   GateResolvedEventSchema,
   RunnerResumedEventSchema,

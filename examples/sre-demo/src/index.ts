@@ -1,16 +1,23 @@
 import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
-import { createApiServer } from "../api-server.js";
-import { RunnerDaemon, ToolWorkerDaemon } from "../daemons.js";
-import { createPool } from "../db.js";
-import type { MailboxEvent, MailboxProjection } from "../events.js";
-import { MailboxService } from "../mailbox-service.js";
-import { migrate } from "../migrate.js";
-import { PostgresMailboxEngine } from "../postgres-engine.js";
-import { MailboxRunner } from "../runner.js";
-import { DeterministicSreAgent } from "../sre-agent.js";
-import { MockSreToolWorker } from "../sre-tool-worker.js";
-import { toMermaidTimeline, toTextTimeline } from "../timeline.js";
+import {
+  ContractToolWorker,
+  MailboxRunner,
+  MailboxService,
+  PostgresObservabilitySink,
+  PostgresMailboxEngine,
+  RunnerDaemon,
+  ToolWorkerDaemon,
+  createApiServer,
+  createPool,
+  getAgent,
+  migrate,
+  toMermaidTimeline,
+  toTextTimeline,
+  type MailboxEvent,
+  type MailboxProjection,
+} from "@agent-mailbox/core";
+import { sreDemoApp } from "./app.js";
 
 const pool = createPool();
 
@@ -18,6 +25,8 @@ try {
   await migrate(pool, { reset: true });
 
   const engine = new PostgresMailboxEngine(pool);
+  const observability = new PostgresObservabilitySink(pool);
+  const runtimeApp = { ...sreDemoApp, observability };
   const service = new MailboxService(engine);
   const server = createApiServer(engine, service);
   await listen(server);
@@ -25,9 +34,14 @@ try {
   const address = server.address();
   assert(isAddressInfo(address));
   const baseUrl = `http://127.0.0.1:${address.port}`;
+  const activeAgent = getAgent(runtimeApp, "sre");
 
-  const runnerDaemon = new RunnerDaemon(engine, new MailboxRunner(engine, engine, new DeterministicSreAgent()), 25);
-  const toolDaemon = new ToolWorkerDaemon(engine, new MockSreToolWorker(engine), 25);
+  const runnerDaemon = new RunnerDaemon(engine, new MailboxRunner(engine, engine, activeAgent.planner), 25);
+  const toolDaemon = new ToolWorkerDaemon(
+    engine,
+    new ContractToolWorker(engine, activeAgent.tools, "sre-tool-worker", runtimeApp.credentialProvider, runtimeApp.observability),
+    25,
+  );
   runnerDaemon.start();
   toolDaemon.start();
 
@@ -50,6 +64,14 @@ try {
     ]);
     assert(beforeApprovalEvents.some((event) => event.type === "agent.finding.produced"));
     assert(beforeApprovalEvents.some((event) => event.type === "agent.remediation.proposed"));
+    const rebuildNode = activeAgent.tools.find((tool) => tool.name === "infra.rebuildNode");
+    assert(rebuildNode?.gate?.({
+      input: {
+        environment: "production",
+        nodeId: "nats-prod-1",
+        reason: "demo",
+      },
+    }));
 
     const gateId = blockedProjection.pendingGateIds[0];
     assert(gateId);
@@ -64,6 +86,8 @@ try {
     });
 
     const events = await getEvents(baseUrl, created.mailboxId);
+    const spans = await observability.listSpans(created.mailboxId);
+    const logs = await observability.listLogs(created.mailboxId);
     assertToolSequence(events, [
       "axiom.searchLogs",
       "grafana.queryMetrics",
@@ -78,15 +102,40 @@ try {
     assert(finalResponse);
     assert.equal(finalProjection.pendingGateIds.length, 0);
     assert.equal(events.length, finalProjection.tailSeq);
+    assert(spans.some((span) => span.name === "tool.execute axiom.searchLogs"));
+    assert(spans.some((span) => span.name === "credential.resolve infra.production"));
+    assert(logs.some((log) => log.message === "Tool execution completed"));
 
     console.log("SRE north-star demo verified");
     console.log(`api=${baseUrl}`);
     console.log(`mailboxId=${created.mailboxId}`);
+    console.log(`app=${runtimeApp.name}`);
+    console.log(`agent=${activeAgent.name}`);
+    console.log("registeredTools:");
+    for (const tool of activeAgent.tools) {
+      const gate = tool.gate ? " gate=manual-approval" : "";
+      console.log(`- ${tool.name}${gate}`);
+    }
+    console.log("credentialEvents:");
+    for (const event of events) {
+      if (event.type === "credential.requested") {
+        console.log(`- requested ${event.payload.credentialName} kind=${event.payload.kind}`);
+      }
+      if (event.type === "credential.resolved") {
+        console.log(`- resolved ${event.payload.credentialName} source=${event.payload.source}`);
+      }
+    }
     console.log("toolRequests:");
     for (const event of events) {
       if (event.type === "tool.requested") {
         console.log(`- ${event.payload.toolName}`);
       }
+    }
+    console.log("observability:");
+    console.log(`- spans=${spans.length}`);
+    console.log(`- logs=${logs.length}`);
+    for (const span of spans.filter((item) => item.kind === "tool" || item.kind === "credential")) {
+      console.log(`- span ${span.name} status=${span.status}`);
     }
     console.log("timeline:");
     console.log(toTextTimeline(events));

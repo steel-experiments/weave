@@ -27,7 +27,7 @@ export type Lease = {
   expiresAt: string;
 };
 
-export type InboxConsumer = "runner" | "mock-tool-worker";
+export type InboxConsumer = "runner" | "tool-worker";
 
 export type InboxWorkItem = {
   id: number;

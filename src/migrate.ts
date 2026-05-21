@@ -58,7 +58,7 @@ create index if not exists mailbox_gate_pending_idx
 create table if not exists agent_mailbox.mailbox_inbox (
   id bigserial primary key,
   mailbox_id text not null references agent_mailbox.mailbox(id) on delete cascade,
-  consumer text not null check (consumer in ('runner', 'mock-tool-worker')),
+  consumer text not null,
   event_seq integer not null,
   state text not null check (state in ('pending', 'claimed', 'done')),
   visible_at timestamptz not null default now(),
@@ -70,11 +70,66 @@ create table if not exists agent_mailbox.mailbox_inbox (
   unique (mailbox_id, consumer, event_seq)
 );
 
+alter table agent_mailbox.mailbox_inbox
+  drop constraint if exists mailbox_inbox_consumer_check;
+
+alter table agent_mailbox.mailbox_inbox
+  add constraint mailbox_inbox_consumer_check
+  check (consumer in ('runner', 'tool-worker'));
+
 create index if not exists mailbox_inbox_pending_idx
   on agent_mailbox.mailbox_inbox(consumer, state, visible_at, id);
 
 create index if not exists mailbox_inbox_mailbox_idx
   on agent_mailbox.mailbox_inbox(mailbox_id, consumer, state);
+
+create table if not exists agent_mailbox.observability_span (
+  trace_id text not null,
+  span_id text not null,
+  parent_span_id text,
+  mailbox_id text references agent_mailbox.mailbox(id) on delete cascade,
+  event_id uuid,
+  correlation_id uuid,
+  causation_id uuid,
+  tool_call_id uuid,
+  tool_name text,
+  name text not null,
+  kind text not null check (kind in ('internal', 'tool', 'credential', 'db', 'http')),
+  status text not null check (status in ('ok', 'error')),
+  started_at timestamptz not null,
+  ended_at timestamptz not null,
+  duration_ms integer not null,
+  attributes_json jsonb not null default '{}'::jsonb,
+  primary key (trace_id, span_id)
+);
+
+create index if not exists observability_span_mailbox_idx
+  on agent_mailbox.observability_span(mailbox_id, started_at);
+
+create index if not exists observability_span_tool_call_idx
+  on agent_mailbox.observability_span(tool_call_id, started_at);
+
+create table if not exists agent_mailbox.observability_log (
+  id bigserial primary key,
+  timestamp timestamptz not null,
+  level text not null check (level in ('debug', 'info', 'warn', 'error')),
+  message text not null,
+  trace_id text,
+  span_id text,
+  mailbox_id text references agent_mailbox.mailbox(id) on delete cascade,
+  event_id uuid,
+  correlation_id uuid,
+  causation_id uuid,
+  tool_call_id uuid,
+  tool_name text,
+  attributes_json jsonb not null default '{}'::jsonb
+);
+
+create index if not exists observability_log_mailbox_idx
+  on agent_mailbox.observability_log(mailbox_id, timestamp, id);
+
+create index if not exists observability_log_trace_idx
+  on agent_mailbox.observability_log(trace_id, span_id);
 `;
 
 export async function migrate(pool: Pool, options: { reset?: boolean } = {}): Promise<void> {
