@@ -42,6 +42,8 @@ const openApiJson = JSON.stringify(
 );
 
 export async function startSteelFixtureServer(): Promise<{ server: Server; baseUrl: string }> {
+  let flakyLlmsRequests = 0;
+
   const server = createServer((request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     switch (path) {
@@ -50,6 +52,16 @@ export async function startSteelFixtureServer(): Promise<{ server: Server; baseU
         response.end(docsHtml);
         return;
       case "/llms.txt":
+        response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+        response.end(llmsTxt);
+        return;
+      case "/flaky-llms.txt":
+        flakyLlmsRequests += 1;
+        if (flakyLlmsRequests <= 2) {
+          response.writeHead(503, { "content-type": "text/plain; charset=utf-8" });
+          response.end("temporary upstream failure");
+          return;
+        }
         response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
         response.end(llmsTxt);
         return;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NoopMailboxArtifactStore, type MailboxArtifactStore } from "./artifacts.js";
 import type { MailboxEngine } from "./contracts.js";
 import {
   EmptyCredentialProvider,
@@ -19,13 +20,21 @@ import {
   type ObservabilityContext,
   type ObservabilitySink,
 } from "./observability.js";
-import { ToolRegistry, createToolRegistry, type AnyToolContract, type ToolProgressUpdate } from "./tool-contract.js";
+import {
+  RetryableToolError,
+  ToolRegistry,
+  createToolRegistry,
+  type AnyToolContract,
+  type ToolProgressUpdate,
+} from "./tool-contract.js";
 
 type ToolRequestedEvent = Extract<MailboxEvent, { type: "tool.requested" }>;
 
 export type ToolWorkerResult = {
   acted: boolean;
   eventType?: string;
+  errorCode?: string;
+  errorMessage?: string;
 };
 
 export class ContractToolWorker {
@@ -37,6 +46,7 @@ export class ContractToolWorker {
     private readonly workerId = `tool-worker-${process.pid}`,
     private readonly credentialProvider: CredentialProvider = new EmptyCredentialProvider(),
     private readonly observability: ObservabilitySink = new NoopObservabilitySink(),
+    private readonly artifactStore: MailboxArtifactStore = new NoopMailboxArtifactStore(),
   ) {
     this.registry = tools instanceof ToolRegistry ? tools : createToolRegistry(tools);
   }
@@ -63,7 +73,7 @@ export class ContractToolWorker {
     if (!tool) {
       const event = this.failedEvent(mailboxId, request, "unknown_tool", `No tool contract registered for ${request.payload.toolName}`);
       await this.engine.append([event]);
-      return { acted: true, eventType: event.type };
+      return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
     }
 
     return this.executeTool(mailboxId, request, tool);
@@ -92,7 +102,7 @@ export class ContractToolWorker {
         errorCode: "input_validation_failed",
       });
       await this.engine.append([event]);
-      return { acted: true, eventType: event.type };
+      return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
     }
 
     const progressEvents: MailboxEvent[] = [];
@@ -117,26 +127,29 @@ export class ContractToolWorker {
         errorCode: "credential_resolution_failed",
       });
       await this.engine.append([...credentialEvents, event]);
-      return { acted: true, eventType: event.type };
+      return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
     }
 
-    try {
-      const observer = new ToolObserver(this.observability, spanContext);
-      const output = await observer.span(
-        "tool.run",
-        () =>
-          tool.run({
-            mailboxId,
-            toolCallId: request.payload.toolCallId,
-            toolName: request.payload.toolName,
-            input: inputResult.data,
-            credentials: credentialResult.credentials,
-            observe: observer,
-            request,
-            progress,
-          }),
-        { kind: "tool", attributes: { toolName: request.payload.toolName } },
-      );
+    const observer = new ToolObserver(this.observability, spanContext);
+    let attempt = 1;
+    while (true) {
+      try {
+        const output = await observer.span(
+          "tool.run",
+          () =>
+            tool.run({
+              mailboxId,
+              toolCallId: request.payload.toolCallId,
+              toolName: request.payload.toolName,
+              input: inputResult.data,
+              credentials: credentialResult.credentials,
+              artifactStore: this.artifactStore,
+              observe: observer,
+              request,
+              progress,
+            }),
+          { kind: "tool", attributes: { toolName: request.payload.toolName, attempt } },
+        );
       const outputResult = tool.output.safeParse(output);
       if (!outputResult.success) {
         const event = this.failedEvent(
@@ -152,31 +165,52 @@ export class ContractToolWorker {
           errorCode: "output_validation_failed",
         });
         await this.engine.append([...credentialEvents, ...progressEvents, event]);
-        return { acted: true, eventType: event.type };
+        return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
       }
 
       const event = this.completedEvent(mailboxId, request, outputResult.data);
-      await this.emitToolLog(spanContext, "info", "Tool execution completed", {
-        progressEvents: progressEvents.length,
-      });
-      await this.emitToolSpan(spanContext, rootStartedAt, "ok", {
-        credentialCount: credentialResult.credentials.names().length,
-        progressEvents: progressEvents.length,
-      });
-      await this.engine.append([...credentialEvents, ...progressEvents, event]);
-      return { acted: true, eventType: event.type };
-    } catch (error) {
-      const event = this.failedEvent(mailboxId, request, "execution_failed", errorMessage(error));
-      await this.emitToolLog(spanContext, "error", "Tool execution failed", {
-        errorCode: "execution_failed",
-        error: errorMessage(error),
-      });
-      await this.emitToolSpan(spanContext, rootStartedAt, "error", {
-        errorCode: "execution_failed",
-        error: errorMessage(error),
-      });
-      await this.engine.append([...credentialEvents, ...progressEvents, event]);
-      return { acted: true, eventType: event.type };
+        await this.emitToolLog(spanContext, "info", "Tool execution completed", {
+          attempt,
+          progressEvents: progressEvents.length,
+        });
+        await this.emitToolSpan(spanContext, rootStartedAt, "ok", {
+          attempt,
+          credentialCount: credentialResult.credentials.names().length,
+          progressEvents: progressEvents.length,
+        });
+        await this.engine.append([...credentialEvents, ...progressEvents, event]);
+        return { acted: true, eventType: event.type };
+      } catch (error) {
+        if (error instanceof RetryableToolError && attempt < 3) {
+          const nextAttempt = attempt + 1;
+          await progress({
+            percent: 0,
+            message: `Retrying after transient failure (${nextAttempt}/3): ${error.message}`,
+          });
+          await this.emitToolLog(spanContext, "warn", "Tool execution retry scheduled", {
+            attempt,
+            nextAttempt,
+            error: error.message,
+          });
+          attempt = nextAttempt;
+          await sleep(100 * nextAttempt);
+          continue;
+        }
+
+        const event = this.failedEvent(mailboxId, request, "execution_failed", errorMessage(error));
+        await this.emitToolLog(spanContext, "error", "Tool execution failed", {
+          attempt,
+          errorCode: "execution_failed",
+          error: errorMessage(error),
+        });
+        await this.emitToolSpan(spanContext, rootStartedAt, "error", {
+          attempt,
+          errorCode: "execution_failed",
+          error: errorMessage(error),
+        });
+        await this.engine.append([...credentialEvents, ...progressEvents, event]);
+        return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
+      }
     }
   }
 
@@ -317,7 +351,10 @@ export class ContractToolWorker {
     });
   }
 
-  private startedEvent(mailboxId: string, request: ToolRequestedEvent): MailboxEvent {
+  private startedEvent(
+    mailboxId: string,
+    request: ToolRequestedEvent,
+  ): Extract<MailboxEvent, { type: "tool.started" }> {
     return {
       eventId: eventKey(mailboxId, "tool.started", request.payload.toolCallId),
       mailboxId,
@@ -356,7 +393,7 @@ export class ContractToolWorker {
     mailboxId: string,
     request: ToolRequestedEvent,
     output: Extract<MailboxEvent, { type: "tool.completed" }>["payload"]["output"],
-  ): MailboxEvent {
+  ): Extract<MailboxEvent, { type: "tool.completed" }> {
     return {
       eventId: eventKey(mailboxId, "tool.completed", request.payload.toolCallId),
       mailboxId,
@@ -446,7 +483,12 @@ export class ContractToolWorker {
     };
   }
 
-  private failedEvent(mailboxId: string, request: ToolRequestedEvent, errorCode: string, message: string): MailboxEvent {
+  private failedEvent(
+    mailboxId: string,
+    request: ToolRequestedEvent,
+    errorCode: string,
+    message: string,
+  ): Extract<MailboxEvent, { type: "tool.failed" }> {
     return {
       eventId: eventKey(mailboxId, "tool.failed", `${request.payload.toolCallId}:${errorCode}`),
       mailboxId,
@@ -488,4 +530,8 @@ function normalizeCredentialRequests(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

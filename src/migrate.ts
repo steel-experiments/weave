@@ -60,10 +60,12 @@ create table if not exists agent_mailbox.mailbox_inbox (
   mailbox_id text not null references agent_mailbox.mailbox(id) on delete cascade,
   consumer text not null,
   event_seq integer not null,
-  state text not null check (state in ('pending', 'claimed', 'done')),
+  state text not null check (state in ('pending', 'claimed', 'done', 'dead-letter')),
   visible_at timestamptz not null default now(),
   claimed_by text,
   claimed_until timestamptz,
+  last_error_code text,
+  last_error_message text,
   attempts integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -82,6 +84,37 @@ create index if not exists mailbox_inbox_pending_idx
 
 create index if not exists mailbox_inbox_mailbox_idx
   on agent_mailbox.mailbox_inbox(mailbox_id, consumer, state);
+
+create table if not exists agent_mailbox.mailbox_artifact (
+  artifact_id uuid primary key,
+  mailbox_id text not null references agent_mailbox.mailbox(id) on delete cascade,
+  tool_call_id uuid,
+  kind text not null,
+  media_type text not null,
+  sha256 text not null,
+  byte_length integer not null,
+  uri text not null,
+  source_url text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists mailbox_artifact_mailbox_idx
+  on agent_mailbox.mailbox_artifact(mailbox_id, created_at, artifact_id);
+
+create index if not exists mailbox_artifact_tool_call_idx
+  on agent_mailbox.mailbox_artifact(tool_call_id, created_at);
+
+create table if not exists agent_mailbox.mailbox_snapshot (
+  snapshot_key text primary key,
+  mailbox_id text not null references agent_mailbox.mailbox(id) on delete cascade,
+  artifact_id uuid not null references agent_mailbox.mailbox_artifact(artifact_id) on delete cascade,
+  sha256 text not null,
+  metadata_json jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists mailbox_snapshot_mailbox_idx
+  on agent_mailbox.mailbox_snapshot(mailbox_id, updated_at, snapshot_key);
 
 create table if not exists agent_mailbox.observability_span (
   trace_id text not null,

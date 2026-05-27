@@ -1,4 +1,5 @@
 import type { AgentContract } from "./agent-contract.js";
+import type { MailboxArtifactStore } from "./artifacts.js";
 import type { CredentialProvider } from "./credentials.js";
 import type { ObservabilitySink } from "./observability.js";
 
@@ -6,6 +7,7 @@ export type MailboxAppDefinition<Agents extends readonly AgentContract[] = reado
   name?: string;
   agents: Agents;
   credentialProvider?: CredentialProvider;
+  artifactStore?: MailboxArtifactStore;
   observability?: ObservabilitySink;
 };
 

@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   createApiServer,
+  type MailboxArtifactStore,
   type ApiRouteHandler,
   type MailboxEngine,
   type MailboxService,
@@ -33,6 +34,7 @@ export type SteelDocsSyncWebhookPayload = z.infer<typeof SteelDocsSyncWebhookPay
 export type SteelDocsSyncServerOptions = {
   webhookSecret: string;
   allowedHosts?: readonly string[];
+  artifactStore?: MailboxArtifactStore;
 };
 
 export function createSteelDocsSyncApiServer(
@@ -41,6 +43,7 @@ export function createSteelDocsSyncApiServer(
   options: SteelDocsSyncServerOptions,
 ) {
   return createApiServer(engine, service, {
+    artifactStore: options.artifactStore,
     beforeRoutes: [createSteelDocsWebhookRoute(service, options)],
   });
 }

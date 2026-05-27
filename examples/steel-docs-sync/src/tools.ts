@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { defineTool } from "@agent-mailbox/core";
+import { MailboxArtifactSchema, RetryableToolError, defineTool } from "@agent-mailbox/core";
 import { z } from "zod";
 
 const SteelDocsAuditFindingSchema = z.object({
@@ -8,22 +8,35 @@ const SteelDocsAuditFindingSchema = z.object({
   evidence: z.array(z.string().min(1)).min(1),
 });
 
-const SteelDocsAuditArtifactSchema = z.object({
+const SteelDocsAuditArtifactSchema = MailboxArtifactSchema.extend({
   kind: z.enum(["docs-page", "llms-txt", "openapi-spec"]),
-  url: z.string().url(),
-  mediaType: z.string().min(1),
-  sha256: z.string().length(64),
-  byteLength: z.number().int().nonnegative(),
 });
 
-const SteelDocsAuditDataSchema = z.object({
+const SteelDocsAuditBaselineSchema = z.object({
+  kind: z.enum(["docs-page", "llms-txt", "openapi-spec"]),
+  snapshotKey: z.string().min(1),
+  previousArtifactId: z.string().uuid().nullable(),
+  previousSha256: z.string().length(64).nullable(),
+  changed: z.boolean(),
+});
+
+export const SteelDocsAuditDataSchema = z.object({
   repository: z.literal("steel-dev/docs"),
   mode: z.enum(["production-drift", "pull-request", "manual"]),
   outcome: z.enum(["passed", "warning", "failed"]),
   checkedUrls: z.array(z.string().url()).min(1),
   artifacts: z.array(SteelDocsAuditArtifactSchema).length(3),
+  baselines: z.array(SteelDocsAuditBaselineSchema).length(3),
   findings: z.array(SteelDocsAuditFindingSchema),
 });
+
+export const SteelDocsModelReviewDataSchema = z.object({
+  outcome: z.enum(["passed", "warning", "failed"]),
+  findings: z.array(SteelDocsAuditFindingSchema),
+  finalMessage: z.string().min(1),
+});
+
+export const SteelDocsModelReviewInputSchema = SteelDocsAuditDataSchema;
 
 export const steelAuditTool = defineTool({
   name: "steel.auditDocsSync",
@@ -42,7 +55,7 @@ export const steelAuditTool = defineTool({
     requiresManualApproval: z.literal(false),
     data: SteelDocsAuditDataSchema,
   }),
-  async run({ progress, input }) {
+  async run({ artifactStore, mailboxId, progress, input, toolCallId }) {
     await progress({ percent: 15, message: "Fetching docs landing page." });
     const docs = await fetchBoundedText(input.docsBaseUrl);
     await progress({ percent: 40, message: "Fetching llms.txt." });
@@ -54,10 +67,52 @@ export const steelAuditTool = defineTool({
 
     const findings = buildFindings(docs, llms, openApi);
     const artifacts = [
-      toArtifact("docs-page", docs),
-      toArtifact("llms-txt", llms),
-      toArtifact("openapi-spec", openApi),
+      await artifactStore.putArtifact({
+        mailboxId,
+        toolCallId,
+        kind: "docs-page",
+        mediaType: docs.mediaType,
+        sourceUrl: docs.url,
+        body: docs.body,
+      }),
+      await artifactStore.putArtifact({
+        mailboxId,
+        toolCallId,
+        kind: "llms-txt",
+        mediaType: llms.mediaType,
+        sourceUrl: llms.url,
+        body: llms.body,
+      }),
+      await artifactStore.putArtifact({
+        mailboxId,
+        toolCallId,
+        kind: "openapi-spec",
+        mediaType: openApi.mediaType,
+        sourceUrl: openApi.url,
+        body: openApi.body,
+      }),
     ];
+    const baselines = await Promise.all(
+      artifacts.map(async (artifact) => {
+        const snapshotKey = `${input.repository}:${artifact.kind}`;
+        const previous = await artifactStore.getSnapshot(snapshotKey);
+        await artifactStore.putSnapshot({
+          snapshotKey,
+          mailboxId,
+          artifactId: artifact.artifactId,
+          sha256: artifact.sha256,
+          metadata: { kind: artifact.kind, sourceUrl: artifact.sourceUrl },
+        });
+
+        return {
+          kind: artifact.kind as z.infer<typeof SteelDocsAuditBaselineSchema>["kind"],
+          snapshotKey,
+          previousArtifactId: previous?.artifactId ?? null,
+          previousSha256: previous?.sha256 ?? null,
+          changed: previous ? previous.sha256 !== artifact.sha256 : false,
+        };
+      }),
+    );
     const outcome = findings.some((finding) => finding.severity === "critical")
       ? "failed"
       : findings.some((finding) => finding.severity === "warning")
@@ -77,13 +132,37 @@ export const steelAuditTool = defineTool({
         outcome,
         checkedUrls: [input.docsBaseUrl, input.llmsTxtUrl, openApiUrl],
         artifacts,
+        baselines,
         findings,
       },
     };
   },
 });
 
-export const steelTools = [steelAuditTool] as const;
+const steelModelReviewTool = defineTool({
+  name: "steel.modelReview",
+  description: "Run an async model-backed review over compact Steel docs audit summaries.",
+  input: SteelDocsModelReviewInputSchema,
+  output: z.object({
+    summary: z.string().min(1),
+    requiresManualApproval: z.literal(false),
+    data: SteelDocsModelReviewDataSchema,
+  }),
+  async run({ input, progress }) {
+    await progress({ percent: 50, message: "Submitting compact docs audit summary to model review." });
+    const review = await new DeterministicSteelDocsReviewModel().review(input);
+    const data = SteelDocsModelReviewDataSchema.parse(review);
+    await progress({ percent: 100, message: "Validated structured model review output." });
+
+    return {
+      summary: data.finalMessage,
+      requiresManualApproval: false,
+      data,
+    };
+  },
+});
+
+export const steelTools = [steelAuditTool, steelModelReviewTool] as const;
 
 export type SteelToolName = (typeof steelTools)[number]["name"];
 
@@ -117,6 +196,9 @@ async function fetchWithLimit(url: string): Promise<Response> {
   const timeout = setTimeout(() => controller.abort(), 5_000);
   try {
     const response = await fetch(url, { signal: controller.signal });
+    if (response.status >= 500) {
+      throw new RetryableToolError(`HTTP ${response.status} fetching ${url}`);
+    }
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} fetching ${url}`);
     }
@@ -127,6 +209,14 @@ async function fetchWithLimit(url: string): Promise<Response> {
     }
 
     return response;
+  } catch (error) {
+    if (error instanceof RetryableToolError) {
+      throw error;
+    }
+    if (error instanceof Error && (error.name === "AbortError" || error.message.includes("fetch failed"))) {
+      throw new RetryableToolError(error.message);
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -194,15 +284,17 @@ type FetchedJsonSource = FetchedSource & {
   json: unknown;
 };
 
-function toArtifact(
-  kind: z.infer<typeof SteelDocsAuditArtifactSchema>["kind"],
-  source: FetchedSource,
-): z.infer<typeof SteelDocsAuditArtifactSchema> {
-  return {
-    kind,
-    url: source.url,
-    mediaType: source.mediaType,
-    sha256: source.sha256,
-    byteLength: source.byteLength,
-  };
+class DeterministicSteelDocsReviewModel {
+  async review(input: z.input<typeof SteelDocsModelReviewInputSchema>): Promise<z.output<typeof SteelDocsModelReviewDataSchema>> {
+    const finalMessage =
+      input.outcome === "passed"
+        ? "Steel docs sync audit passed with no drift warnings."
+        : `Steel docs sync audit completed with ${input.findings.length} warnings. Review llms.txt coverage and agents runs reference linking.`;
+
+    return {
+      outcome: input.outcome,
+      findings: input.findings,
+      finalMessage,
+    };
+  }
 }

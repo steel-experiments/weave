@@ -279,6 +279,79 @@ export class PostgresMailboxEngine implements MailboxEngine, MailboxLeaseStore {
     );
   }
 
+  async deadLetterInbox(
+    ids: number[],
+    ownerId: string,
+    errorCode?: string,
+    errorMessage?: string,
+  ): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+
+    await this.pool.query(
+      `update agent_mailbox.mailbox_inbox
+       set state = 'dead-letter',
+           claimed_until = null,
+           last_error_code = $3,
+           last_error_message = $4,
+           updated_at = now()
+       where id = any($1::bigint[])
+         and claimed_by = $2`,
+      [ids, ownerId, errorCode ?? null, errorMessage ?? null],
+    );
+  }
+
+  async listInbox(mailboxId: string): Promise<
+    Array<{
+      id: number;
+      consumer: InboxConsumer;
+      eventSeq: number;
+      state: string;
+      attempts: number;
+      visibleAt: string;
+      claimedBy: string | null;
+      claimedUntil: string | null;
+      lastErrorCode: string | null;
+      lastErrorMessage: string | null;
+      updatedAt: string;
+    }>
+  > {
+    const result = await this.pool.query<{
+      id: string;
+      consumer: InboxConsumer;
+      event_seq: number;
+      state: string;
+      attempts: number;
+      visible_at: Date;
+      claimed_by: string | null;
+      claimed_until: Date | null;
+      last_error_code: string | null;
+      last_error_message: string | null;
+      updated_at: Date;
+    }>(
+      `select *
+       from agent_mailbox.mailbox_inbox
+       where mailbox_id = $1
+       order by id asc`,
+      [mailboxId],
+    );
+
+    return result.rows.map((row) => ({
+      id: Number(row.id),
+      consumer: row.consumer,
+      eventSeq: row.event_seq,
+      state: row.state,
+      attempts: row.attempts,
+      visibleAt: row.visible_at.toISOString(),
+      claimedBy: row.claimed_by,
+      claimedUntil: row.claimed_until?.toISOString() ?? null,
+      lastErrorCode: row.last_error_code,
+      lastErrorMessage: row.last_error_message,
+      updatedAt: row.updated_at.toISOString(),
+    }));
+  }
+
   async acquireLease(mailboxId: string, ownerId: string, ttlMs: number): Promise<Lease | null> {
     const token = randomUUID();
     const expiresAt = new Date(Date.now() + ttlMs);

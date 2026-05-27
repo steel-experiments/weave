@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import {
   ContractToolWorker,
+  MailboxArtifactSchema,
   MailboxRunner,
+  createMailboxRuntime,
   MailboxService,
   PostgresMailboxEngine,
-  RunnerDaemon,
-  ToolWorkerDaemon,
   createApiServer,
+  PostgresMailboxArtifactStore,
   createPool,
   getAgent,
   migrate,
@@ -20,14 +21,19 @@ import { steelDocsSyncApp } from "./app.js";
 import { startSteelFixtureServer } from "./fixtures.js";
 
 const ToolArtifactSchema = z.object({
+  artifactId: z.string().uuid(),
+  mailboxId: z.string().min(1),
+  toolCallId: z.string().uuid().nullable(),
   kind: z.enum(["docs-page", "llms-txt", "openapi-spec"]),
-  url: z.string().url(),
+  uri: z.string().min(1),
+  sourceUrl: z.string().url(),
   mediaType: z.string().min(1),
   sha256: z.string().length(64),
   byteLength: z.number().int().nonnegative(),
 });
 
 const ToolArtifactListSchema = z.array(ToolArtifactSchema).length(3);
+const PersistedArtifactListSchema = z.array(MailboxArtifactSchema).length(3);
 
 const pool = createPool();
 const fixtures = await startSteelFixtureServer();
@@ -36,16 +42,24 @@ try {
   await migrate(pool, { reset: true });
 
   const engine = new PostgresMailboxEngine(pool);
+  const artifactStore = new PostgresMailboxArtifactStore(pool);
+  const runtimeApp = { ...steelDocsSyncApp, artifactStore };
   const service = new MailboxService(engine);
-  const server = createApiServer(engine, service);
+  const server = createApiServer(engine, service, { artifactStore: runtimeApp.artifactStore });
   await listen(server);
 
   const address = server.address();
   assert(isAddressInfo(address));
   const baseUrl = `http://127.0.0.1:${address.port}`;
-  const activeAgent = getAgent(steelDocsSyncApp, "steel-docs");
-  const runnerDaemon = new RunnerDaemon(engine, new MailboxRunner(engine, engine, activeAgent.planner), 25);
-  const toolDaemon = new ToolWorkerDaemon(engine, new ContractToolWorker(engine, activeAgent.tools), 25);
+  const activeAgent = getAgent(runtimeApp, "steel-docs");
+  const runtime = createMailboxRuntime({
+    app: runtimeApp,
+    agentName: "steel-docs",
+    engine,
+    service,
+    intervalMs: 25,
+  });
+  const { runnerDaemon, toolDaemon } = runtime;
   runnerDaemon.start();
   toolDaemon.start();
 
@@ -67,11 +81,14 @@ try {
       return projection.status === "completed";
     });
     const summary = await getJson<MailboxSummary>(`${baseUrl}/mailboxes/${created.mailboxId}/summary`);
+    const artifactListing = await getJson<{ artifacts: z.infer<typeof PersistedArtifactListSchema> }>(
+      `${baseUrl}/mailboxes/${created.mailboxId}/artifacts`,
+    );
     const events = await getEvents(baseUrl, created.mailboxId);
 
     assert.deepEqual(
       events.filter((event) => event.type === "tool.requested").map((event) => event.payload.toolName),
-      ["steel.auditDocsSync"],
+      ["steel.auditDocsSync", "steel.modelReview"],
     );
     assert.equal(finalProjection.status, "completed");
     assert.equal(summary.outcome, "warning");
@@ -89,11 +106,15 @@ try {
     const artifacts = readArtifacts(toolCompleted.payload.output.data);
     assert.equal(artifacts.length, 3);
     assert.deepEqual(artifacts.map((artifact) => artifact.kind), ["docs-page", "llms-txt", "openapi-spec"]);
+    assert.deepEqual(
+      artifactListing.artifacts.map((artifact) => artifact.artifactId),
+      artifacts.map((artifact) => artifact.artifactId),
+    );
 
     console.log("Steel docs sync demo verified");
     console.log(`api=${baseUrl}`);
     console.log(`mailboxId=${created.mailboxId}`);
-    console.log(`app=${steelDocsSyncApp.name}`);
+    console.log(`app=${runtimeApp.name}`);
     console.log(`agent=${activeAgent.name}`);
     console.log(`tool=${activeAgent.tools[0]?.name ?? "unknown"}`);
     console.log(`outcome=${summary.outcome}`);

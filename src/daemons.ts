@@ -4,7 +4,7 @@ import { MockAsyncToolWorker } from "./mock-tool-worker.js";
 import type { InboxConsumer } from "./contracts.js";
 
 type ToolWorker = {
-  processOnce(mailboxId: string): Promise<{ acted: boolean; eventType?: string }>;
+  processOnce(mailboxId: string): Promise<{ acted: boolean; eventType?: string; errorCode?: string; errorMessage?: string }>;
 };
 
 export class RunnerDaemon {
@@ -100,18 +100,29 @@ export class ToolWorkerDaemon {
       const byMailbox = groupByMailbox(items);
 
       for (const [mailboxId, mailboxItems] of byMailbox) {
+        let lastResult: Awaited<ReturnType<ToolWorker["processOnce"]>> = { acted: false };
         while (true) {
           const result = await this.worker.processOnce(mailboxId);
+          lastResult = result;
           if (!result.acted || result.eventType === "tool.completed" || result.eventType === "tool.failed") {
             break;
           }
           await sleep(25);
         }
 
-        await this.engine.completeInbox(
-          mailboxItems.map((item) => item.id),
-          this.ownerId,
-        );
+        if (lastResult.eventType === "tool.failed") {
+          await this.engine.deadLetterInbox(
+            mailboxItems.map((item) => item.id),
+            this.ownerId,
+            lastResult.errorCode,
+            lastResult.errorMessage,
+          );
+        } else {
+          await this.engine.completeInbox(
+            mailboxItems.map((item) => item.id),
+            this.ownerId,
+          );
+        }
       }
     } finally {
       this.running = false;

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
+import type { MailboxArtifactStore } from "./artifacts.js";
 import type { MailboxEngine } from "./contracts.js";
 import {
   ActorSchema,
@@ -39,6 +40,7 @@ export type ApiRouteHandler = (
 ) => Promise<boolean> | boolean;
 
 export type ApiServerOptions = {
+  artifactStore?: MailboxArtifactStore;
   observability?: ObservabilitySink;
   observabilityReader?: ObservabilityReader;
   beforeRoutes?: readonly ApiRouteHandler[];
@@ -57,6 +59,7 @@ export function createApiServer(engine: MailboxEngine, service: MailboxService, 
         request,
         response,
         options.beforeRoutes,
+        options.artifactStore,
         options.observabilityReader,
         observability,
         span,
@@ -95,6 +98,7 @@ async function routeRequest(
   request: IncomingMessage,
   response: ServerResponse,
   beforeRoutes: readonly ApiRouteHandler[] | undefined,
+  artifactStore: MailboxArtifactStore | undefined,
   observabilityReader: ObservabilityReader | undefined,
   observability: ObservabilitySink,
   span: { traceId: string; spanId: string; mailboxId?: string },
@@ -199,6 +203,30 @@ async function routeRequest(
     const mailboxId = decodeURIComponent(requiredMatch(streamMatch, 1));
     const fromSeq = resolveStreamFromSeq(request, url);
     await streamMailbox(engine, response, mailboxId, fromSeq);
+    return;
+  }
+
+  const artifactsMatch = path.match(/^\/mailboxes\/([^/]+)\/artifacts$/);
+  if (method === "GET" && artifactsMatch) {
+    if (!artifactStore) {
+      writeJson(response, 503, { error: "Artifact store not configured" });
+      return;
+    }
+    const mailboxId = decodeURIComponent(requiredMatch(artifactsMatch, 1));
+    const artifacts = await artifactStore.listArtifacts(mailboxId);
+    writeJson(response, 200, { artifacts });
+    return;
+  }
+
+  const inboxDiagnosticsMatch = path.match(/^\/mailboxes\/([^/]+)\/diagnostics\/inbox$/);
+  if (method === "GET" && inboxDiagnosticsMatch) {
+    if (!("listInbox" in engine) || typeof engine.listInbox !== "function") {
+      writeJson(response, 503, { error: "Inbox diagnostics not configured" });
+      return;
+    }
+    const mailboxId = decodeURIComponent(requiredMatch(inboxDiagnosticsMatch, 1));
+    const items = await engine.listInbox(mailboxId);
+    writeJson(response, 200, { items });
     return;
   }
 

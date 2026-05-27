@@ -3,11 +3,12 @@ import { createHmac } from "node:crypto";
 import { AddressInfo } from "node:net";
 import {
   ContractToolWorker,
+  MailboxArtifactSchema,
   MailboxRunner,
+  createMailboxRuntime,
   MailboxService,
+  PostgresMailboxArtifactStore,
   PostgresMailboxEngine,
-  RunnerDaemon,
-  ToolWorkerDaemon,
   createPool,
   getAgent,
   migrate,
@@ -21,14 +22,41 @@ import { startSteelFixtureServer } from "./fixtures.js";
 import { createSteelDocsSyncApiServer, type SteelDocsSyncWebhookPayload } from "./server.js";
 
 const ToolArtifactSchema = z.object({
+  artifactId: z.string().uuid(),
+  mailboxId: z.string().min(1),
+  toolCallId: z.string().uuid().nullable(),
   kind: z.enum(["docs-page", "llms-txt", "openapi-spec"]),
-  url: z.string().url(),
+  uri: z.string().min(1),
+  sourceUrl: z.string().url(),
   mediaType: z.string().min(1),
   sha256: z.string().length(64),
   byteLength: z.number().int().nonnegative(),
 });
 
 const ToolArtifactListSchema = z.array(ToolArtifactSchema).length(3);
+const ToolBaselineSchema = z.object({
+  kind: z.enum(["docs-page", "llms-txt", "openapi-spec"]),
+  snapshotKey: z.string().min(1),
+  previousArtifactId: z.string().uuid().nullable(),
+  previousSha256: z.string().length(64).nullable(),
+  changed: z.boolean(),
+});
+const PersistedArtifactListSchema = z.array(MailboxArtifactSchema).length(3);
+const InboxDiagnosticsSchema = z.array(
+  z.object({
+    id: z.number().int().positive(),
+    consumer: z.string().min(1),
+    eventSeq: z.number().int().nonnegative(),
+    state: z.string().min(1),
+    attempts: z.number().int().nonnegative(),
+    visibleAt: z.string().datetime(),
+    claimedBy: z.string().nullable(),
+    claimedUntil: z.string().datetime().nullable(),
+    lastErrorCode: z.string().nullable(),
+    lastErrorMessage: z.string().nullable(),
+    updatedAt: z.string().datetime(),
+  }),
+);
 
 const webhookSecret = "steel-docs-sync-demo-secret";
 const pool = createPool();
@@ -38,9 +66,12 @@ try {
   await migrate(pool, { reset: true });
 
   const engine = new PostgresMailboxEngine(pool);
+  const artifactStore = new PostgresMailboxArtifactStore(pool);
+  const runtimeApp = { ...steelDocsSyncApp, artifactStore };
   const service = new MailboxService(engine);
   const fixtureHost = new URL(fixtures.baseUrl).host;
   const server = createSteelDocsSyncApiServer(engine, service, {
+    artifactStore: runtimeApp.artifactStore,
     webhookSecret,
     allowedHosts: [fixtureHost],
   });
@@ -49,9 +80,15 @@ try {
   const address = server.address();
   assert(isAddressInfo(address));
   const baseUrl = `http://127.0.0.1:${address.port}`;
-  const activeAgent = getAgent(steelDocsSyncApp, "steel-docs");
-  const runnerDaemon = new RunnerDaemon(engine, new MailboxRunner(engine, engine, activeAgent.planner), 25);
-  const toolDaemon = new ToolWorkerDaemon(engine, new ContractToolWorker(engine, activeAgent.tools), 25);
+  const activeAgent = getAgent(runtimeApp, "steel-docs");
+  const runtime = createMailboxRuntime({
+    app: runtimeApp,
+    agentName: "steel-docs",
+    engine,
+    service,
+    intervalMs: 25,
+  });
+  const { runnerDaemon, toolDaemon } = runtime;
   runnerDaemon.start();
   toolDaemon.start();
 
@@ -96,6 +133,9 @@ try {
     });
     const finalProjection = await getJson<MailboxProjection>(`${baseUrl}/mailboxes/${created.body.mailboxId}`);
     const summary = await getJson<MailboxSummary>(`${baseUrl}/mailboxes/${created.body.mailboxId}/summary`);
+    const artifactListing = await getJson<{ artifacts: z.infer<typeof PersistedArtifactListSchema> }>(
+      `${baseUrl}/mailboxes/${created.body.mailboxId}/artifacts`,
+    );
     const events = await getEvents(baseUrl, created.body.mailboxId);
     const sessionStarted = events.find((event) => event.type === "session.started");
     const promptReceived = events.find((event) => event.type === "prompt.received");
@@ -129,15 +169,58 @@ try {
       llmsTxtUrl: payload.llmsTxtUrl,
       openApiSpecUrl: payload.openApiSpecUrl,
     });
+    assert.deepEqual(
+      events.filter((event) => event.type === "tool.requested").map((event) => event.payload.toolName),
+      ["steel.auditDocsSync", "steel.modelReview"],
+    );
     assert(toolCompleted?.type === "tool.completed");
     const artifacts = readArtifacts(toolCompleted.payload.output.data);
     assert.equal(artifacts.length, 3);
-    assert.deepEqual(artifacts.map((artifact) => artifact.url), [payload.docsBaseUrl, payload.llmsTxtUrl, payload.openApiSpecUrl]);
+    assert.deepEqual(artifacts.map((artifact) => artifact.sourceUrl), [payload.docsBaseUrl, payload.llmsTxtUrl, payload.openApiSpecUrl]);
+    assert.deepEqual(
+      artifactListing.artifacts.map((artifact) => artifact.artifactId),
+      artifacts.map((artifact) => artifact.artifactId),
+    );
+    const baselines = readBaselines(toolCompleted.payload.output.data);
+    assert(baselines.every((baseline) => baseline.previousArtifactId === null));
     assert(finalResponse?.type === "agent.response.produced");
+
+    const flakySuccessPayload: SteelDocsSyncWebhookPayload = {
+      ...payload,
+      runAttempt: 2,
+      llmsTxtUrl: `${fixtures.baseUrl}/flaky-llms.txt`,
+    };
+    const flakySuccessCreated = await postWebhook(baseUrl, flakySuccessPayload);
+    assert.equal(flakySuccessCreated.status, 202);
+    assert(typeof flakySuccessCreated.body.mailboxId === "string");
+    const flakyStreamed = await readTerminalStream(baseUrl, flakySuccessCreated.body.mailboxId);
+    assert.equal(flakyStreamed.completed.status, "completed");
+    const flakyEvents = await getEvents(baseUrl, flakySuccessCreated.body.mailboxId);
+    assert(
+      flakyEvents.some(
+        (event) => event.type === "tool.progress" && event.payload.message.includes("Retrying after transient failure"),
+      ),
+    );
+
+    const baselineSuccessPayload: SteelDocsSyncWebhookPayload = {
+      ...payload,
+      runAttempt: 3,
+    };
+    const baselineSuccessCreated = await postWebhook(baseUrl, baselineSuccessPayload);
+    assert.equal(baselineSuccessCreated.status, 202);
+    assert(typeof baselineSuccessCreated.body.mailboxId === "string");
+    const baselineStreamed = await readTerminalStream(baseUrl, baselineSuccessCreated.body.mailboxId);
+    assert.equal(baselineStreamed.completed.status, "completed");
+    const baselineEvents = await getEvents(baseUrl, baselineSuccessCreated.body.mailboxId);
+    const baselineToolCompleted = baselineEvents.find((event) => event.type === "tool.completed");
+    assert(baselineToolCompleted?.type === "tool.completed");
+    const baselineComparisons = readBaselines(baselineToolCompleted.payload.output.data);
+    assert(baselineComparisons.every((baseline) => baseline.previousArtifactId !== null));
+    assert(baselineComparisons.every((baseline) => baseline.changed === false));
 
     const executionFailurePayload: SteelDocsSyncWebhookPayload = {
       ...payload,
-      runAttempt: 2,
+      runAttempt: 4,
       llmsTxtUrl: `${fixtures.baseUrl}/missing.txt`,
     };
     const executionFailureCreated = await postWebhook(baseUrl, executionFailurePayload);
@@ -158,12 +241,21 @@ try {
     assert.equal(failedStreamed.summary.execution.status, "failed");
     assert.equal(failedStreamed.completed.status, "failed");
     assert(failedStreamed.events.every((event) => (event.seq ?? 0) > failedFirstStreamEvent.id));
+    const failedInboxDiagnostics = await getJson<{ items: z.infer<typeof InboxDiagnosticsSchema> }>(
+      `${baseUrl}/mailboxes/${executionFailureCreated.body.mailboxId}/diagnostics/inbox`,
+    );
+    assert(
+      failedInboxDiagnostics.items.some(
+        (item) => item.state === "dead-letter" && item.lastErrorCode === "execution_failed",
+      ),
+    );
 
     console.log("Steel webhook demo verified");
     console.log(`api=${baseUrl}`);
     console.log(`mailboxId=${created.body.mailboxId}`);
     console.log(`statusUrl=${created.body.statusUrl}`);
     console.log(`eventsUrl=${created.body.eventsUrl}`);
+    console.log(`artifactsUrl=${baseUrl}/mailboxes/${created.body.mailboxId}/artifacts`);
     console.log(`summaryUrl=${baseUrl}/mailboxes/${created.body.mailboxId}/summary`);
     console.log(`streamUrl=${baseUrl}/mailboxes/${created.body.mailboxId}/stream`);
     console.log(`outcome=${summary.outcome}`);
@@ -174,6 +266,7 @@ try {
     console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
     console.log(`failedMailboxId=${executionFailureCreated.body.mailboxId}`);
     console.log(`failedExecution=${failedSummary.execution.status}`);
+    console.log(`failedInboxState=${failedInboxDiagnostics.items.at(-1)?.state ?? "unknown"}`);
   } finally {
     await runnerDaemon.stop();
     await toolDaemon.stop();
@@ -361,4 +454,13 @@ function readArtifacts(data: unknown): z.infer<typeof ToolArtifactListSchema> {
     })
     .parse(data);
   return artifacts.artifacts;
+}
+
+function readBaselines(data: unknown): z.infer<typeof ToolBaselineSchema>[] {
+  const baselines = z
+    .object({
+      baselines: z.array(ToolBaselineSchema).length(3),
+    })
+    .parse(data);
+  return baselines.baselines;
 }

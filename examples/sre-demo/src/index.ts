@@ -4,11 +4,10 @@ import {
   CompositeObservabilitySink,
   ContractToolWorker,
   MailboxRunner,
+  createMailboxRuntime,
   MailboxService,
   PostgresObservabilitySink,
   PostgresMailboxEngine,
-  RunnerDaemon,
-  ToolWorkerDaemon,
   createApiServer,
   createPool,
   getAgent,
@@ -53,17 +52,15 @@ try {
   assert(isAddressInfo(address));
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const activeAgent = getAgent(runtimeApp, "sre");
-
-  const runnerDaemon = new RunnerDaemon(
+  const runtime = createMailboxRuntime({
+    app: runtimeApp,
+    agentName: "sre",
     engine,
-    new MailboxRunner(engine, engine, activeAgent.planner, undefined, runtimeApp.observability),
-    25,
-  );
-  const toolDaemon = new ToolWorkerDaemon(
-    engine,
-    new ContractToolWorker(engine, activeAgent.tools, "sre-tool-worker", runtimeApp.credentialProvider, runtimeApp.observability),
-    25,
-  );
+    service,
+    intervalMs: 25,
+    toolWorkerId: "sre-tool-worker",
+  });
+  const { runnerDaemon, toolDaemon } = runtime;
   runnerDaemon.start();
   toolDaemon.start();
 

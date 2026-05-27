@@ -7,6 +7,7 @@ import {
   type MailboxEvent,
 } from "@agent-mailbox/core";
 import { z } from "zod";
+import { SteelDocsAuditDataSchema, SteelDocsModelReviewDataSchema } from "./tools.js";
 
 type PromptReceivedEvent = Extract<MailboxEvent, { type: "prompt.received" }>;
 type ToolCompletedEvent = Extract<MailboxEvent, { type: "tool.completed" }>;
@@ -43,8 +44,13 @@ export class DeterministicSteelDocsAgent implements AgentPlanner {
     }
 
     const auditCompleted = completedTool(events, "steel.auditDocsSync");
-    if (auditCompleted && !events.some((event) => event.type === "agent.response.produced")) {
-      return this.produceReport(mailboxId, auditCompleted);
+    if (auditCompleted && !toolRequested(events, "steel.modelReview")) {
+      return this.requestModelReview(mailboxId, auditCompleted);
+    }
+
+    const reviewCompleted = completedTool(events, "steel.modelReview");
+    if (reviewCompleted && !events.some((event) => event.type === "agent.response.produced")) {
+      return this.produceReport(mailboxId, reviewCompleted);
     }
 
     return null;
@@ -76,51 +82,60 @@ export class DeterministicSteelDocsAgent implements AgentPlanner {
     };
   }
 
-  private produceReport(mailboxId: string, cause: ToolCompletedEvent): AgentPlan {
-    const stepId = deterministicUuid("steel-step", mailboxId, "produce-report");
-    const findingWarningA = deterministicUuid("steel-finding", mailboxId, "llms-api-gap");
-    const findingWarningB = deterministicUuid("steel-finding", mailboxId, "openapi-link-gap");
+  private requestModelReview(mailboxId: string, cause: ToolCompletedEvent): AgentPlan {
+    const stepId = deterministicUuid("steel-step", mailboxId, "request-model-review");
+    const auditData = SteelDocsAuditDataSchema.parse(cause.payload.output.data);
 
     return {
       resumeReason: "tool-completed",
       events: [
         this.stepStarted(mailboxId, cause, stepId, "tool-completed"),
         {
-          eventId: eventKey(mailboxId, "agent.finding.produced", findingWarningA),
+          eventId: eventKey(mailboxId, "tool.requested", "steel.modelReview"),
           mailboxId,
-          type: "agent.finding.produced",
+          type: "tool.requested",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
           causationId: cause.eventId,
           actor: { type: "agent", id: "steel-docs-agent" },
           payload: {
-            findingId: findingWarningA,
-            severity: "warning",
-            summary: "llms.txt coverage lags behind the published API reference navigation.",
-            evidence: [
-              { source: "llms.txt", summary: "Authentication reference path missing from fixture llms.txt." },
-              { source: "docs-nav", summary: "Published navigation includes /reference/api/authentication." },
-            ],
+            toolCallId: deterministicUuid("steel-tool-call", mailboxId, "steel.modelReview"),
+            toolName: "steel.modelReview",
+            args: auditData,
           },
         },
-        {
-          eventId: eventKey(mailboxId, "agent.finding.produced", findingWarningB),
-          mailboxId,
-          type: "agent.finding.produced",
-          occurredAt: nowIso(),
-          correlationId: cause.correlationId,
-          causationId: cause.eventId,
-          actor: { type: "agent", id: "steel-docs-agent" },
-          payload: {
-            findingId: findingWarningB,
-            severity: "warning",
-            summary: "OpenAPI surface is ahead of the linked docs entry points for agents runs.",
-            evidence: [
-              { source: "openapi", summary: "Fixture spec includes /v1/agents/runs." },
-              { source: "docs-nav", summary: "Fixture landing path has no linked page for agents runs." },
-            ],
-          },
-        },
+        this.stepCompleted(mailboxId, cause, stepId, "requested-tool"),
+      ],
+    };
+  }
+
+  private produceReport(mailboxId: string, cause: ToolCompletedEvent): AgentPlan {
+    const stepId = deterministicUuid("steel-step", mailboxId, "produce-report");
+    const review = SteelDocsModelReviewDataSchema.parse(cause.payload.output.data);
+    const findingEvents: MailboxEvent[] = review.findings.map((finding, index) => ({
+      eventId: eventKey(mailboxId, "agent.finding.produced", `steel-model-review:${index}`),
+      mailboxId,
+      type: "agent.finding.produced",
+      occurredAt: nowIso(),
+      correlationId: cause.correlationId,
+      causationId: cause.eventId,
+      actor: { type: "agent", id: "steel-docs-agent" },
+      payload: {
+        findingId: deterministicUuid("steel-finding", mailboxId, `model-review:${index}`),
+        severity: finding.severity,
+        summary: finding.summary,
+        evidence: finding.evidence.map((evidence, evidenceIndex) => ({
+          source: `model:${index}:${evidenceIndex}`,
+          summary: evidence,
+        })),
+      },
+    }));
+
+    return {
+      resumeReason: "tool-completed",
+      events: [
+        this.stepStarted(mailboxId, cause, stepId, "tool-completed"),
+        ...findingEvents,
         {
           eventId: eventKey(mailboxId, "agent.response.produced", "steel-final"),
           mailboxId,
@@ -130,7 +145,7 @@ export class DeterministicSteelDocsAgent implements AgentPlanner {
           causationId: cause.eventId,
           actor: { type: "agent", id: "steel-docs-agent" },
           payload: {
-            message: "Steel docs sync audit completed with 2 warnings. Review llms.txt coverage and agents runs reference linking.",
+            message: review.finalMessage,
           },
         },
         this.stepCompleted(mailboxId, cause, stepId, "produced-response"),
