@@ -13,6 +13,7 @@ import {
   migrate,
   type MailboxEvent,
   type MailboxProjection,
+  type MailboxSummary,
 } from "@agent-mailbox/core";
 import { steelDocsSyncApp } from "./app.js";
 
@@ -43,6 +44,7 @@ try {
     const finalProjection = await waitForProjection(baseUrl, created.mailboxId, (projection) => {
       return projection.status === "completed";
     });
+    const summary = await getJson<MailboxSummary>(`${baseUrl}/mailboxes/${created.mailboxId}/summary`);
     const events = await getEvents(baseUrl, created.mailboxId);
 
     assert.deepEqual(
@@ -50,6 +52,8 @@ try {
       ["steel.auditDocsSync"],
     );
     assert.equal(finalProjection.status, "completed");
+    assert.equal(summary.outcome, "warning");
+    assert.deepEqual(summary.findings, { critical: 0, warning: 2, info: 0 });
     assert.equal(finalProjection.pendingGateIds.length, 0);
     assert.equal(events.length, finalProjection.tailSeq);
     assert.equal(events.filter((event) => event.type === "agent.finding.produced").length, 2);
@@ -65,8 +69,9 @@ try {
     console.log(`app=${steelDocsSyncApp.name}`);
     console.log(`agent=${activeAgent.name}`);
     console.log(`tool=${activeAgent.tools[0]?.name ?? "unknown"}`);
+    console.log(`outcome=${summary.outcome}`);
     console.log(`auditSummary=${toolCompleted.payload.output.summary}`);
-    console.log(`finalMessage=${finalResponse.payload.message}`);
+    console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
   } finally {
     await runnerDaemon.stop();
     await toolDaemon.stop();

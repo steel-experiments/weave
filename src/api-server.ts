@@ -1,7 +1,12 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 import type { MailboxEngine } from "./contracts.js";
-import { ActorSchema, SessionMetadataSchema, SessionSourceSchema } from "./events.js";
+import {
+  ActorSchema,
+  SessionMetadataSchema,
+  SessionSourceSchema,
+  type MailboxEvent,
+} from "./events.js";
 import type { MailboxService } from "./mailbox-service.js";
 import {
   NoopObservabilitySink,
@@ -13,6 +18,7 @@ import {
   type ObservabilityReader,
   type ObservabilitySink,
 } from "./observability.js";
+import { buildMailboxSummary } from "./summary.js";
 
 const CreateMailboxBodySchema = z.object({
   prompt: z.string().min(1),
@@ -27,9 +33,15 @@ const ResolveGateBodySchema = z.object({
   comment: z.string().optional(),
 });
 
+export type ApiRouteHandler = (
+  request: IncomingMessage,
+  response: ServerResponse,
+) => Promise<boolean> | boolean;
+
 export type ApiServerOptions = {
   observability?: ObservabilitySink;
   observabilityReader?: ObservabilityReader;
+  beforeRoutes?: readonly ApiRouteHandler[];
 };
 
 export function createApiServer(engine: MailboxEngine, service: MailboxService, options: ApiServerOptions = {}): Server {
@@ -39,7 +51,16 @@ export function createApiServer(engine: MailboxEngine, service: MailboxService, 
     const startedAt = new Date();
     let statusCode = 500;
     try {
-      await routeRequest(engine, service, request, response, options.observabilityReader, observability, span);
+      await routeRequest(
+        engine,
+        service,
+        request,
+        response,
+        options.beforeRoutes,
+        options.observabilityReader,
+        observability,
+        span,
+      );
       statusCode = response.statusCode;
       await safeEmitLog(observability, {
         ...span,
@@ -69,10 +90,17 @@ async function routeRequest(
   service: MailboxService,
   request: IncomingMessage,
   response: ServerResponse,
+  beforeRoutes: readonly ApiRouteHandler[] | undefined,
   observabilityReader: ObservabilityReader | undefined,
   observability: ObservabilitySink,
   span: { traceId: string; spanId: string; mailboxId?: string },
 ): Promise<void> {
+  for (const route of beforeRoutes ?? []) {
+    if (await route(request, response)) {
+      return;
+    }
+  }
+
   const method = request.method ?? "GET";
   const url = new URL(request.url ?? "/", "http://localhost");
   const path = url.pathname;
@@ -137,6 +165,36 @@ async function routeRequest(
       attributes: { count: events.length, fromSeq, limit },
     });
     writeJson(response, 200, { events });
+    return;
+  }
+
+  const summaryMatch = path.match(/^\/mailboxes\/([^/]+)\/summary$/);
+  if (method === "GET" && summaryMatch) {
+    const mailboxId = decodeURIComponent(requiredMatch(summaryMatch, 1));
+    const projection = await engine.getProjection(mailboxId);
+    if (!projection) {
+      writeJson(response, 404, { error: "Mailbox not found" });
+      return;
+    }
+    const events = await engine.read(mailboxId);
+    const summary = buildMailboxSummary(projection, events);
+    await safeEmitLog(observability, {
+      ...span,
+      mailboxId,
+      timestamp: nowIso(),
+      level: "info",
+      message: "Mailbox summary read",
+      attributes: { status: summary.status, outcome: summary.outcome, tailSeq: summary.tailSeq },
+    });
+    writeJson(response, 200, summary);
+    return;
+  }
+
+  const streamMatch = path.match(/^\/mailboxes\/([^/]+)\/stream$/);
+  if (method === "GET" && streamMatch) {
+    const mailboxId = decodeURIComponent(requiredMatch(streamMatch, 1));
+    const fromSeq = parseOptionalInt(url.searchParams.get("fromSeq")) ?? 0;
+    await streamMailbox(engine, response, mailboxId, fromSeq);
     return;
   }
 
@@ -205,6 +263,92 @@ function writeJson(response: ServerResponse, statusCode: number, body: unknown):
   response.end(JSON.stringify(body));
 }
 
+async function streamMailbox(
+  engine: MailboxEngine,
+  response: ServerResponse,
+  mailboxId: string,
+  fromSeq: number,
+): Promise<void> {
+  const projection = await engine.getProjection(mailboxId);
+  if (!projection) {
+    writeJson(response, 404, { error: "Mailbox not found" });
+    return;
+  }
+
+  response.statusCode = 200;
+  response.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+  });
+  response.flushHeaders();
+
+  let closed = false;
+  let nextSeq = fromSeq;
+  let lastKeepaliveAt = Date.now();
+  const history = await engine.read(mailboxId, { fromSeq });
+  nextSeq = writeEventBatch(response, history, nextSeq);
+  const initialProjection = await engine.getProjection(mailboxId);
+  if (!initialProjection) {
+    response.end();
+    return;
+  }
+  writeSseEvent(response, "mailbox.summary", buildMailboxSummary(initialProjection, await engine.read(mailboxId)));
+
+  const close = (): void => {
+    closed = true;
+  };
+  response.on("close", close);
+  response.on("error", close);
+
+  try {
+    while (!closed) {
+      const events = await engine.read(mailboxId, { fromSeq: nextSeq, limit: 100 });
+      if (events.length > 0) {
+        nextSeq = writeEventBatch(response, events, nextSeq);
+        const latestProjection = await engine.getProjection(mailboxId);
+        if (!latestProjection) {
+          break;
+        }
+        writeSseEvent(response, "mailbox.summary", buildMailboxSummary(latestProjection, await engine.read(mailboxId)));
+        lastKeepaliveAt = Date.now();
+      } else if (Date.now() - lastKeepaliveAt >= 5_000) {
+        writeSseEvent(response, "mailbox.keepalive", { mailboxId, timestamp: nowIso() });
+        lastKeepaliveAt = Date.now();
+      }
+
+      await sleep(100);
+    }
+  } finally {
+    response.off("close", close);
+    response.off("error", close);
+    if (!response.writableEnded) {
+      response.end();
+    }
+  }
+}
+
+function writeEventBatch(response: ServerResponse, events: MailboxEvent[], nextSeq: number): number {
+  let updatedNextSeq = nextSeq;
+  for (const event of events) {
+    writeSseEvent(response, "mailbox.event", event, event.seq?.toString());
+    updatedNextSeq = (event.seq ?? updatedNextSeq) + 1;
+  }
+  return updatedNextSeq;
+}
+
+function writeSseEvent(response: ServerResponse, eventName: string, data: unknown, id?: string): void {
+  if (id) {
+    response.write(`id: ${id}\n`);
+  }
+  response.write(`event: ${eventName}\n`);
+  const payload = JSON.stringify(data);
+  for (const line of payload.split("\n")) {
+    response.write(`data: ${line}\n`);
+  }
+  response.write("\n");
+}
+
 function apiSpanContext(request: IncomingMessage): { traceId: string; spanId: string; mailboxId?: string } {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
   const mailboxMatch = path.match(/^\/mailboxes\/([^/]+)/);
@@ -257,4 +401,8 @@ function requiredMatch(match: RegExpMatchArray, index: number): string {
     throw new Error("Invalid route match");
   }
   return value;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

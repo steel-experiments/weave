@@ -6,9 +6,30 @@ import {
   type AgentPlanner,
   type MailboxEvent,
 } from "@agent-mailbox/core";
+import { z } from "zod";
 
 type PromptReceivedEvent = Extract<MailboxEvent, { type: "prompt.received" }>;
 type ToolCompletedEvent = Extract<MailboxEvent, { type: "tool.completed" }>;
+
+const SteelDocsSessionMetadataSchema = z.object({
+  repository: z.literal("steel-dev/docs"),
+  ref: z.string().min(1),
+  sha: z.string().min(7),
+  mode: z.enum(["production-drift", "pull-request", "manual"]),
+  docsBaseUrl: z.string().url(),
+  llmsTxtUrl: z.string().url(),
+  openApiSpecUrl: z.string().url().optional(),
+});
+
+const defaultAuditInput = {
+  repository: "steel-dev/docs",
+  ref: "refs/heads/main",
+  sha: "8d2c4ef",
+  mode: "production-drift",
+  docsBaseUrl: "https://docs.steel.dev",
+  llmsTxtUrl: "https://docs.steel.dev/llms.txt",
+  openApiSpecUrl: "https://docs.steel.dev/openapi.json",
+} satisfies z.input<typeof SteelDocsSessionMetadataSchema>;
 
 export class DeterministicSteelDocsAgent implements AgentPlanner {
   plan(mailboxId: string, events: MailboxEvent[]): AgentPlan | null {
@@ -18,7 +39,7 @@ export class DeterministicSteelDocsAgent implements AgentPlanner {
     }
 
     if (!toolRequested(events, "steel.auditDocsSync")) {
-      return this.requestAudit(mailboxId, prompt);
+      return this.requestAudit(mailboxId, prompt, events);
     }
 
     const auditCompleted = completedTool(events, "steel.auditDocsSync");
@@ -29,8 +50,9 @@ export class DeterministicSteelDocsAgent implements AgentPlanner {
     return null;
   }
 
-  private requestAudit(mailboxId: string, cause: PromptReceivedEvent): AgentPlan {
+  private requestAudit(mailboxId: string, cause: PromptReceivedEvent, events: MailboxEvent[]): AgentPlan {
     const stepId = deterministicUuid("steel-step", mailboxId, "request-audit");
+    const auditInput = readAuditInput(events) ?? defaultAuditInput;
     return {
       resumeReason: "new-prompt",
       events: [
@@ -46,15 +68,7 @@ export class DeterministicSteelDocsAgent implements AgentPlanner {
           payload: {
             toolCallId: deterministicUuid("steel-tool-call", mailboxId, "steel.auditDocsSync"),
             toolName: "steel.auditDocsSync",
-            args: {
-              repository: "steel-dev/docs",
-              ref: "refs/heads/main",
-              sha: "8d2c4ef",
-              mode: "production-drift",
-              docsBaseUrl: "https://docs.steel.dev",
-              llmsTxtUrl: "https://docs.steel.dev/llms.txt",
-              openApiSpecUrl: "https://docs.steel.dev/openapi.json",
-            },
+            args: auditInput,
           },
         },
         this.stepCompleted(mailboxId, cause, stepId, "requested-tool"),
@@ -181,4 +195,16 @@ function requestedToolName(events: MailboxEvent[], event: ToolCompletedEvent): s
       candidate.type === "tool.requested" && candidate.payload.toolCallId === event.payload.toolCallId,
   );
   return request?.payload.toolName;
+}
+
+function readAuditInput(events: MailboxEvent[]): z.output<typeof SteelDocsSessionMetadataSchema> | null {
+  const sessionStarted = events.find(
+    (event): event is Extract<MailboxEvent, { type: "session.started" }> => event.type === "session.started",
+  );
+  if (!sessionStarted?.payload.metadata) {
+    return null;
+  }
+
+  const result = SteelDocsSessionMetadataSchema.safeParse(sessionStarted.payload.metadata);
+  return result.success ? result.data : null;
 }

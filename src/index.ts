@@ -12,6 +12,7 @@ export * from "./mock-tool-worker.js";
 export * from "./postgres-engine.js";
 export * from "./postgres-observability.js";
 export * from "./runner.js";
+export * from "./summary.js";
 export * from "./credentials.js";
 export * from "./observability.js";
 export * from "./otlp-observability.js";

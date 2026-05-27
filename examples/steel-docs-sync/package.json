@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "demo": "tsx src/index.ts",
+    "webhook-demo": "tsx src/webhook-demo.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

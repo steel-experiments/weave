@@ -305,6 +305,25 @@ export const MailboxProjectionSchema = z.object({
 });
 export type MailboxProjection = z.infer<typeof MailboxProjectionSchema>;
 
+export const MailboxSummaryOutcomeSchema = z.enum(["passed", "warning", "failed"]);
+export type MailboxSummaryOutcome = z.infer<typeof MailboxSummaryOutcomeSchema>;
+
+export const MailboxSummarySchema = z.object({
+  mailboxId: z.string().min(1),
+  status: MailboxStatusSchema,
+  outcome: MailboxSummaryOutcomeSchema.nullable(),
+  findings: z.object({
+    critical: z.number().int().nonnegative(),
+    warning: z.number().int().nonnegative(),
+    info: z.number().int().nonnegative(),
+  }),
+  finalMessage: z.string().min(1).nullable(),
+  tailSeq: z.number().int().nonnegative(),
+  pendingGateIds: z.array(z.string().uuid()),
+  updatedAt: z.string().datetime(),
+});
+export type MailboxSummary = z.infer<typeof MailboxSummarySchema>;
+
 export function deterministicUuid(...parts: string[]): string {
   const hash = createHash("sha256").update(parts.join("\0")).digest();
   const bytes = Buffer.from(hash.subarray(0, 16));
