@@ -2,6 +2,16 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z } from "zod";
 import type { MailboxEngine } from "./contracts.js";
 import type { MailboxService } from "./mailbox-service.js";
+import {
+  NoopObservabilitySink,
+  elapsedMs,
+  newSpanId,
+  newTraceId,
+  safeEmitLog,
+  safeEmitSpan,
+  type ObservabilityReader,
+  type ObservabilitySink,
+} from "./observability.js";
 
 const CreateMailboxBodySchema = z.object({
   prompt: z.string().min(1),
@@ -12,12 +22,38 @@ const ResolveGateBodySchema = z.object({
   comment: z.string().optional(),
 });
 
-export function createApiServer(engine: MailboxEngine, service: MailboxService): Server {
+export type ApiServerOptions = {
+  observability?: ObservabilitySink;
+  observabilityReader?: ObservabilityReader;
+};
+
+export function createApiServer(engine: MailboxEngine, service: MailboxService, options: ApiServerOptions = {}): Server {
+  const observability = options.observability ?? new NoopObservabilitySink();
   return createServer(async (request, response) => {
+    const span = apiSpanContext(request);
+    const startedAt = new Date();
+    let statusCode = 500;
     try {
-      await routeRequest(engine, service, request, response);
+      await routeRequest(engine, service, request, response, options.observabilityReader, observability, span);
+      statusCode = response.statusCode;
+      await safeEmitLog(observability, {
+        ...span,
+        timestamp: nowIso(),
+        level: statusCode >= 500 ? "error" : statusCode >= 400 ? "warn" : "info",
+        message: "API request completed",
+        attributes: { method: request.method ?? "GET", path: request.url ?? "/", statusCode },
+      });
+      await emitApiSpan(observability, span, startedAt, statusCode >= 500 ? "error" : "ok", { statusCode });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
+      await safeEmitLog(observability, {
+        ...span,
+        timestamp: nowIso(),
+        level: "error",
+        message: "API request failed",
+        attributes: { method: request.method ?? "GET", path: request.url ?? "/", error: message },
+      });
+      await emitApiSpan(observability, span, startedAt, "error", { error: message });
       writeJson(response, 500, { error: message });
     }
   });
@@ -28,6 +64,9 @@ async function routeRequest(
   service: MailboxService,
   request: IncomingMessage,
   response: ServerResponse,
+  observabilityReader: ObservabilityReader | undefined,
+  observability: ObservabilitySink,
+  span: { traceId: string; spanId: string; mailboxId?: string },
 ): Promise<void> {
   const method = request.method ?? "GET";
   const url = new URL(request.url ?? "/", "http://localhost");
@@ -42,6 +81,14 @@ async function routeRequest(
     const body = CreateMailboxBodySchema.parse(await readJson(request));
     const session = await service.startSession(body.prompt);
     const projection = await engine.getProjection(session.mailboxId);
+    await safeEmitLog(observability, {
+      ...span,
+      mailboxId: session.mailboxId,
+      timestamp: nowIso(),
+      level: "info",
+      message: "Mailbox session created",
+      attributes: { hasProjection: projection !== null },
+    });
     writeJson(response, 201, { ...session, projection });
     return;
   }
@@ -54,6 +101,14 @@ async function routeRequest(
       writeJson(response, 404, { error: "Mailbox not found" });
       return;
     }
+    await safeEmitLog(observability, {
+      ...span,
+      mailboxId,
+      timestamp: nowIso(),
+      level: "info",
+      message: "Mailbox projection read",
+      attributes: { status: projection.status, tailSeq: projection.tailSeq },
+    });
     writeJson(response, 200, projection);
     return;
   }
@@ -64,7 +119,39 @@ async function routeRequest(
     const fromSeq = parseOptionalInt(url.searchParams.get("fromSeq"));
     const limit = parseOptionalInt(url.searchParams.get("limit"));
     const events = await engine.read(mailboxId, { fromSeq, limit });
+    await safeEmitLog(observability, {
+      ...span,
+      mailboxId,
+      timestamp: nowIso(),
+      level: "info",
+      message: "Mailbox events read",
+      attributes: { count: events.length, fromSeq, limit },
+    });
     writeJson(response, 200, { events });
+    return;
+  }
+
+  const observabilitySpansMatch = path.match(/^\/mailboxes\/([^/]+)\/observability\/spans$/);
+  if (method === "GET" && observabilitySpansMatch) {
+    if (!observabilityReader) {
+      writeJson(response, 503, { error: "Observability reader not configured" });
+      return;
+    }
+    const mailboxId = decodeURIComponent(requiredMatch(observabilitySpansMatch, 1));
+    const spans = await observabilityReader.listSpans(mailboxId);
+    writeJson(response, 200, { spans });
+    return;
+  }
+
+  const observabilityLogsMatch = path.match(/^\/mailboxes\/([^/]+)\/observability\/logs$/);
+  if (method === "GET" && observabilityLogsMatch) {
+    if (!observabilityReader) {
+      writeJson(response, 503, { error: "Observability reader not configured" });
+      return;
+    }
+    const mailboxId = decodeURIComponent(requiredMatch(observabilityLogsMatch, 1));
+    const logs = await observabilityReader.listLogs(mailboxId);
+    writeJson(response, 200, { logs });
     return;
   }
 
@@ -75,6 +162,14 @@ async function routeRequest(
     const body = ResolveGateBodySchema.parse(await readJson(request));
     await service.resolveGate(mailboxId, gateId, body.resolution, body.comment);
     const projection = await engine.getProjection(mailboxId);
+    await safeEmitLog(observability, {
+      ...span,
+      mailboxId,
+      timestamp: nowIso(),
+      level: "info",
+      message: "Gate resolved via API",
+      attributes: { gateId, resolution: body.resolution },
+    });
     writeJson(response, 200, { projection });
     return;
   }
@@ -96,8 +191,42 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
 }
 
 function writeJson(response: ServerResponse, statusCode: number, body: unknown): void {
+  response.statusCode = statusCode;
   response.writeHead(statusCode, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
+}
+
+function apiSpanContext(request: IncomingMessage): { traceId: string; spanId: string; mailboxId?: string } {
+  const path = new URL(request.url ?? "/", "http://localhost").pathname;
+  const mailboxMatch = path.match(/^\/mailboxes\/([^/]+)/);
+  return {
+    traceId: newTraceId(),
+    spanId: newSpanId(),
+    mailboxId: mailboxMatch?.[1] ? decodeURIComponent(mailboxMatch[1]) : undefined,
+  };
+}
+
+async function emitApiSpan(
+  observability: ObservabilitySink,
+  span: { traceId: string; spanId: string; mailboxId?: string },
+  startedAt: Date,
+  status: "ok" | "error",
+  attributes: Record<string, unknown>,
+): Promise<void> {
+  await safeEmitSpan(observability, {
+    ...span,
+    name: "api.request",
+    kind: "http",
+    status,
+    startedAt: startedAt.toISOString(),
+    endedAt: nowIso(),
+    durationMs: elapsedMs(startedAt),
+    attributes,
+  });
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
 }
 
 function parseOptionalInt(value: string | null): number | undefined {

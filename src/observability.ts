@@ -42,6 +42,11 @@ export interface ObservabilitySink {
   emitLog(record: MailboxLogRecord): Promise<void>;
 }
 
+export interface ObservabilityReader {
+  listSpans(mailboxId: string): Promise<MailboxSpanRecord[]>;
+  listLogs(mailboxId: string): Promise<MailboxLogRecord[]>;
+}
+
 export class NoopObservabilitySink implements ObservabilitySink {
   async emitSpan(): Promise<void> {}
   async emitLog(): Promise<void> {}

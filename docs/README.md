@@ -6,6 +6,8 @@ This directory is the working source of truth for the project direction, archite
 
 - `overview.md`: project overview, thesis, stretch goal, and guiding principles
 - `north-star-sre-demo.md`: first product-shaped demo target for an SRE agent harness
+- `steel-docs-sync-example.md`: webhook-triggered docs drift audit example for `steel-dev/docs`
+- `steel-docs-sync-missing-work.md`: mailbox/core slices needed for the Steel docs sync example
 - `roadmap.md`: phased research, planning, and development roadmap
 - `architecture.md`: system shape, boundaries, and core components
 - `mvp.md`: smallest useful end-to-end slice to build first
@@ -22,6 +24,8 @@ This directory is the working source of truth for the project direction, archite
 - `poc-components-and-flow.md`: detailed component plan and end-to-end demo flow
 - `runnable-inbox.md`: explicit inbox routing and claim model for daemon work
 - `agent-mailbox-research.md`: longer-form technical research and reference notes
+- `ecc-analysis.md`: analysis of ECC as an adjacent runtime/operator system and what to adapt from it
+- `ecc-features-for-mailbox.md`: focused ECC feature analysis for security, skills, instincts, and memory
 - `s2-engine-research.md`: evaluation of S2 and s2-lite as a possible first engine
 
 ## Intent
@@ -41,16 +45,20 @@ These docs are meant to:
 4. `architecture.md`
 5. `interface.md`
 6. `agent-adapters.md`
-7. `similar-systems.md`
-8. `positioning.md`
-9. `engines-and-integrations.md`
-10. `declarative-api.md`
-11. `poc-scope.md`
-12. `engine-contracts.md`
-13. `event-taxonomy.md`
-14. `poc-components-and-flow.md`
-15. `runnable-inbox.md`
-16. `mvp.md`
-17. `roadmap.md`
-18. `agent-mailbox-research.md`
-19. `s2-engine-research.md`
+7. `steel-docs-sync-example.md`
+8. `steel-docs-sync-missing-work.md`
+9. `similar-systems.md`
+10. `positioning.md`
+11. `engines-and-integrations.md`
+12. `declarative-api.md`
+13. `poc-scope.md`
+14. `engine-contracts.md`
+15. `event-taxonomy.md`
+16. `poc-components-and-flow.md`
+17. `runnable-inbox.md`
+18. `mvp.md`
+19. `roadmap.md`
+20. `agent-mailbox-research.md`
+21. `ecc-analysis.md`
+22. `ecc-features-for-mailbox.md`
+23. `s2-engine-research.md`

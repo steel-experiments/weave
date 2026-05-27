@@ -34,6 +34,8 @@ External collectors use `OtlpHttpObservabilitySink`, which exports OTLP/HTTP JSO
 
 The SRE demo always writes observability to Postgres and also fans out to OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
+Run `npm run otlp:smoke` to validate the exporter against a local mock receiver. Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` to smoke-test against a real collector instead.
+
 ## Deferred Primitive
 
 `defineMailbox` is intentionally not implemented yet.

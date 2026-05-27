@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
-import type { MailboxLogRecord, MailboxSpanRecord, ObservabilitySink } from "./observability.js";
+import type { MailboxLogRecord, MailboxSpanRecord, ObservabilityReader, ObservabilitySink } from "./observability.js";
 
-export class PostgresObservabilitySink implements ObservabilitySink {
+export class PostgresObservabilitySink implements ObservabilitySink, ObservabilityReader {
   constructor(private readonly pool: Pool) {}
 
   async emitSpan(span: MailboxSpanRecord): Promise<void> {
