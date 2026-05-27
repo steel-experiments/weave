@@ -68,8 +68,8 @@ try {
     console.log(`auditSummary=${toolCompleted.payload.output.summary}`);
     console.log(`finalMessage=${finalResponse.payload.message}`);
   } finally {
-    runnerDaemon.stop();
-    toolDaemon.stop();
+    await runnerDaemon.stop();
+    await toolDaemon.stop();
     server.close();
   }
 } finally {

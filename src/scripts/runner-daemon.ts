@@ -15,7 +15,7 @@ daemon.start();
 console.log("Runner daemon started");
 
 async function shutdown(): Promise<void> {
-  daemon.stop();
+  await daemon.stop();
   await pool.end();
 }
 

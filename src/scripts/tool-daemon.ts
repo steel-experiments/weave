@@ -15,7 +15,7 @@ daemon.start();
 console.log("Tool worker daemon started");
 
 async function shutdown(): Promise<void> {
-  daemon.stop();
+  await daemon.stop();
   await pool.end();
 }
 

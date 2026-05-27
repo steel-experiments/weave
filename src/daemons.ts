@@ -25,10 +25,14 @@ export class RunnerDaemon {
     this.timer = setInterval(() => void this.tick(), this.intervalMs);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
+    }
+
+    while (this.running) {
+      await sleep(10);
     }
   }
 
@@ -74,10 +78,14 @@ export class ToolWorkerDaemon {
     this.timer = setInterval(() => void this.tick(), this.intervalMs);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
+    }
+
+    while (this.running) {
+      await sleep(10);
     }
   }
 

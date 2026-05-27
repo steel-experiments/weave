@@ -7,6 +7,12 @@ export const ActorSchema = z.object({
 });
 export type Actor = z.infer<typeof ActorSchema>;
 
+export const SessionSourceSchema = z.enum(["api", "test", "system", "github-action"]);
+export type SessionSource = z.infer<typeof SessionSourceSchema>;
+
+export const SessionMetadataSchema = z.record(z.string(), z.unknown());
+export type SessionMetadata = z.infer<typeof SessionMetadataSchema>;
+
 export const EventEnvelopeBaseSchema = z.object({
   eventId: z.string().uuid(),
   mailboxId: z.string().min(1),
@@ -19,7 +25,8 @@ export const EventEnvelopeBaseSchema = z.object({
 });
 
 export const SessionStartedPayloadSchema = z.object({
-  source: z.enum(["api", "test", "system"]),
+  source: SessionSourceSchema,
+  metadata: SessionMetadataSchema.optional(),
 });
 
 export const PromptReceivedPayloadSchema = z.object({

@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 import type { MailboxEngine } from "./contracts.js";
+import { ActorSchema, SessionMetadataSchema, SessionSourceSchema } from "./events.js";
 import type { MailboxService } from "./mailbox-service.js";
 import {
   NoopObservabilitySink,
@@ -15,6 +16,10 @@ import {
 
 const CreateMailboxBodySchema = z.object({
   prompt: z.string().min(1),
+  source: SessionSourceSchema.optional(),
+  actor: ActorSchema.optional(),
+  metadata: SessionMetadataSchema.optional(),
+  idempotencyKey: z.string().min(1).optional(),
 });
 
 const ResolveGateBodySchema = z.object({
@@ -79,7 +84,11 @@ async function routeRequest(
 
   if (method === "POST" && path === "/mailboxes") {
     const body = CreateMailboxBodySchema.parse(await readJson(request));
-    const session = await service.startSession(body.prompt);
+    const session = await service.startSession({
+      ...body,
+      source: body.source ?? "api",
+      actor: body.actor ?? { type: "user", id: "api-user" },
+    });
     const projection = await engine.getProjection(session.mailboxId);
     await safeEmitLog(observability, {
       ...span,
