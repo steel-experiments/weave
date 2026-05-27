@@ -17,11 +17,12 @@
     "poc": "tsx src/scripts/poc.ts",
     "system:poc": "tsx src/scripts/system-poc.ts",
     "sre:demo": "tsx examples/sre-demo/src/index.ts",
+    "steel:demo": "tsx examples/steel-docs-sync/src/index.ts",
     "otlp:smoke": "tsx src/scripts/otlp-smoke.ts",
     "server": "tsx src/scripts/server.ts",
     "daemon:runner": "tsx src/scripts/runner-daemon.ts",
     "daemon:tool": "tsx src/scripts/tool-daemon.ts",
-    "typecheck": "tsc --noEmit && npm --workspace @agent-mailbox/sre-demo run typecheck"
+    "typecheck": "tsc --noEmit && npm --workspace @agent-mailbox/sre-demo run typecheck && npm --workspace @agent-mailbox/steel-docs-sync run typecheck"
   },
   "dependencies": {
     "pg": "^8.16.3",

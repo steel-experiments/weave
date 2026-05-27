@@ -1,0 +1,13 @@
+{
+  "name": "@agent-mailbox/steel-docs-sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agent-mailbox/core": "file:../.."
+  }
+}
