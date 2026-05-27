@@ -15,9 +15,22 @@ import {
   type MailboxProjection,
   type MailboxSummary,
 } from "@agent-mailbox/core";
+import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";
+import { startSteelFixtureServer } from "./fixtures.js";
+
+const ToolArtifactSchema = z.object({
+  kind: z.enum(["docs-page", "llms-txt", "openapi-spec"]),
+  url: z.string().url(),
+  mediaType: z.string().min(1),
+  sha256: z.string().length(64),
+  byteLength: z.number().int().nonnegative(),
+});
+
+const ToolArtifactListSchema = z.array(ToolArtifactSchema).length(3);
 
 const pool = createPool();
+const fixtures = await startSteelFixtureServer();
 
 try {
   await migrate(pool, { reset: true });
@@ -39,6 +52,15 @@ try {
   try {
     const created = await postJson<{ mailboxId: string; correlationId: string }>(`${baseUrl}/mailboxes`, {
       prompt: "@steel-docs audit production drift for steel-dev/docs and summarize warnings.",
+      metadata: {
+        repository: "steel-dev/docs",
+        ref: "refs/heads/main",
+        sha: "8d2c4ef",
+        mode: "production-drift",
+        docsBaseUrl: fixtures.baseUrl,
+        llmsTxtUrl: `${fixtures.baseUrl}/llms.txt`,
+        openApiSpecUrl: `${fixtures.baseUrl}/openapi.json`,
+      },
     });
 
     const finalProjection = await waitForProjection(baseUrl, created.mailboxId, (projection) => {
@@ -62,6 +84,9 @@ try {
     const finalResponse = events.find((event) => event.type === "agent.response.produced");
     assert(toolCompleted);
     assert(finalResponse);
+    const artifacts = readArtifacts(toolCompleted.payload.output.data);
+    assert.equal(artifacts.length, 3);
+    assert.deepEqual(artifacts.map((artifact) => artifact.kind), ["docs-page", "llms-txt", "openapi-spec"]);
 
     console.log("Steel docs sync demo verified");
     console.log(`api=${baseUrl}`);
@@ -70,6 +95,7 @@ try {
     console.log(`agent=${activeAgent.name}`);
     console.log(`tool=${activeAgent.tools[0]?.name ?? "unknown"}`);
     console.log(`outcome=${summary.outcome}`);
+    console.log(`artifacts=${artifacts.length}`);
     console.log(`auditSummary=${toolCompleted.payload.output.summary}`);
     console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
   } finally {
@@ -79,6 +105,7 @@ try {
   }
 } finally {
   await pool.end();
+  fixtures.server.close();
 }
 
 function listen(server: ReturnType<typeof createApiServer>): Promise<void> {
@@ -136,4 +163,13 @@ function sleep(ms: number): Promise<void> {
 
 function isAddressInfo(address: string | AddressInfo | null): address is AddressInfo {
   return typeof address === "object" && address !== null && "port" in address;
+}
+
+function readArtifacts(data: unknown): z.infer<typeof ToolArtifactListSchema> {
+  const artifacts = z
+    .object({
+      artifacts: ToolArtifactListSchema,
+    })
+    .parse(data);
+  return artifacts.artifacts;
 }

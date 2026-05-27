@@ -32,6 +32,7 @@ export type SteelDocsSyncWebhookPayload = z.infer<typeof SteelDocsSyncWebhookPay
 
 export type SteelDocsSyncServerOptions = {
   webhookSecret: string;
+  allowedHosts?: readonly string[];
 };
 
 export function createSteelDocsSyncApiServer(
@@ -89,7 +90,7 @@ function createSteelDocsWebhookRoute(
     }
 
     const payload = payloadResult.data;
-    const invalidUrl = firstInvalidUrl(payload);
+    const invalidUrl = firstInvalidUrl(payload, new Set(options.allowedHosts ?? allowedHosts));
     if (invalidUrl) {
       writeJson(response, 400, { error: `URL host is not allowed: ${invalidUrl}` });
       return true;
@@ -117,7 +118,7 @@ function buildAuditPrompt(payload: SteelDocsSyncWebhookPayload): string {
   return `@steel-docs audit ${payload.mode} for ${payload.repository} at ${payload.sha} from ${payload.ref} and summarize any docs drift warnings.`;
 }
 
-function firstInvalidUrl(payload: SteelDocsSyncWebhookPayload): string | null {
+function firstInvalidUrl(payload: SteelDocsSyncWebhookPayload, allowed: ReadonlySet<string>): string | null {
   const urls = [
     payload.docsBaseUrl,
     payload.llmsTxtUrl,
@@ -131,7 +132,7 @@ function firstInvalidUrl(payload: SteelDocsSyncWebhookPayload): string | null {
       continue;
     }
     const url = new URL(candidate);
-    if (!allowedHosts.has(url.host)) {
+    if (!allowed.has(url.host)) {
       return candidate;
     }
   }

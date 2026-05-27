@@ -15,18 +15,35 @@ import {
   type MailboxProjection,
   type MailboxSummary,
 } from "@agent-mailbox/core";
+import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";
+import { startSteelFixtureServer } from "./fixtures.js";
 import { createSteelDocsSyncApiServer, type SteelDocsSyncWebhookPayload } from "./server.js";
+
+const ToolArtifactSchema = z.object({
+  kind: z.enum(["docs-page", "llms-txt", "openapi-spec"]),
+  url: z.string().url(),
+  mediaType: z.string().min(1),
+  sha256: z.string().length(64),
+  byteLength: z.number().int().nonnegative(),
+});
+
+const ToolArtifactListSchema = z.array(ToolArtifactSchema).length(3);
 
 const webhookSecret = "steel-docs-sync-demo-secret";
 const pool = createPool();
+const fixtures = await startSteelFixtureServer();
 
 try {
   await migrate(pool, { reset: true });
 
   const engine = new PostgresMailboxEngine(pool);
   const service = new MailboxService(engine);
-  const server = createSteelDocsSyncApiServer(engine, service, { webhookSecret });
+  const fixtureHost = new URL(fixtures.baseUrl).host;
+  const server = createSteelDocsSyncApiServer(engine, service, {
+    webhookSecret,
+    allowedHosts: [fixtureHost],
+  });
   await listen(server);
 
   const address = server.address();
@@ -47,11 +64,11 @@ try {
       runAttempt: 1,
       eventName: "schedule",
       mode: "production-drift",
-      docsBaseUrl: "https://docs.steel.dev",
-      llmsTxtUrl: "https://docs.steel.dev/llms.txt",
-      llmsFullTxtUrl: "https://docs.steel.dev/llms-full.txt",
-      apiReferenceUrl: "https://docs.steel.dev/reference/api",
-      openApiSpecUrl: "https://docs.steel.dev/openapi.json",
+      docsBaseUrl: fixtures.baseUrl,
+      llmsTxtUrl: `${fixtures.baseUrl}/llms.txt`,
+      llmsFullTxtUrl: `${fixtures.baseUrl}/llms-full.txt`,
+      apiReferenceUrl: `${fixtures.baseUrl}/reference/api`,
+      openApiSpecUrl: `${fixtures.baseUrl}/openapi.json`,
     };
 
     const invalidSignature = await postWebhook(baseUrl, payload, { secret: "wrong-secret" });
@@ -80,6 +97,7 @@ try {
     const sessionStarted = events.find((event) => event.type === "session.started");
     const promptReceived = events.find((event) => event.type === "prompt.received");
     const toolRequested = events.find((event) => event.type === "tool.requested");
+    const toolCompleted = events.find((event) => event.type === "tool.completed");
     const finalResponse = events.find((event) => event.type === "agent.response.produced");
 
     assert.equal(finalProjection.status, "completed");
@@ -104,6 +122,10 @@ try {
       llmsTxtUrl: payload.llmsTxtUrl,
       openApiSpecUrl: payload.openApiSpecUrl,
     });
+    assert(toolCompleted?.type === "tool.completed");
+    const artifacts = readArtifacts(toolCompleted.payload.output.data);
+    assert.equal(artifacts.length, 3);
+    assert.deepEqual(artifacts.map((artifact) => artifact.url), [payload.docsBaseUrl, payload.llmsTxtUrl, payload.openApiSpecUrl]);
     assert(finalResponse?.type === "agent.response.produced");
 
     console.log("Steel webhook demo verified");
@@ -114,6 +136,7 @@ try {
     console.log(`summaryUrl=${baseUrl}/mailboxes/${created.body.mailboxId}/summary`);
     console.log(`streamUrl=${baseUrl}/mailboxes/${created.body.mailboxId}/stream`);
     console.log(`outcome=${summary.outcome}`);
+    console.log(`artifacts=${artifacts.length}`);
     console.log(`finalStatus=${finalProjection.status}`);
     console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
   } finally {
@@ -123,6 +146,7 @@ try {
   }
 } finally {
   await pool.end();
+  fixtures.server.close();
 }
 
 function listen(server: ReturnType<typeof createSteelDocsSyncApiServer>): Promise<void> {
@@ -245,4 +269,13 @@ function parseSseRecord(rawRecord: string): { event: string; data: unknown } | n
 
 function isAddressInfo(address: string | AddressInfo | null): address is AddressInfo {
   return typeof address === "object" && address !== null && "port" in address;
+}
+
+function readArtifacts(data: unknown): z.infer<typeof ToolArtifactListSchema> {
+  const artifacts = z
+    .object({
+      artifacts: ToolArtifactListSchema,
+    })
+    .parse(data);
+  return artifacts.artifacts;
 }
