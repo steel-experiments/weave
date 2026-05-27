@@ -90,7 +90,10 @@ try {
     assert.equal(duplicate.status, 202);
     assert.equal(duplicate.body.mailboxId, created.body.mailboxId);
 
-    const streamed = await readTerminalStream(baseUrl, created.body.mailboxId);
+    const firstStreamEvent = await readFirstStreamEvent(baseUrl, created.body.mailboxId);
+    const streamed = await readTerminalStream(baseUrl, created.body.mailboxId, {
+      lastEventId: firstStreamEvent.id,
+    });
     const finalProjection = await getJson<MailboxProjection>(`${baseUrl}/mailboxes/${created.body.mailboxId}`);
     const summary = await getJson<MailboxSummary>(`${baseUrl}/mailboxes/${created.body.mailboxId}/summary`);
     const events = await getEvents(baseUrl, created.body.mailboxId);
@@ -103,9 +106,13 @@ try {
     assert.equal(finalProjection.status, "completed");
     assert.equal(summary.status, "completed");
     assert.equal(summary.outcome, "warning");
+    assert.equal(summary.execution.status, "succeeded");
     assert.deepEqual(summary.findings, { critical: 0, warning: 2, info: 0 });
     assert.equal(streamed.summary.status, "completed");
     assert.equal(streamed.summary.outcome, "warning");
+    assert.equal(streamed.summary.execution.status, "succeeded");
+    assert.equal(streamed.completed.status, "completed");
+    assert(streamed.events.every((event) => (event.seq ?? 0) > firstStreamEvent.id));
     assert.equal(streamed.events.filter((event) => event.type === "agent.finding.produced").length, 2);
     assert(sessionStarted?.type === "session.started");
     assert.equal(sessionStarted.payload.source, "github-action");
@@ -128,6 +135,30 @@ try {
     assert.deepEqual(artifacts.map((artifact) => artifact.url), [payload.docsBaseUrl, payload.llmsTxtUrl, payload.openApiSpecUrl]);
     assert(finalResponse?.type === "agent.response.produced");
 
+    const executionFailurePayload: SteelDocsSyncWebhookPayload = {
+      ...payload,
+      runAttempt: 2,
+      llmsTxtUrl: `${fixtures.baseUrl}/missing.txt`,
+    };
+    const executionFailureCreated = await postWebhook(baseUrl, executionFailurePayload);
+    assert.equal(executionFailureCreated.status, 202);
+    assert(typeof executionFailureCreated.body.mailboxId === "string");
+    const failedFirstStreamEvent = await readFirstStreamEvent(baseUrl, executionFailureCreated.body.mailboxId);
+    const failedStreamed = await readTerminalStream(baseUrl, executionFailureCreated.body.mailboxId, {
+      lastEventId: failedFirstStreamEvent.id,
+    });
+    const failedSummary = await getJson<MailboxSummary>(`${baseUrl}/mailboxes/${executionFailureCreated.body.mailboxId}/summary`);
+    assert.equal(failedSummary.status, "failed");
+    assert.equal(failedSummary.outcome, null);
+    assert.equal(failedSummary.execution.status, "failed");
+    assert.equal(failedSummary.execution.errorCode, "execution_failed");
+    assert(typeof failedSummary.execution.message === "string");
+    assert.equal(failedStreamed.summary.status, "failed");
+    assert.equal(failedStreamed.summary.outcome, null);
+    assert.equal(failedStreamed.summary.execution.status, "failed");
+    assert.equal(failedStreamed.completed.status, "failed");
+    assert(failedStreamed.events.every((event) => (event.seq ?? 0) > failedFirstStreamEvent.id));
+
     console.log("Steel webhook demo verified");
     console.log(`api=${baseUrl}`);
     console.log(`mailboxId=${created.body.mailboxId}`);
@@ -136,9 +167,13 @@ try {
     console.log(`summaryUrl=${baseUrl}/mailboxes/${created.body.mailboxId}/summary`);
     console.log(`streamUrl=${baseUrl}/mailboxes/${created.body.mailboxId}/stream`);
     console.log(`outcome=${summary.outcome}`);
+    console.log(`execution=${summary.execution.status}`);
+    console.log(`resumedFrom=${firstStreamEvent.id}`);
     console.log(`artifacts=${artifacts.length}`);
     console.log(`finalStatus=${finalProjection.status}`);
     console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
+    console.log(`failedMailboxId=${executionFailureCreated.body.mailboxId}`);
+    console.log(`failedExecution=${failedSummary.execution.status}`);
   } finally {
     await runnerDaemon.stop();
     await toolDaemon.stop();
@@ -156,8 +191,11 @@ function listen(server: ReturnType<typeof createSteelDocsSyncApiServer>): Promis
 async function readTerminalStream(
   baseUrl: string,
   mailboxId: string,
-): Promise<{ events: MailboxEvent[]; summary: MailboxSummary }> {
-  const response = await fetch(`${baseUrl}/mailboxes/${mailboxId}/stream`);
+  options: { lastEventId?: number } = {},
+): Promise<{ events: MailboxEvent[]; summary: MailboxSummary; completed: MailboxSummary }> {
+  const response = await fetch(`${baseUrl}/mailboxes/${mailboxId}/stream`, {
+    headers: options.lastEventId !== undefined ? { "Last-Event-ID": String(options.lastEventId) } : undefined,
+  });
   if (!response.ok || !response.body) {
     throw new Error(`Failed to open SSE stream: HTTP ${response.status}`);
   }
@@ -166,6 +204,7 @@ async function readTerminalStream(
   const decoder = new TextDecoder();
   let buffer = "";
   const events: MailboxEvent[] = [];
+  let latestSummary: MailboxSummary | null = null;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -184,16 +223,54 @@ async function readTerminalStream(
       }
       if (record?.event === "mailbox.summary") {
         const summary = record.data as MailboxSummary;
-        if (summary.status === "completed" || summary.status === "failed") {
-          await reader.cancel();
-          return { events, summary };
-        }
+        latestSummary = summary;
+      }
+      if (record?.event === "mailbox.completed") {
+        const completed = record.data as MailboxSummary;
+        await reader.cancel();
+        return { events, summary: latestSummary ?? completed, completed };
       }
       separatorIndex = buffer.indexOf("\n\n");
     }
   }
 
   throw new Error(`Stream ended before terminal summary for mailbox ${mailboxId}`);
+}
+
+async function readFirstStreamEvent(baseUrl: string, mailboxId: string): Promise<{ id: number; event: MailboxEvent }> {
+  const response = await fetch(`${baseUrl}/mailboxes/${mailboxId}/stream`);
+  if (!response.ok || !response.body) {
+    throw new Error(`Failed to open SSE stream: HTTP ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    let separatorIndex = buffer.indexOf("\n\n");
+    while (separatorIndex >= 0) {
+      const rawRecord = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      const record = parseSseRecord(rawRecord);
+      if (record?.event === "mailbox.event") {
+        await reader.cancel();
+        if (record.id === undefined) {
+          throw new Error(`Streamed mailbox event missing id for mailbox ${mailboxId}`);
+        }
+        return { id: record.id, event: record.data as MailboxEvent };
+      }
+      separatorIndex = buffer.indexOf("\n\n");
+    }
+  }
+
+  throw new Error(`Stream ended before first mailbox event for mailbox ${mailboxId}`);
 }
 
 async function getEvents(baseUrl: string, mailboxId: string): Promise<MailboxEvent[]> {
@@ -240,15 +317,21 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
   return body;
 }
 
-function parseSseRecord(rawRecord: string): { event: string; data: unknown } | null {
+function parseSseRecord(rawRecord: string): { id?: number; event: string; data: unknown } | null {
   if (rawRecord.length === 0) {
     return null;
   }
 
   let eventName = "message";
+  let id: number | undefined;
   const dataLines: string[] = [];
   for (const line of rawRecord.split("\n")) {
     if (line.startsWith(":")) {
+      continue;
+    }
+    if (line.startsWith("id:")) {
+      const parsedId = Number.parseInt(line.slice("id:".length).trim(), 10);
+      id = Number.isNaN(parsedId) ? undefined : parsedId;
       continue;
     }
     if (line.startsWith("event:")) {
@@ -264,7 +347,7 @@ function parseSseRecord(rawRecord: string): { event: string; data: unknown } | n
     return null;
   }
 
-  return { event: eventName, data: JSON.parse(dataLines.join("\n")) };
+  return { id, event: eventName, data: JSON.parse(dataLines.join("\n")) };
 }
 
 function isAddressInfo(address: string | AddressInfo | null): address is AddressInfo {

@@ -1,6 +1,7 @@
 import {
   MailboxSummarySchema,
   type MailboxEvent,
+  type MailboxExecutionStatus,
   type MailboxProjection,
   type MailboxSummary,
   type MailboxSummaryOutcome,
@@ -14,6 +15,8 @@ export function buildMailboxSummary(projection: MailboxProjection, events: Mailb
   };
 
   let finalMessage: string | null = null;
+  let executionErrorCode: string | null = null;
+  let executionMessage: string | null = null;
 
   for (const event of events) {
     if (event.type === "agent.finding.produced") {
@@ -23,15 +26,27 @@ export function buildMailboxSummary(projection: MailboxProjection, events: Mailb
 
     if (event.type === "agent.response.produced") {
       finalMessage = event.payload.message;
+      continue;
+    }
+
+    if (event.type === "tool.failed") {
+      executionErrorCode = event.payload.errorCode;
+      executionMessage = event.payload.message;
     }
   }
 
   const outcome = deriveOutcome(projection.status, findings);
+  const executionStatus = deriveExecutionStatus(projection.status);
 
   return MailboxSummarySchema.parse({
     mailboxId: projection.mailboxId,
     status: projection.status,
     outcome,
+    execution: {
+      status: executionStatus,
+      errorCode: executionStatus === "failed" ? executionErrorCode : null,
+      message: executionStatus === "failed" ? executionMessage : finalMessage,
+    },
     findings,
     finalMessage,
     tailSeq: projection.tailSeq,
@@ -44,10 +59,6 @@ function deriveOutcome(
   status: MailboxProjection["status"],
   findings: MailboxSummary["findings"],
 ): MailboxSummaryOutcome | null {
-  if (status === "failed") {
-    return "failed";
-  }
-
   if (status !== "completed") {
     return null;
   }
@@ -61,4 +72,16 @@ function deriveOutcome(
   }
 
   return "passed";
+}
+
+function deriveExecutionStatus(status: MailboxProjection["status"]): MailboxExecutionStatus {
+  if (status === "failed") {
+    return "failed";
+  }
+
+  if (status === "completed") {
+    return "succeeded";
+  }
+
+  return "pending";
 }

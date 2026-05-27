@@ -308,10 +308,18 @@ export type MailboxProjection = z.infer<typeof MailboxProjectionSchema>;
 export const MailboxSummaryOutcomeSchema = z.enum(["passed", "warning", "failed"]);
 export type MailboxSummaryOutcome = z.infer<typeof MailboxSummaryOutcomeSchema>;
 
+export const MailboxExecutionStatusSchema = z.enum(["pending", "succeeded", "failed"]);
+export type MailboxExecutionStatus = z.infer<typeof MailboxExecutionStatusSchema>;
+
 export const MailboxSummarySchema = z.object({
   mailboxId: z.string().min(1),
   status: MailboxStatusSchema,
   outcome: MailboxSummaryOutcomeSchema.nullable(),
+  execution: z.object({
+    status: MailboxExecutionStatusSchema,
+    errorCode: z.string().min(1).nullable(),
+    message: z.string().min(1).nullable(),
+  }),
   findings: z.object({
     critical: z.number().int().nonnegative(),
     warning: z.number().int().nonnegative(),

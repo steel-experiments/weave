@@ -75,6 +75,8 @@ try {
     );
     assert.equal(finalProjection.status, "completed");
     assert.equal(summary.outcome, "warning");
+    assert.equal(summary.execution.status, "succeeded");
+    assert.equal(summary.execution.errorCode, null);
     assert.deepEqual(summary.findings, { critical: 0, warning: 2, info: 0 });
     assert.equal(finalProjection.pendingGateIds.length, 0);
     assert.equal(events.length, finalProjection.tailSeq);
@@ -95,6 +97,7 @@ try {
     console.log(`agent=${activeAgent.name}`);
     console.log(`tool=${activeAgent.tools[0]?.name ?? "unknown"}`);
     console.log(`outcome=${summary.outcome}`);
+    console.log(`execution=${summary.execution.status}`);
     console.log(`artifacts=${artifacts.length}`);
     console.log(`auditSummary=${toolCompleted.payload.output.summary}`);
     console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
