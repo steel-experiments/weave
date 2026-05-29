@@ -4,6 +4,8 @@
 
 This document plans a product-shaped Weave example for auditing the Steel documentation ecosystem.
 
+The focused app overview now lives in `docs-sync/README.md`, and per-slice progress tracking lives in `docs-sync/slices/`.
+
 The example target is not this repository. It is the external Steel docs project:
 
 - repository: `https://github.com/steel-dev/docs`

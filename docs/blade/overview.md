@@ -12,6 +12,8 @@ This document is the first Blade product/spec overview.
 
 It should guide implementation without prematurely locking the runtime, UI, or infrastructure details.
 
+Implementation slices now live in `slices/`. The current first planned slice is `slices/01-github-pr-review.md`.
+
 ## Product Claim
 
 An engineering org should be able to delegate routine code review, support triage, SRE investigation, and background implementation work to a persistent AI operator without giving that operator unbounded credentials or relying on ephemeral chat state.
@@ -1047,6 +1049,8 @@ MVP success criteria:
 
 ## Follow-on Slices
 
+Track slice progress in `slices/README.md`. Each meaningful slice should have its own markdown document before implementation starts.
+
 ### Slice 2: Slack Engineering Help
 
 Build Slack mention and thread continuation around the same session model.
@@ -1102,8 +1106,8 @@ Primary outcome:
 
 ## Immediate Next Steps
 
-- Decide whether PR review is the first implementation slice.
-- Draft `docs/blade/pr-review.md` with concrete GitHub event handling, tools, events, and gates.
-- Draft `docs/blade/domain-model.md` to reconcile Work Item, Session, Run, Step, Artifact, Finding, and Weave Thread terminology.
+- Use PR review as the first implementation slice unless a stronger near-term Steel workflow replaces it.
+- Keep `docs/blade/slices/01-github-pr-review.md` updated with concrete GitHub event handling, tools, events, gates, tests, and completion notes.
+- Keep `docs/blade/domain-model.md` updated as Work Item, Session, Run, Step, Artifact, Finding, and Weave Thread terminology changes.
 - Draft `docs/blade/runtime.md` to compare Steel computer, Docker, Modal, and local runtime providers.
 - Identify the smallest reusable code or prompts to lift from `steel-dev/blade` and `steel-experiments/blade`.

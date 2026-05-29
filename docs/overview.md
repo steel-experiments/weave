@@ -126,13 +126,13 @@ In the strongest version of this project:
 
 The long-term ambition is to become the shared event and control substrate for open agent systems.
 
-## North Star Demo
+## North Star Product
 
-The first product-shaped north-star demo is an SRE agent harness.
+Blade is now the product north star for proving Weave in production-shaped workflows.
 
-An engineer should be able to tag an SRE agent in Slack, ask it to investigate an incident, and watch it use thread-scoped observability tools and approval gates to diagnose and safely act.
+The original SRE agent harness remains a strong target workflow, but it should be treated as one Blade slice rather than the whole north star.
 
-See `north-star-sre-demo.md` for the detailed plan.
+See `blade/overview.md` for the product direction and `north-star-sre-demo.md` for the SRE workflow input.
 
 ## Principles
 

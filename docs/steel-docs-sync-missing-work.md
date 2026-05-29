@@ -1,5 +1,7 @@
 # Steel Docs Sync Missing Work
 
+This is the original rollup for Steel docs sync work. The per-slice progress trackers now live under `docs/docs-sync/slices/` and should become the canonical place for implementation notes, test evidence, and completion updates.
+
 ## Purpose
 
 This document lists the Weave work needed to support the Steel docs sync example cleanly.
