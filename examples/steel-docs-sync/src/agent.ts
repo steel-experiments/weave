@@ -4,13 +4,13 @@ import {
   nowIso,
   type AgentPlan,
   type AgentPlanner,
-  type MailboxEvent,
-} from "@agent-mailbox/core";
+  type ThreadEvent,
+} from "weave";
 import { z } from "zod";
 import { SteelDocsAuditDataSchema, SteelDocsModelReviewDataSchema } from "./tools.js";
 
-type PromptReceivedEvent = Extract<MailboxEvent, { type: "prompt.received" }>;
-type ToolCompletedEvent = Extract<MailboxEvent, { type: "tool.completed" }>;
+type PromptReceivedEvent = Extract<ThreadEvent, { type: "prompt.received" }>;
+type ToolCompletedEvent = Extract<ThreadEvent, { type: "tool.completed" }>;
 
 const SteelDocsSessionMetadataSchema = z.object({
   repository: z.literal("steel-dev/docs"),
@@ -33,95 +33,95 @@ const defaultAuditInput = {
 } satisfies z.input<typeof SteelDocsSessionMetadataSchema>;
 
 export class DeterministicSteelDocsAgent implements AgentPlanner {
-  plan(mailboxId: string, events: MailboxEvent[]): AgentPlan | null {
+  plan(threadId: string, events: ThreadEvent[]): AgentPlan | null {
     const prompt = events.find(isPromptReceivedEvent);
     if (!prompt) {
       return null;
     }
 
     if (!toolRequested(events, "steel.auditDocsSync")) {
-      return this.requestAudit(mailboxId, prompt, events);
+      return this.requestAudit(threadId, prompt, events);
     }
 
     const auditCompleted = completedTool(events, "steel.auditDocsSync");
     if (auditCompleted && !toolRequested(events, "steel.modelReview")) {
-      return this.requestModelReview(mailboxId, auditCompleted);
+      return this.requestModelReview(threadId, auditCompleted);
     }
 
     const reviewCompleted = completedTool(events, "steel.modelReview");
     if (reviewCompleted && !events.some((event) => event.type === "agent.response.produced")) {
-      return this.produceReport(mailboxId, reviewCompleted);
+      return this.produceReport(threadId, reviewCompleted);
     }
 
     return null;
   }
 
-  private requestAudit(mailboxId: string, cause: PromptReceivedEvent, events: MailboxEvent[]): AgentPlan {
-    const stepId = deterministicUuid("steel-step", mailboxId, "request-audit");
+  private requestAudit(threadId: string, cause: PromptReceivedEvent, events: ThreadEvent[]): AgentPlan {
+    const stepId = deterministicUuid("steel-step", threadId, "request-audit");
     const auditInput = readAuditInput(events) ?? defaultAuditInput;
     return {
       resumeReason: "new-prompt",
       events: [
-        this.stepStarted(mailboxId, cause, stepId, "prompt"),
+        this.stepStarted(threadId, cause, stepId, "prompt"),
         {
-          eventId: eventKey(mailboxId, "tool.requested", "steel.auditDocsSync"),
-          mailboxId,
+          eventId: eventKey(threadId, "tool.requested", "steel.auditDocsSync"),
+          threadId,
           type: "tool.requested",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
           causationId: cause.eventId,
           actor: { type: "agent", id: "steel-docs-agent" },
           payload: {
-            toolCallId: deterministicUuid("steel-tool-call", mailboxId, "steel.auditDocsSync"),
+            toolCallId: deterministicUuid("steel-tool-call", threadId, "steel.auditDocsSync"),
             toolName: "steel.auditDocsSync",
             args: auditInput,
           },
         },
-        this.stepCompleted(mailboxId, cause, stepId, "requested-tool"),
+        this.stepCompleted(threadId, cause, stepId, "requested-tool"),
       ],
     };
   }
 
-  private requestModelReview(mailboxId: string, cause: ToolCompletedEvent): AgentPlan {
-    const stepId = deterministicUuid("steel-step", mailboxId, "request-model-review");
+  private requestModelReview(threadId: string, cause: ToolCompletedEvent): AgentPlan {
+    const stepId = deterministicUuid("steel-step", threadId, "request-model-review");
     const auditData = SteelDocsAuditDataSchema.parse(cause.payload.output.data);
 
     return {
       resumeReason: "tool-completed",
       events: [
-        this.stepStarted(mailboxId, cause, stepId, "tool-completed"),
+        this.stepStarted(threadId, cause, stepId, "tool-completed"),
         {
-          eventId: eventKey(mailboxId, "tool.requested", "steel.modelReview"),
-          mailboxId,
+          eventId: eventKey(threadId, "tool.requested", "steel.modelReview"),
+          threadId,
           type: "tool.requested",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
           causationId: cause.eventId,
           actor: { type: "agent", id: "steel-docs-agent" },
           payload: {
-            toolCallId: deterministicUuid("steel-tool-call", mailboxId, "steel.modelReview"),
+            toolCallId: deterministicUuid("steel-tool-call", threadId, "steel.modelReview"),
             toolName: "steel.modelReview",
             args: auditData,
           },
         },
-        this.stepCompleted(mailboxId, cause, stepId, "requested-tool"),
+        this.stepCompleted(threadId, cause, stepId, "requested-tool"),
       ],
     };
   }
 
-  private produceReport(mailboxId: string, cause: ToolCompletedEvent): AgentPlan {
-    const stepId = deterministicUuid("steel-step", mailboxId, "produce-report");
+  private produceReport(threadId: string, cause: ToolCompletedEvent): AgentPlan {
+    const stepId = deterministicUuid("steel-step", threadId, "produce-report");
     const review = SteelDocsModelReviewDataSchema.parse(cause.payload.output.data);
-    const findingEvents: MailboxEvent[] = review.findings.map((finding, index) => ({
-      eventId: eventKey(mailboxId, "agent.finding.produced", `steel-model-review:${index}`),
-      mailboxId,
+    const findingEvents: ThreadEvent[] = review.findings.map((finding, index) => ({
+      eventId: eventKey(threadId, "agent.finding.produced", `steel-model-review:${index}`),
+      threadId,
       type: "agent.finding.produced",
       occurredAt: nowIso(),
       correlationId: cause.correlationId,
       causationId: cause.eventId,
       actor: { type: "agent", id: "steel-docs-agent" },
       payload: {
-        findingId: deterministicUuid("steel-finding", mailboxId, `model-review:${index}`),
+        findingId: deterministicUuid("steel-finding", threadId, `model-review:${index}`),
         severity: finding.severity,
         summary: finding.summary,
         evidence: finding.evidence.map((evidence, evidenceIndex) => ({
@@ -134,11 +134,11 @@ export class DeterministicSteelDocsAgent implements AgentPlanner {
     return {
       resumeReason: "tool-completed",
       events: [
-        this.stepStarted(mailboxId, cause, stepId, "tool-completed"),
+        this.stepStarted(threadId, cause, stepId, "tool-completed"),
         ...findingEvents,
         {
-          eventId: eventKey(mailboxId, "agent.response.produced", "steel-final"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.response.produced", "steel-final"),
+          threadId,
           type: "agent.response.produced",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
@@ -148,20 +148,20 @@ export class DeterministicSteelDocsAgent implements AgentPlanner {
             message: review.finalMessage,
           },
         },
-        this.stepCompleted(mailboxId, cause, stepId, "produced-response"),
+        this.stepCompleted(threadId, cause, stepId, "produced-response"),
       ],
     };
   }
 
   private stepStarted(
-    mailboxId: string,
-    cause: MailboxEvent,
+    threadId: string,
+    cause: ThreadEvent,
     stepId: string,
     reason: "prompt" | "tool-completed" | "gate-resolved" | "manual-resume",
-  ): MailboxEvent {
+  ): ThreadEvent {
     return {
-      eventId: eventKey(mailboxId, "agent.step.started", stepId),
-      mailboxId,
+      eventId: eventKey(threadId, "agent.step.started", stepId),
+      threadId,
       type: "agent.step.started",
       occurredAt: nowIso(),
       correlationId: cause.correlationId,
@@ -172,14 +172,14 @@ export class DeterministicSteelDocsAgent implements AgentPlanner {
   }
 
   private stepCompleted(
-    mailboxId: string,
-    cause: MailboxEvent,
+    threadId: string,
+    cause: ThreadEvent,
     stepId: string,
     outcome: "requested-tool" | "produced-response",
-  ): MailboxEvent {
+  ): ThreadEvent {
     return {
-      eventId: eventKey(mailboxId, "agent.step.completed", stepId),
-      mailboxId,
+      eventId: eventKey(threadId, "agent.step.completed", stepId),
+      threadId,
       type: "agent.step.completed",
       occurredAt: nowIso(),
       correlationId: cause.correlationId,
@@ -190,31 +190,31 @@ export class DeterministicSteelDocsAgent implements AgentPlanner {
   }
 }
 
-function isPromptReceivedEvent(event: MailboxEvent): event is PromptReceivedEvent {
+function isPromptReceivedEvent(event: ThreadEvent): event is PromptReceivedEvent {
   return event.type === "prompt.received";
 }
 
-function toolRequested(events: MailboxEvent[], toolName: string): boolean {
+function toolRequested(events: ThreadEvent[], toolName: string): boolean {
   return events.some((event) => event.type === "tool.requested" && event.payload.toolName === toolName);
 }
 
-function completedTool(events: MailboxEvent[], toolName: string): ToolCompletedEvent | undefined {
+function completedTool(events: ThreadEvent[], toolName: string): ToolCompletedEvent | undefined {
   return events.find(
     (event): event is ToolCompletedEvent => event.type === "tool.completed" && requestedToolName(events, event) === toolName,
   );
 }
 
-function requestedToolName(events: MailboxEvent[], event: ToolCompletedEvent): string | undefined {
+function requestedToolName(events: ThreadEvent[], event: ToolCompletedEvent): string | undefined {
   const request = events.find(
-    (candidate): candidate is Extract<MailboxEvent, { type: "tool.requested" }> =>
+    (candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
       candidate.type === "tool.requested" && candidate.payload.toolCallId === event.payload.toolCallId,
   );
   return request?.payload.toolName;
 }
 
-function readAuditInput(events: MailboxEvent[]): z.output<typeof SteelDocsSessionMetadataSchema> | null {
+function readAuditInput(events: ThreadEvent[]): z.output<typeof SteelDocsSessionMetadataSchema> | null {
   const sessionStarted = events.find(
-    (event): event is Extract<MailboxEvent, { type: "session.started" }> => event.type === "session.started",
+    (event): event is Extract<ThreadEvent, { type: "session.started" }> => event.type === "session.started",
   );
   if (!sessionStarted?.payload.metadata) {
     return null;

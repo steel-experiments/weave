@@ -1,7 +1,7 @@
-import type { MailboxEngine } from "./contracts.js";
-import { eventKey, nowIso, type MailboxEvent } from "./events.js";
+import type { ThreadEngine } from "./contracts.js";
+import { eventKey, nowIso, type ThreadEvent } from "./events.js";
 
-type ToolRequestedEvent = Extract<MailboxEvent, { type: "tool.requested" }>;
+type ToolRequestedEvent = Extract<ThreadEvent, { type: "tool.requested" }>;
 
 const progressSteps = [
   { percent: 25, message: "queued" },
@@ -10,10 +10,10 @@ const progressSteps = [
 ] as const;
 
 export class MockAsyncToolWorker {
-  constructor(private readonly engine: MailboxEngine) {}
+  constructor(private readonly engine: ThreadEngine) {}
 
-  async processOnce(mailboxId: string): Promise<{ acted: boolean; eventType?: string }> {
-    const events = await this.engine.read(mailboxId);
+  async processOnce(threadId: string): Promise<{ acted: boolean; eventType?: string }> {
+    const events = await this.engine.read(threadId);
     const request = events.find(isToolRequestedEvent);
 
     if (!request) {
@@ -32,7 +32,7 @@ export class MockAsyncToolWorker {
 
     const started = events.some((event) => event.type === "tool.started" && event.payload.toolCallId === toolCallId);
     if (!started) {
-      const event = this.startedEvent(mailboxId, request);
+      const event = this.startedEvent(threadId, request);
       await this.engine.append([event]);
       return { acted: true, eventType: event.type };
     }
@@ -43,21 +43,21 @@ export class MockAsyncToolWorker {
     const nextProgress = progressSteps[progressCount];
 
     if (nextProgress) {
-      const event = this.progressEvent(mailboxId, request, nextProgress.percent, nextProgress.message);
+      const event = this.progressEvent(threadId, request, nextProgress.percent, nextProgress.message);
       await this.engine.append([event]);
       return { acted: true, eventType: event.type };
     }
 
-    const event = this.completedEvent(mailboxId, request);
+    const event = this.completedEvent(threadId, request);
     await this.engine.append([event]);
     return { acted: true, eventType: event.type };
   }
 
-  private startedEvent(mailboxId: string, request: ToolRequestedEvent): MailboxEvent {
+  private startedEvent(threadId: string, request: ToolRequestedEvent): ThreadEvent {
     const toolCallId = request.payload.toolCallId;
     return {
-      eventId: eventKey(mailboxId, "tool.started", toolCallId),
-      mailboxId,
+      eventId: eventKey(threadId, "tool.started", toolCallId),
+      threadId,
       type: "tool.started",
       occurredAt: nowIso(),
       correlationId: request.correlationId,
@@ -68,15 +68,15 @@ export class MockAsyncToolWorker {
   }
 
   private progressEvent(
-    mailboxId: string,
+    threadId: string,
     request: ToolRequestedEvent,
     percent: number,
     message: string,
-  ): MailboxEvent {
+  ): ThreadEvent {
     const toolCallId = request.payload.toolCallId;
     return {
-      eventId: eventKey(mailboxId, "tool.progress", `${toolCallId}:${percent}`),
-      mailboxId,
+      eventId: eventKey(threadId, "tool.progress", `${toolCallId}:${percent}`),
+      threadId,
       type: "tool.progress",
       occurredAt: nowIso(),
       correlationId: request.correlationId,
@@ -86,11 +86,11 @@ export class MockAsyncToolWorker {
     };
   }
 
-  private completedEvent(mailboxId: string, request: ToolRequestedEvent): MailboxEvent {
+  private completedEvent(threadId: string, request: ToolRequestedEvent): ThreadEvent {
     const toolCallId = request.payload.toolCallId;
     return {
-      eventId: eventKey(mailboxId, "tool.completed", toolCallId),
-      mailboxId,
+      eventId: eventKey(threadId, "tool.completed", toolCallId),
+      threadId,
       type: "tool.completed",
       occurredAt: nowIso(),
       correlationId: request.correlationId,
@@ -107,6 +107,6 @@ export class MockAsyncToolWorker {
   }
 }
 
-function isToolRequestedEvent(event: MailboxEvent): event is ToolRequestedEvent {
+function isToolRequestedEvent(event: ThreadEvent): event is ToolRequestedEvent {
   return event.type === "tool.requested";
 }

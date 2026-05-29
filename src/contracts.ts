@@ -1,4 +1,4 @@
-import type { MailboxEvent, MailboxProjection } from "./events.js";
+import type { ThreadEvent, ThreadProjection } from "./events.js";
 
 export type AppendOptions = {
   expectedTailSeq?: number;
@@ -21,7 +21,7 @@ export type FollowCursor = {
 };
 
 export type Lease = {
-  mailboxId: string;
+  threadId: string;
   ownerId: string;
   token: string;
   expiresAt: string;
@@ -31,23 +31,23 @@ export type InboxConsumer = "runner" | "tool-worker";
 
 export type InboxWorkItem = {
   id: number;
-  mailboxId: string;
+  threadId: string;
   consumer: InboxConsumer;
   eventSeq: number;
   attempts: number;
 };
 
-export interface MailboxEngine {
-  createMailbox(mailboxId: string): Promise<void>;
-  append(events: MailboxEvent[], options?: AppendOptions): Promise<AppendResult>;
-  read(mailboxId: string, options?: ReadOptions): Promise<MailboxEvent[]>;
-  follow(mailboxId: string, cursor?: FollowCursor): AsyncIterable<MailboxEvent>;
-  getTail(mailboxId: string): Promise<{ tailSeq: number; updatedAt: string }>;
-  getProjection(mailboxId: string): Promise<MailboxProjection | null>;
+export interface ThreadEngine {
+  createThread(threadId: string): Promise<void>;
+  append(events: ThreadEvent[], options?: AppendOptions): Promise<AppendResult>;
+  read(threadId: string, options?: ReadOptions): Promise<ThreadEvent[]>;
+  follow(threadId: string, cursor?: FollowCursor): AsyncIterable<ThreadEvent>;
+  getTail(threadId: string): Promise<{ tailSeq: number; updatedAt: string }>;
+  getProjection(threadId: string): Promise<ThreadProjection | null>;
 }
 
-export interface MailboxLeaseStore {
-  acquireLease(mailboxId: string, ownerId: string, ttlMs: number): Promise<Lease | null>;
-  renewLease(mailboxId: string, token: string, ttlMs: number): Promise<Lease>;
-  releaseLease(mailboxId: string, token: string): Promise<void>;
+export interface ThreadLeaseStore {
+  acquireLease(threadId: string, ownerId: string, ttlMs: number): Promise<Lease | null>;
+  renewLease(threadId: string, token: string, ttlMs: number): Promise<Lease>;
+  releaseLease(threadId: string, token: string): Promise<void>;
 }

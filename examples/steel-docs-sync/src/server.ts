@@ -2,11 +2,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   createApiServer,
-  type MailboxArtifactStore,
+  type ThreadArtifactStore,
   type ApiRouteHandler,
-  type MailboxEngine,
-  type MailboxService,
-} from "@agent-mailbox/core";
+  type ThreadEngine,
+  type ThreadService,
+} from "weave";
 import { z } from "zod";
 
 const webhookPath = "/webhooks/github/steel-docs-sync";
@@ -34,12 +34,12 @@ export type SteelDocsSyncWebhookPayload = z.infer<typeof SteelDocsSyncWebhookPay
 export type SteelDocsSyncServerOptions = {
   webhookSecret: string;
   allowedHosts?: readonly string[];
-  artifactStore?: MailboxArtifactStore;
+  artifactStore?: ThreadArtifactStore;
 };
 
 export function createSteelDocsSyncApiServer(
-  engine: MailboxEngine,
-  service: MailboxService,
+  engine: ThreadEngine,
+  service: ThreadService,
   options: SteelDocsSyncServerOptions,
 ) {
   return createApiServer(engine, service, {
@@ -49,7 +49,7 @@ export function createSteelDocsSyncApiServer(
 }
 
 function createSteelDocsWebhookRoute(
-  service: MailboxService,
+  service: ThreadService,
   options: SteelDocsSyncServerOptions,
 ): ApiRouteHandler {
   return async (request, response) => {
@@ -59,8 +59,8 @@ function createSteelDocsWebhookRoute(
       return false;
     }
 
-    const timestampHeader = request.headers["x-agent-mailbox-timestamp"];
-    const signatureHeader = request.headers["x-agent-mailbox-signature"];
+    const timestampHeader = request.headers["x-weave-timestamp"];
+    const signatureHeader = request.headers["x-weave-signature"];
     if (typeof timestampHeader !== "string" || typeof signatureHeader !== "string") {
       writeJson(response, 401, { error: "Missing webhook authentication headers" });
       return true;
@@ -108,10 +108,10 @@ function createSteelDocsWebhookRoute(
     });
     const origin = requestOrigin(request);
     writeJson(response, 202, {
-      mailboxId: session.mailboxId,
+      threadId: session.threadId,
       correlationId: session.correlationId,
-      statusUrl: `${origin}/mailboxes/${encodeURIComponent(session.mailboxId)}`,
-      eventsUrl: `${origin}/mailboxes/${encodeURIComponent(session.mailboxId)}/events`,
+      statusUrl: `${origin}/threads/${encodeURIComponent(session.threadId)}`,
+      eventsUrl: `${origin}/threads/${encodeURIComponent(session.threadId)}/events`,
     });
     return true;
   };

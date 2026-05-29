@@ -27,7 +27,7 @@ const Actor = z.object({
 
 const EventEnvelopeBase = z.object({
   eventId: z.string().uuid(),
-  mailboxId: z.string().min(1),
+  threadId: z.string().min(1),
   seq: z.number().int().nonnegative().optional(),
   occurredAt: z.string().datetime(),
   correlationId: z.string().uuid().optional(),
@@ -249,7 +249,7 @@ const AgentResponseProducedEvent = EventEnvelopeBase.extend({
   payload: AgentResponseProducedPayload,
 })
 
-export const MailboxEvent = z.discriminatedUnion("type", [
+export const ThreadEvent = z.discriminatedUnion("type", [
   SessionStartedEvent,
   PromptReceivedEvent,
   AgentStepStartedEvent,
@@ -296,15 +296,15 @@ The PoC mock agent should behave like this:
 
 ### Rule 1
 
-If the mailbox has a prompt but no `tool.requested`, emit a tool request.
+If the thread has a prompt but no `tool.requested`, emit a tool request.
 
 ### Rule 2
 
-If the mailbox has a `tool.completed` event whose output has `requiresManualApproval = true` and no open gate exists, create a gate.
+If the thread has a `tool.completed` event whose output has `requiresManualApproval = true` and no open gate exists, create a gate.
 
 ### Rule 3
 
-If the mailbox has a resolved approval gate with resolution `approved`, emit the final response.
+If the thread has a resolved approval gate with resolution `approved`, emit the final response.
 
 ### Rule 4
 

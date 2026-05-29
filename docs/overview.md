@@ -1,8 +1,10 @@
-# Agent Mailbox Overview
+# Weave Overview
 
 ## Summary
 
-Agent Mailbox is an open, durable, event-driven control layer for agents.
+Weave is Steel's open, durable, event-driven control layer for agents.
+
+The product name is Weave. It may be spoken as Steel Weave in Steel contexts, but repository docs and code should use Weave.
 
 It sits between:
 
@@ -21,7 +23,7 @@ The goal is to build the glue layer that lets many runtimes, tools, and integrat
 
 Agents should not be treated as fragile request-response applications.
 
-They should operate through a durable mailbox that records:
+They should operate through a durable thread that records:
 
 - what started a session
 - what the agent decided
@@ -33,11 +35,11 @@ They should operate through a durable mailbox that records:
 
 The runtime is ephemeral.
 
-The mailbox is the source of truth.
+The thread is the source of truth.
 
 ## What This Project Is
 
-Agent Mailbox is:
+Weave is:
 
 - a durable event boundary for agents
 - a router between agents and tools
@@ -48,7 +50,7 @@ Agent Mailbox is:
 
 ## What This Project Is Not
 
-Agent Mailbox is not primarily:
+Weave is not primarily:
 
 - a foundation model
 - a single agent framework
@@ -60,7 +62,7 @@ Agent Mailbox is not primarily:
 
 ### 1. Runtime portability
 
-The same mailbox should work with different execution environments:
+The same thread should work with different execution environments:
 
 - local agents
 - hosted coding agents
@@ -69,7 +71,7 @@ The same mailbox should work with different execution environments:
 
 ### 2. Durable execution
 
-Execution should resume from mailbox state and event history, not from process memory.
+Execution should resume from thread state and event history, not from process memory.
 
 ### 3. Better tool semantics
 
@@ -90,7 +92,7 @@ Every action should be traceable across the full lifecycle of a session.
 
 ### 5. Policy at the boundary
 
-Permissions, approvals, and capability use should be enforced where side effects cross the mailbox boundary.
+Permissions, approvals, and capability use should be enforced where side effects cross the thread boundary.
 
 ### 6. Extensibility
 
@@ -104,7 +106,7 @@ The project should make it easy for the community to add:
 
 ## Stretch Goal
 
-The stretch goal is to make Agent Mailbox the open source control plane that developers use when they want agents to be:
+The stretch goal is to make Weave the open source control plane that developers use when they want agents to be:
 
 - durable
 - observable
@@ -128,7 +130,7 @@ The long-term ambition is to become the shared event and control substrate for o
 
 The first product-shaped north-star demo is an SRE agent harness.
 
-An engineer should be able to tag an SRE agent in Slack, ask it to investigate an incident, and watch it use mailbox-scoped observability tools and approval gates to diagnose and safely act.
+An engineer should be able to tag an SRE agent in Slack, ask it to investigate an incident, and watch it use thread-scoped observability tools and approval gates to diagnose and safely act.
 
 See `north-star-sre-demo.md` for the detailed plan.
 
@@ -151,8 +153,8 @@ The early project focus should stay narrow.
 
 We need to prove:
 
-- a mailbox can durably record agent execution
-- a runner can resume from mailbox state
+- a thread can durably record agent execution
+- a runner can resume from thread state
 - tool execution can be modeled better than bash polling
 - a human or supervisor can interrupt and unblock work
 - one event stream can coordinate with another in a controlled way

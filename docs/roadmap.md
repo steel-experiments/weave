@@ -27,7 +27,7 @@ Exit criteria:
 
 Goal:
 
-Pressure test the mailbox idea against adjacent systems and decide what belongs in core.
+Pressure test the thread idea against adjacent systems and decide what belongs in core.
 
 Research topics:
 
@@ -56,7 +56,7 @@ Turn the primitive into a concrete first implementation plan.
 
 Planning topics:
 
-- mailbox schema or storage model
+- thread schema or storage model
 - runner lifecycle
 - event taxonomy
 - tool contract
@@ -73,15 +73,15 @@ Exit criteria:
 
 - a small implementation can begin without unresolved conceptual drift
 
-## Phase 3: Mailbox Core MVP
+## Phase 3: Thread Core MVP
 
 Goal:
 
-Build the smallest useful durable mailbox.
+Build the smallest useful durable thread.
 
 Capabilities:
 
-- mailbox creation
+- thread creation
 - ordered event append
 - replay and inspection
 - inbox visibility
@@ -90,7 +90,7 @@ Capabilities:
 
 Exit criteria:
 
-- one mailbox can be created, appended to, replayed, and resumed
+- one thread can be created, appended to, replayed, and resumed
 
 ## Phase 4: Structured Tool Execution
 
@@ -119,13 +119,13 @@ Make pausing, escalation, and supervision first-class.
 Capabilities:
 
 - gate creation and resolution
-- supervisor subscription to mailbox events
+- supervisor subscription to thread events
 - notifications or escalation path
 - runner resumption after external input
 
 Exit criteria:
 
-- the system can pause and later continue cleanly using mailbox state alone
+- the system can pause and later continue cleanly using thread state alone
 
 ## Phase 6: Runtime Adapters
 
@@ -141,7 +141,7 @@ Targets:
 
 Exit criteria:
 
-- multiple runtimes can use the same mailbox model without redefining core concepts
+- multiple runtimes can use the same thread model without redefining core concepts
 
 ## Phase 7: Integrations and Ecosystem
 
@@ -158,7 +158,7 @@ Targets:
 
 Exit criteria:
 
-- external systems can both trigger and react to mailbox events
+- external systems can both trigger and react to thread events
 
 ## Phase 8: Hardening and Scale
 

@@ -1,10 +1,10 @@
-# S2 Research For Agent Mailbox
+# S2 Research For Weave
 
 ## Purpose
 
 This document evaluates `s2-streamstore/s2`, especially `s2-lite`, as:
 
-- a source of architectural ideas for Agent Mailbox
+- a source of architectural ideas for Weave
 - a possible first durable event stream engine
 
 Repository:
@@ -17,7 +17,7 @@ Related docs:
 
 ## Executive Summary
 
-S2 is a strong reference point for the event stream layer of Agent Mailbox.
+S2 is a strong reference point for the event stream layer of Weave.
 
 It is especially relevant because it already models:
 
@@ -32,14 +32,14 @@ The short recommendation is:
 
 - learn from it immediately
 - consider `s2-lite` as a prototype or first experimental engine
-- do not tightly couple Agent Mailbox to `s2-lite` as the only production plan
+- do not tightly couple Weave to `s2-lite` as the only production plan
 
-The main reason is that `s2-lite` appears very well aligned with the mailbox event log problem, but less complete for the broader control-plane concerns we care about, especially:
+The main reason is that `s2-lite` appears very well aligned with the thread event log problem, but less complete for the broader control-plane concerns we care about, especially:
 
 - authentication
 - deletion and lifecycle cleanup
 - multi-node/high-availability behavior
-- mailbox-native policy and gate semantics
+- thread-native policy and gate semantics
 
 ## What S2 Is
 
@@ -65,7 +65,7 @@ Important implementation claim:
 
 - when backed by object storage, data is durable before acknowledgment or before being returned to readers
 
-That is directly relevant to our mailbox source-of-truth model.
+That is directly relevant to our thread source-of-truth model.
 
 ## High-Level Architecture
 
@@ -117,7 +117,7 @@ S2 uses three core concepts.
 
 A namespace containing streams.
 
-For Agent Mailbox this could map to:
+For Weave this could map to:
 
 - workspace
 - tenant
@@ -128,16 +128,16 @@ For Agent Mailbox this could map to:
 
 An ordered append-only sequence of records.
 
-For Agent Mailbox this maps naturally to:
+For Weave this maps naturally to:
 
-- one mailbox per stream
+- one thread per stream
 
 Alternative mapping:
 
 - one agent session per stream
 - one long-lived agent identity per stream
 
-The per-mailbox-per-stream mapping is the cleanest first fit.
+The per-thread-per-stream mapping is the cleanest first fit.
 
 ### Record
 
@@ -148,18 +148,18 @@ A record has:
 - optional headers
 - binary body
 
-For Agent Mailbox, each record could carry one mailbox event.
+For Weave, each record could carry one thread event.
 
 Suggested mapping:
 
 - record headers: event type, causation ID, correlation ID, actor type, actor ID
 - record body: JSON payload or binary payload reference
 
-## Why S2 Maps Well To Agent Mailbox
+## Why S2 Maps Well To Weave
 
-The mailbox primitive needs:
+The thread primitive needs:
 
-- ordered per-mailbox event history
+- ordered per-thread event history
 - append durability
 - resumable readers
 - efficient tailing for supervisors or runners
@@ -173,7 +173,7 @@ Every stream has a monotonic sequence number.
 
 This is useful for:
 
-- mailbox event replay
+- thread event replay
 - cursor tracking
 - resuming runners
 - supervisor observation
@@ -185,7 +185,7 @@ S2 supports live follow behavior.
 
 This is useful for:
 
-- waking a runner when new mailbox events arrive
+- waking a runner when new thread events arrive
 - supervisor subscriptions
 - integration adapters
 - parent-child coordination
@@ -194,7 +194,7 @@ This is useful for:
 
 S2 writes are durable before ack.
 
-This is important because Agent Mailbox should treat the event log as authoritative.
+This is important because Weave should treat the event log as authoritative.
 
 ### Conditional append support
 
@@ -206,7 +206,7 @@ S2 supports conditional append using:
 This is useful for:
 
 - optimistic concurrency
-- mailbox lease handoff patterns
+- thread lease handoff patterns
 - split-brain prevention
 - safe resume semantics
 
@@ -216,7 +216,7 @@ Each stream's streamer task serializes appends.
 
 That lines up with our current design instinct:
 
-- one active runner lease per mailbox
+- one active runner lease per thread
 
 S2 does not give us the runner lease by itself, but its stream model supports building that on top.
 
@@ -226,7 +226,7 @@ S2 does not give us the runner lease by itself, but its stream model supports bu
 
 This is probably the most directly reusable idea.
 
-Agent Mailbox should strongly consider one active coordination loop per mailbox stream for:
+Weave should strongly consider one active coordination loop per thread stream for:
 
 - assigning positions
 - applying write conditions
@@ -241,14 +241,14 @@ S2 persists data to durable storage and separately broadcasts acknowledged event
 
 We should do the same:
 
-- mailbox event log is the durable source of truth
+- thread event log is the durable source of truth
 - live subscriptions are just a delivery convenience
 
 ### 3. Sequence number and timestamp together
 
 S2 tracks both sequence order and timestamp.
 
-This is useful for mailbox replay because we care about:
+This is useful for thread replay because we care about:
 
 - exact ordering for correctness
 - time for audit, observability, and time-based queries
@@ -257,7 +257,7 @@ This is useful for mailbox replay because we care about:
 
 S2 is a real example of building a durable stream abstraction on top of object storage.
 
-That makes it relevant to the long-term serverless, low-cost direction for Agent Mailbox.
+That makes it relevant to the long-term serverless, low-cost direction for Weave.
 
 ## Storage And Concurrency Model
 
@@ -276,11 +276,11 @@ This means:
 - concurrency is high across many streams
 - one hot stream is limited by one streamer's throughput
 
-For Agent Mailbox, that tradeoff is acceptable and even desirable.
+For Weave, that tradeoff is acceptable and even desirable.
 
-We want mailbox-local serialization far more than mailbox-local parallel writes.
+We want thread-local serialization far more than thread-local parallel writes.
 
-## Potential Mapping To Agent Mailbox
+## Potential Mapping To Weave
 
 One possible first mapping:
 
@@ -296,16 +296,16 @@ Examples:
 
 ### Stream
 
-Use one stream per mailbox.
+Use one stream per thread.
 
 Examples:
 
-- `mailbox.agent-123`
-- `mailbox.session-456`
+- `thread.agent-123`
+- `thread.session-456`
 
 ### Record
 
-One mailbox event per record.
+One thread event per record.
 
 Examples:
 
@@ -338,20 +338,20 @@ This is the important boundary.
 
 S2 is primarily a durable stream engine.
 
-Agent Mailbox is broader than that.
+Weave is broader than that.
 
-We still need mailbox-native logic for:
+We still need thread-native logic for:
 
 - policy checks
 - approval gates
 - secret/capability mediation
-- mailbox status projections
+- thread status projections
 - runner leases
 - inbox visibility rules
 - stream linking and filtering
 - trace model conventions
 
-So even if S2 becomes the first engine, it should sit under our own mailbox abstraction.
+So even if S2 becomes the first engine, it should sit under our own thread abstraction.
 
 ## Main Limitations Of s2-lite
 
@@ -398,7 +398,7 @@ Implication:
 - good experimental engine
 - not yet something to blindly standardize on as the whole product foundation
 
-### 5. It is a stream store, not a mailbox product
+### 5. It is a stream store, not a thread product
 
 Implication:
 
@@ -428,7 +428,7 @@ Cons:
 
 This is the best strategic option.
 
-Use a mailbox storage interface such as:
+Use a thread storage interface such as:
 
 - append events
 - read from sequence
@@ -453,7 +453,7 @@ Cons:
 
 ### Option C: Use `s2-lite` as the very first engine
 
-This is possible if the immediate goal is to prove the mailbox primitive against a durable stream substrate.
+This is possible if the immediate goal is to prove the thread primitive against a durable stream substrate.
 
 Pros:
 
@@ -466,18 +466,18 @@ Cons:
 - auth gap
 - lifecycle gaps
 - single-node implementation
-- may slow down iteration if we are also defining the mailbox abstraction at the same time
+- may slow down iteration if we are also defining the thread abstraction at the same time
 
 ## My recommendation
 
 The best path is Option B.
 
-Build Agent Mailbox so the storage engine boundary is explicit, then:
+Build Weave so the storage engine boundary is explicit, then:
 
-- start with the simplest dependable engine for core mailbox semantics
+- start with the simplest dependable engine for core thread semantics
 - add `s2-lite` quickly as the first alternative backend
 
-If the goal is fastest delivery of a mailbox MVP, Postgres is still the safer first engine.
+If the goal is fastest delivery of a thread MVP, Postgres is still the safer first engine.
 
 If the goal is fastest exploration of an event-stream-native architecture, `s2-lite` is a strong experimental first backend.
 
@@ -486,19 +486,19 @@ If the goal is fastest exploration of an event-stream-native architecture, `s2-l
 If we choose to try it, a minimal architecture could look like:
 
 ```txt
-Agent Mailbox API
-  -> mailbox service
+Weave API
+  -> thread service
   -> engine adapter
       -> s2-lite
           basin = tenant/environment
-          stream = mailbox ID
-          record = mailbox event
+          stream = thread ID
+          record = thread event
 
 supervisors/runners
   -> follow stream
 
-mailbox projections
-  -> maintained by mailbox service or projection workers
+thread projections
+  -> maintained by thread service or projection workers
 ```
 
 Important note:
@@ -507,14 +507,14 @@ We should not expose S2 concepts directly as the whole user-facing model.
 
 Instead:
 
-- our domain model stays mailbox-first
+- our domain model stays thread-first
 - S2 stays an implementation detail of the engine layer
 
-## Specific Takeaways For Agent Mailbox
+## Specific Takeaways For Weave
 
 ### Good ideas to adopt
 
-- one active coordination task per stream/mailbox
+- one active coordination task per stream/thread
 - strict per-stream ordering
 - follower model for real-time observation
 - object-storage-backed durability as a serious long-term target
@@ -522,15 +522,15 @@ Instead:
 
 ### Things to avoid inheriting blindly
 
-- exposing raw stream-store terminology instead of mailbox terminology
-- depending on engine-level auth to solve mailbox policy
+- exposing raw stream-store terminology instead of thread terminology
+- depending on engine-level auth to solve thread policy
 - assuming stream retention alone solves deletion, compliance, or archival
 
 ## Bottom Line
 
 S2 is highly relevant.
 
-It is probably one of the better examples of a lightweight, durable, ordered stream substrate that resembles the event layer Agent Mailbox wants.
+It is probably one of the better examples of a lightweight, durable, ordered stream substrate that resembles the event layer Weave wants.
 
 `s2-lite` is credible as:
 
@@ -542,9 +542,9 @@ It is less convincing as:
 
 - the only engine we commit the whole project to immediately
 
-For Agent Mailbox, the cleanest position is:
+For Weave, the cleanest position is:
 
-- build our mailbox abstraction first
+- build our thread abstraction first
 - keep the engine boundary explicit
 - evaluate `s2-lite` as one of the first real engines behind that abstraction
 

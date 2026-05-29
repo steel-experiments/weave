@@ -1,16 +1,16 @@
 import type { Pool } from "pg";
-import type { MailboxLogRecord, MailboxSpanRecord, ObservabilityReader, ObservabilitySink } from "./observability.js";
+import type { ThreadLogRecord, ThreadSpanRecord, ObservabilityReader, ObservabilitySink } from "./observability.js";
 
 export class PostgresObservabilitySink implements ObservabilitySink, ObservabilityReader {
   constructor(private readonly pool: Pool) {}
 
-  async emitSpan(span: MailboxSpanRecord): Promise<void> {
+  async emitSpan(span: ThreadSpanRecord): Promise<void> {
     await this.pool.query(
-      `insert into agent_mailbox.observability_span(
+      `insert into weave.observability_span(
          trace_id,
          span_id,
          parent_span_id,
-         mailbox_id,
+         thread_id,
          event_id,
          correlation_id,
          causation_id,
@@ -33,7 +33,7 @@ export class PostgresObservabilitySink implements ObservabilitySink, Observabili
         span.traceId,
         span.spanId,
         span.parentSpanId ?? null,
-        span.mailboxId ?? null,
+        span.threadId ?? null,
         span.eventId ?? null,
         span.correlationId ?? null,
         span.causationId ?? null,
@@ -50,15 +50,15 @@ export class PostgresObservabilitySink implements ObservabilitySink, Observabili
     );
   }
 
-  async emitLog(record: MailboxLogRecord): Promise<void> {
+  async emitLog(record: ThreadLogRecord): Promise<void> {
     await this.pool.query(
-      `insert into agent_mailbox.observability_log(
+      `insert into weave.observability_log(
          timestamp,
          level,
          message,
          trace_id,
          span_id,
-         mailbox_id,
+         thread_id,
          event_id,
          correlation_id,
          causation_id,
@@ -72,7 +72,7 @@ export class PostgresObservabilitySink implements ObservabilitySink, Observabili
         record.message,
         record.traceId ?? null,
         record.spanId ?? null,
-        record.mailboxId ?? null,
+        record.threadId ?? null,
         record.eventId ?? null,
         record.correlationId ?? null,
         record.causationId ?? null,
@@ -83,20 +83,20 @@ export class PostgresObservabilitySink implements ObservabilitySink, Observabili
     );
   }
 
-  async listSpans(mailboxId: string): Promise<MailboxSpanRecord[]> {
+  async listSpans(threadId: string): Promise<ThreadSpanRecord[]> {
     const result = await this.pool.query(
       `select *
-       from agent_mailbox.observability_span
-       where mailbox_id = $1
+       from weave.observability_span
+       where thread_id = $1
        order by started_at asc, span_id asc`,
-      [mailboxId],
+      [threadId],
     );
 
     return result.rows.map((row) => ({
       traceId: row.trace_id,
       spanId: row.span_id,
       parentSpanId: row.parent_span_id ?? undefined,
-      mailboxId: row.mailbox_id ?? undefined,
+      threadId: row.thread_id ?? undefined,
       eventId: row.event_id ?? undefined,
       correlationId: row.correlation_id ?? undefined,
       causationId: row.causation_id ?? undefined,
@@ -112,13 +112,13 @@ export class PostgresObservabilitySink implements ObservabilitySink, Observabili
     }));
   }
 
-  async listLogs(mailboxId: string): Promise<MailboxLogRecord[]> {
+  async listLogs(threadId: string): Promise<ThreadLogRecord[]> {
     const result = await this.pool.query(
       `select *
-       from agent_mailbox.observability_log
-       where mailbox_id = $1
+       from weave.observability_log
+       where thread_id = $1
        order by timestamp asc, id asc`,
-      [mailboxId],
+      [threadId],
     );
 
     return result.rows.map((row) => ({
@@ -127,7 +127,7 @@ export class PostgresObservabilitySink implements ObservabilitySink, Observabili
       message: row.message,
       traceId: row.trace_id ?? undefined,
       spanId: row.span_id ?? undefined,
-      mailboxId: row.mailbox_id ?? undefined,
+      threadId: row.thread_id ?? undefined,
       eventId: row.event_id ?? undefined,
       correlationId: row.correlation_id ?? undefined,
       causationId: row.causation_id ?? undefined,

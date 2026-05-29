@@ -15,7 +15,7 @@ export type SessionMetadata = z.infer<typeof SessionMetadataSchema>;
 
 export const EventEnvelopeBaseSchema = z.object({
   eventId: z.string().uuid(),
-  mailboxId: z.string().min(1),
+  threadId: z.string().min(1),
   seq: z.number().int().nonnegative().optional(),
   occurredAt: z.string().datetime(),
   correlationId: z.string().uuid().optional(),
@@ -260,7 +260,7 @@ const AgentIncidentReportProducedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: AgentIncidentReportProducedPayloadSchema,
 });
 
-export const MailboxEventSchema = z.discriminatedUnion("type", [
+export const ThreadEventSchema = z.discriminatedUnion("type", [
   SessionStartedEventSchema,
   PromptReceivedEventSchema,
   AgentStepStartedEventSchema,
@@ -282,10 +282,10 @@ export const MailboxEventSchema = z.discriminatedUnion("type", [
   AgentIncidentReportProducedEventSchema,
 ]);
 
-export type MailboxEvent = z.infer<typeof MailboxEventSchema>;
-export type MailboxEventType = MailboxEvent["type"];
+export type ThreadEvent = z.infer<typeof ThreadEventSchema>;
+export type ThreadEventType = ThreadEvent["type"];
 
-export const MailboxStatusSchema = z.enum([
+export const ThreadStatusSchema = z.enum([
   "idle",
   "running",
   "waiting",
@@ -293,30 +293,30 @@ export const MailboxStatusSchema = z.enum([
   "completed",
   "failed",
 ]);
-export type MailboxStatus = z.infer<typeof MailboxStatusSchema>;
+export type ThreadStatus = z.infer<typeof ThreadStatusSchema>;
 
-export const MailboxProjectionSchema = z.object({
-  mailboxId: z.string().min(1),
-  status: MailboxStatusSchema,
+export const ThreadProjectionSchema = z.object({
+  threadId: z.string().min(1),
+  status: ThreadStatusSchema,
   tailSeq: z.number().int().nonnegative(),
   activeLeaseOwnerId: z.string().min(1).nullable(),
   pendingGateIds: z.array(z.string().uuid()),
   updatedAt: z.string().datetime(),
 });
-export type MailboxProjection = z.infer<typeof MailboxProjectionSchema>;
+export type ThreadProjection = z.infer<typeof ThreadProjectionSchema>;
 
-export const MailboxSummaryOutcomeSchema = z.enum(["passed", "warning", "failed"]);
-export type MailboxSummaryOutcome = z.infer<typeof MailboxSummaryOutcomeSchema>;
+export const ThreadSummaryOutcomeSchema = z.enum(["passed", "warning", "failed"]);
+export type ThreadSummaryOutcome = z.infer<typeof ThreadSummaryOutcomeSchema>;
 
-export const MailboxExecutionStatusSchema = z.enum(["pending", "succeeded", "failed"]);
-export type MailboxExecutionStatus = z.infer<typeof MailboxExecutionStatusSchema>;
+export const ThreadExecutionStatusSchema = z.enum(["pending", "succeeded", "failed"]);
+export type ThreadExecutionStatus = z.infer<typeof ThreadExecutionStatusSchema>;
 
-export const MailboxSummarySchema = z.object({
-  mailboxId: z.string().min(1),
-  status: MailboxStatusSchema,
-  outcome: MailboxSummaryOutcomeSchema.nullable(),
+export const ThreadSummarySchema = z.object({
+  threadId: z.string().min(1),
+  status: ThreadStatusSchema,
+  outcome: ThreadSummaryOutcomeSchema.nullable(),
   execution: z.object({
-    status: MailboxExecutionStatusSchema,
+    status: ThreadExecutionStatusSchema,
     errorCode: z.string().min(1).nullable(),
     message: z.string().min(1).nullable(),
   }),
@@ -330,7 +330,7 @@ export const MailboxSummarySchema = z.object({
   pendingGateIds: z.array(z.string().uuid()),
   updatedAt: z.string().datetime(),
 });
-export type MailboxSummary = z.infer<typeof MailboxSummarySchema>;
+export type ThreadSummary = z.infer<typeof ThreadSummarySchema>;
 
 export function deterministicUuid(...parts: string[]): string {
   const hash = createHash("sha256").update(parts.join("\0")).digest();
@@ -349,6 +349,6 @@ export function newEventId(): string {
   return randomUUID();
 }
 
-export function eventKey(mailboxId: string, type: string, semanticKey: string): string {
-  return deterministicUuid("event", mailboxId, type, semanticKey);
+export function eventKey(threadId: string, type: string, semanticKey: string): string {
+  return deterministicUuid("event", threadId, type, semanticKey);
 }

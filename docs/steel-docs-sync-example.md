@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document plans a product-shaped Agent Mailbox example for auditing the Steel documentation ecosystem.
+This document plans a product-shaped Weave example for auditing the Steel documentation ecosystem.
 
 The example target is not this repository. It is the external Steel docs project:
 
@@ -11,13 +11,13 @@ The example target is not this repository. It is the external Steel docs project
 - LLM index: `https://docs.steel.dev/llms.txt`
 - API reference redirect: `https://docs.steel.dev/api-reference` to `https://steel.apidocumentation.com/api-reference`
 
-The example should prove that Agent Mailbox can coordinate an automated docs consistency agent triggered from GitHub Actions through a webhook, while preserving durable events, tool mediation, replayability, and auditable findings.
+The example should prove that Weave can coordinate an automated docs consistency agent triggered from GitHub Actions through a webhook, while preserving durable events, tool mediation, replayability, and auditable findings.
 
 ## Product Claim
 
 A docs team should be able to schedule or trigger an expert agent that checks whether `llms.txt`, source docs, live docs, and the canonical OpenAPI schema agree with each other.
 
-Agent Mailbox should make that run:
+Weave should make that run:
 
 - triggerable by an external system
 - inspectable after completion
@@ -50,9 +50,9 @@ This example should not become a generalized workflow engine.
 It should avoid:
 
 - crawling arbitrary domains
-- storing full docs bodies in mailbox events
+- storing full docs bodies in thread events
 - mutating the Steel docs repo in the first slice
-- publishing comments before the mailbox run format is stable
+- publishing comments before the thread run format is stable
 - building a full dashboard before the event stream proves useful
 
 ## Desired End-to-end Flow
@@ -61,26 +61,26 @@ It should avoid:
 GitHub Action in steel-dev/docs
   -> signs webhook payload
   -> POST /webhooks/github/steel-docs-sync
-  -> Agent Mailbox creates a docs audit mailbox
+  -> Weave creates a docs audit thread
   -> runner wakes docs sync agent
   -> agent requests source collection tool
   -> tool fetches repo/live docs/llms/OpenAPI inputs
   -> agent requests audit/review tool or emits deterministic findings
   -> agent produces structured findings and final response
-  -> GitHub Action polls mailbox status and events
+  -> GitHub Action polls thread status and events
   -> GitHub Action passes, warns, or fails
 ```
 
-## Mailbox App Shape
+## Weave App Shape
 
 Create a new example app under `examples/steel-docs-sync`.
 
 The app should use the existing authoring primitives:
 
-- `defineMailboxApp` for app composition
+- `defineWeaveApp` for app composition
 - `defineAgent` for the Steel docs sync agent
 - `defineTool` for fetch, compare, and publishing side effects
-- `MailboxRunner` for bounded agent turns
+- `ThreadRunner` for bounded agent turns
 - `ContractToolWorker` for typed tool execution
 - `RunnerDaemon` and `ToolWorkerDaemon` for inbox-claim-driven execution
 
@@ -102,7 +102,7 @@ It should know how to reason about:
 - OpenAPI operations that lack docs coverage
 - docs pages that describe stale or removed endpoints
 
-The agent should not directly fetch network resources or post to GitHub. Those actions should happen through mailbox-backed tools.
+The agent should not directly fetch network resources or post to GitHub. Those actions should happen through thread-backed tools.
 
 ## Initial Tool Contracts
 
@@ -190,7 +190,7 @@ Capabilities:
 - create an issue for scheduled drift
 - upload a markdown audit artifact
 
-This should require explicit credentials from a `CredentialProvider` and should be introduced after the mailbox audit output is stable.
+This should require explicit credentials from a `CredentialProvider` and should be introduced after the thread audit output is stable.
 
 ## Finding Model
 
@@ -221,7 +221,7 @@ Severity guidance:
 
 ## Webhook Payload
 
-GitHub Actions should call a hosted Agent Mailbox endpoint with a signed payload.
+GitHub Actions should call a hosted Weave endpoint with a signed payload.
 
 ```json
 {
@@ -244,10 +244,10 @@ Required response:
 
 ```json
 {
-  "mailboxId": "<mailbox-id>",
+  "threadId": "<thread-id>",
   "correlationId": "<correlation-id>",
-  "statusUrl": "/mailboxes/<mailbox-id>",
-  "eventsUrl": "/mailboxes/<mailbox-id>/events"
+  "statusUrl": "/threads/<thread-id>",
+  "eventsUrl": "/threads/<thread-id>/events"
 }
 ```
 
@@ -264,9 +264,9 @@ The action should:
 
 - build the webhook JSON payload
 - sign it with an HMAC secret
-- POST it to the Agent Mailbox webhook URL
-- poll mailbox projection until `completed`, `failed`, or timeout
-- fetch mailbox events
+- POST it to the Weave webhook URL
+- poll thread projection until `completed`, `failed`, or timeout
+- fetch thread events
 - summarize findings into the GitHub job summary
 - fail if any critical finding exists
 
@@ -290,7 +290,7 @@ Scope:
 
 Acceptance criteria:
 
-- the demo creates one mailbox
+- the demo creates one thread
 - the runner requests the audit tool
 - the tool completes with deterministic findings
 - the agent emits findings and a final response
@@ -316,36 +316,36 @@ Acceptance criteria:
 - tool output contains hashes and summaries, not large raw bodies
 - failures become `tool.failed` with actionable errors
 
-### Slice 3: Webhook-triggered mailbox creation
+### Slice 3: Webhook-triggered thread creation
 
 Goal:
 
-Let GitHub Actions start a Steel docs audit mailbox.
+Let GitHub Actions start a Steel docs audit thread.
 
 Scope:
 
 - add a signed webhook route
 - validate repository and host allowlists
-- include GitHub run metadata in the mailbox start event or prompt metadata
+- include GitHub run metadata in the thread start event or prompt metadata
 - return polling URLs
 
 Acceptance criteria:
 
 - unsigned requests are rejected
 - duplicate run attempts are idempotent or harmless
-- a valid request creates exactly one runnable mailbox
+- a valid request creates exactly one runnable thread
 
 ### Slice 4: GitHub Action polling and CI result
 
 Goal:
 
-Make the external repo consume mailbox results.
+Make the external repo consume thread results.
 
 Scope:
 
 - add a workflow to `steel-dev/docs`
 - call the webhook
-- poll mailbox status
+- poll thread status
 - fetch event history
 - write a job summary
 - fail on critical findings
@@ -400,15 +400,15 @@ Acceptance criteria:
 - Should the audit compare generated files from the PR branch, deployed production, or both?
 - Should scheduled audits create issues, check runs, or only fail a workflow?
 - Should `llms.txt` drift be treated as critical on main but warning on pull requests?
-- Where should large source artifacts live before the mailbox has first-class artifact storage?
+- Where should large source artifacts live before the thread has first-class artifact storage?
 
 ## Success Criteria
 
 This example is successful when:
 
-- a GitHub Action in `steel-dev/docs` can trigger a mailbox through a webhook
-- the mailbox event stream explains each audit step
+- a GitHub Action in `steel-dev/docs` can trigger a thread through a webhook
+- the thread event stream explains each audit step
 - the audit checks live `llms.txt`, docs pages, and the canonical OpenAPI source
 - findings are structured enough for CI and humans
-- no raw secrets or large source bodies are stored in mailbox events
-- the example makes integration ingress and result publishing concrete without turning Agent Mailbox into a workflow DSL
+- no raw secrets or large source bodies are stored in thread events
+- the example makes integration ingress and result publishing concrete without turning Weave into a workflow DSL

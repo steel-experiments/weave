@@ -1,4 +1,4 @@
-import { defineTool } from "@agent-mailbox/core";
+import { defineTool } from "weave";
 import { z } from "zod";
 
 const environment = z.enum(["staging", "production"]);

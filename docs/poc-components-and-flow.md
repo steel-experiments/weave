@@ -8,13 +8,13 @@ This document describes the first PoC architecture in enough detail to begin imp
 
 ```txt
 API
-  -> Mailbox Service
+  -> Thread Service
       -> Postgres Engine
       -> Projection updates
       -> Wake hints
 
 Runner
-  -> reads mailbox history
+  -> reads thread history
   -> invokes deterministic mock agent adapter
   -> appends new events
 
@@ -29,43 +29,43 @@ Human Approval API
 
 ## Components
 
-## 1. Mailbox Service
+## 1. Thread Service
 
 Responsibilities:
 
-- create a mailbox session
+- create a thread session
 - validate incoming events with Zod
 - append events through the engine
 - update derived state
 - provide APIs for prompt submission and gate resolution
-- notify listeners that a mailbox has new durable work
+- notify listeners that a thread has new durable work
 
 Suggested endpoints for the PoC:
 
-- `POST /mailboxes`
-- `POST /mailboxes/:id/prompt`
-- `GET /mailboxes/:id/events`
-- `GET /mailboxes/:id`
-- `POST /mailboxes/:id/gates/:gateId/resolve`
+- `POST /threads`
+- `POST /threads/:id/prompt`
+- `GET /threads/:id/events`
+- `GET /threads/:id`
+- `POST /threads/:id/gates/:gateId/resolve`
 
 ## 2. Postgres Engine
 
 Responsibilities:
 
 - store the append-only event log
-- assign mailbox-local sequence numbers
-- maintain mailbox tail position
+- assign thread-local sequence numbers
+- maintain thread tail position
 - store and enforce leases
-- store gate records and mailbox projection data
+- store gate records and thread projection data
 - send wake hints with `LISTEN/NOTIFY` or allow polling
 
 Important properties:
 
 - append is atomic
-- order is stable per mailbox
+- order is stable per thread
 - reads are replayable by sequence number
 
-## 3. Mailbox Projection
+## 3. Thread Projection
 
 Responsibilities:
 
@@ -74,7 +74,7 @@ Responsibilities:
 
 Projection fields:
 
-- mailbox ID
+- thread ID
 - status
 - tail sequence number
 - active lease owner
@@ -94,10 +94,10 @@ Suggested statuses:
 
 Responsibilities:
 
-- wait for a mailbox wake signal or poll for runnable work
-- acquire the mailbox lease
+- wait for a thread wake signal or poll for runnable work
+- acquire the thread lease
 - append `runner.resumed`
-- read mailbox history
+- read thread history
 - invoke the deterministic mock agent adapter
 - append resulting events
 - release the lease when the step is done
@@ -108,7 +108,7 @@ Runner behavior should be bounded. One wake should process one logical agent tur
 
 Responsibilities:
 
-- inspect mailbox history
+- inspect thread history
 - decide what to do next based only on durable events
 - produce strongly typed output events
 
@@ -151,14 +151,14 @@ Responsibilities:
 
 - accept approval or denial for one gate
 - append `gate.resolved`
-- update mailbox projection
+- update thread projection
 - wake the runner
 
 ## Suggested Postgres Tables
 
 The exact schema can evolve, but the PoC needs these shapes.
 
-### `mailbox`
+### `thread`
 
 - `id`
 - `status`
@@ -166,9 +166,9 @@ The exact schema can evolve, but the PoC needs these shapes.
 - `active_lease_owner_id`
 - `updated_at`
 
-### `mailbox_event`
+### `thread_event`
 
-- `mailbox_id`
+- `thread_id`
 - `seq`
 - `event_id`
 - `type`
@@ -179,26 +179,26 @@ The exact schema can evolve, but the PoC needs these shapes.
 - `actor_id`
 - `payload_json`
 
-### `mailbox_lease`
+### `thread_lease`
 
-- `mailbox_id`
+- `thread_id`
 - `owner_id`
 - `token`
 - `expires_at`
 
-### `mailbox_gate`
+### `thread_gate`
 
 - `gate_id`
-- `mailbox_id`
+- `thread_id`
 - `status`
 - `gate_type`
 - `created_at`
 - `resolved_at`
 - `resolution_json`
 
-### `mailbox_projection`
+### `thread_projection`
 
-- `mailbox_id`
+- `thread_id`
 - `status`
 - `tail_seq`
 - `active_lease_owner_id`
@@ -209,27 +209,27 @@ The exact schema can evolve, but the PoC needs these shapes.
 
 ## Phase 1: Session creation and prompt submission
 
-1. Client calls `POST /mailboxes`.
-2. Mailbox service creates mailbox metadata and projection row.
-3. Client calls `POST /mailboxes/:id/prompt`.
-4. Mailbox service appends:
+1. Client calls `POST /threads`.
+2. Thread service creates thread metadata and projection row.
+3. Client calls `POST /threads/:id/prompt`.
+4. Thread service appends:
    - `session.started`
    - `prompt.received`
-5. Mailbox service updates projection status to `idle` or `waiting`.
-6. Mailbox service sends wake hint for the runner.
+5. Thread service updates projection status to `idle` or `waiting`.
+6. Thread service sends wake hint for the runner.
 
 ## Phase 2: First runner step
 
 1. Runner receives wake signal.
 2. Runner acquires lease.
 3. Runner appends `runner.resumed`.
-4. Runner reads mailbox history.
+4. Runner reads thread history.
 5. Runner invokes mock agent adapter.
 6. Adapter emits:
    - `agent.step.started`
    - `tool.requested`
    - `agent.step.completed`
-7. Mailbox service appends those events transactionally.
+7. Thread service appends those events transactionally.
 8. Projection status becomes `waiting`.
 9. Runner releases lease.
 
@@ -241,13 +241,13 @@ The exact schema can evolve, but the PoC needs these shapes.
 4. Tool worker appends `tool.completed` with:
    - summary text
    - `requiresManualApproval = true`
-5. Mailbox service updates projection and wakes the runner.
+5. Thread service updates projection and wakes the runner.
 
 ## Phase 4: Second runner step
 
 1. Runner acquires lease.
 2. Runner appends `runner.resumed`.
-3. Runner reads mailbox history including the completed tool result.
+3. Runner reads thread history including the completed tool result.
 4. Mock agent adapter sees approval is required and no open gate exists.
 5. Adapter emits:
    - `agent.step.started`
@@ -258,16 +258,16 @@ The exact schema can evolve, but the PoC needs these shapes.
 
 ## Phase 5: Human approval
 
-1. Human or test client calls `POST /mailboxes/:id/gates/:gateId/resolve`.
-2. Mailbox service appends `gate.resolved`.
+1. Human or test client calls `POST /threads/:id/gates/:gateId/resolve`.
+2. Thread service appends `gate.resolved`.
 3. Projection status becomes `waiting`.
-4. Mailbox service wakes the runner.
+4. Thread service wakes the runner.
 
 ## Phase 6: Final runner step
 
 1. Runner acquires lease.
 2. Runner appends `runner.resumed`.
-3. Runner reads mailbox history including the resolved gate.
+3. Runner reads thread history including the resolved gate.
 4. Mock agent adapter emits:
    - `agent.step.started`
    - `agent.response.produced`
@@ -317,4 +317,4 @@ It is not trying to prove every future feature.
 
 It is trying to prove one powerful claim:
 
-`a mailbox can durably coordinate agent reasoning, async tool work, human approval, and resumable execution through a single event boundary`
+`a thread can durably coordinate agent reasoning, async tool work, human approval, and resumable execution through a single event boundary`

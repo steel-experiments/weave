@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This document explains how Agent Mailbox can adapt OpenCode-style agents and other common agent architectures.
+This document explains how Weave can adapt OpenCode-style agents and other common agent architectures.
 
 The goal is not to rewrite every agent runtime.
 
-The goal is to wrap them with a mailbox-aware runner and tool surface.
+The goal is to wrap them with a thread-aware runner and tool surface.
 
 ## Core Idea
 
@@ -14,18 +14,18 @@ Most agents should integrate through an adapter layer.
 
 The adapter is responsible for:
 
-- turning mailbox events into agent input
+- turning thread events into agent input
 - invoking the agent for one bounded step or turn
 - intercepting tool usage
-- turning agent outputs back into mailbox events
+- turning agent outputs back into thread events
 
-This means the mailbox can support many runtimes without forcing a single internal implementation style.
+This means the thread can support many runtimes without forcing a single internal implementation style.
 
 ## General Adapter Shape
 
 ```ts
 type AgentStepResult = {
-  events?: MailboxEvent[]
+  events?: ThreadEvent[]
   requestedTools?: Array<{
     name: string
     args: unknown
@@ -40,12 +40,12 @@ type AgentStepResult = {
 }
 
 interface AgentAdapter {
-  buildInput(events: MailboxEvent[], state: MailboxState): Promise<unknown>
+  buildInput(events: ThreadEvent[], state: ThreadState): Promise<unknown>
   runStep(input: unknown): Promise<AgentStepResult>
 }
 ```
 
-This keeps the mailbox runtime small.
+This keeps the thread runtime small.
 
 ## Three Common Agent Shapes
 
@@ -61,7 +61,7 @@ Adaptation difficulty:
 
 - easy
 
-Mailbox approach:
+Thread approach:
 
 - replay events
 - construct input
@@ -86,15 +86,15 @@ Adaptation difficulty:
 
 - moderate, but very workable
 
-Mailbox approach:
+Thread approach:
 
-- provide mailbox-backed tools
+- provide thread-backed tools
 - intercept tool calls before side effects occur
 - emit `tool.requested`
 - let workers emit `tool.completed`
 - rerun the agent when results arrive
 
-This is the best fit for the mailbox model.
+This is the best fit for the thread model.
 
 ## 3. Long-running interactive agents
 
@@ -108,10 +108,10 @@ Adaptation difficulty:
 
 - higher
 
-Mailbox approach:
+Thread approach:
 
 - reduce reliance on process memory
-- move durable truth into mailbox events
+- move durable truth into thread events
 - turn persistent resources into explicit session handles or capabilities
 - reinvoke the agent across durable boundaries
 
@@ -132,7 +132,7 @@ If the host can intercept tool calls before they execute, then integration shoul
 
 The easiest path is to wrap the agent rather than rewrite its internals.
 
-### Step 1: mailbox-backed tools
+### Step 1: thread-backed tools
 
 Replace direct tools such as:
 
@@ -141,7 +141,7 @@ Replace direct tools such as:
 - `read file`
 - `write file`
 
-with mailbox-aware tools that:
+with thread-aware tools that:
 
 - emit a `tool.requested` event
 - return control to the host runner
@@ -158,14 +158,14 @@ Examples of a step boundary:
 - on user message arrival
 - on gate resolution
 
-### Step 3: reconstruct context from mailbox state
+### Step 3: reconstruct context from thread state
 
 The adapter should rebuild enough state from:
 
 - prior messages
 - tool results
 - gate outcomes
-- mailbox metadata
+- thread metadata
 
 so that the agent can continue without depending on hidden live memory.
 
@@ -202,7 +202,7 @@ These are also a good fit.
 
 Why:
 
-- the planner can emit intent into the mailbox
+- the planner can emit intent into the thread
 - execution workers can return results as events
 
 ## Browser-first agents
@@ -225,8 +225,8 @@ If shell access is deeply embedded and opaque, adaptation gets harder.
 
 The adapter should own:
 
-- prompt or input construction from mailbox events
-- mapping agent intents to mailbox events
+- prompt or input construction from thread events
+- mapping agent intents to thread events
 - mapping tool results back into agent-visible context
 - identifying step boundaries
 
@@ -237,7 +237,7 @@ The adapter should not own:
 - supervisor routing logic
 - direct secret access decisions
 
-Those belong to the mailbox platform.
+Those belong to the thread platform.
 
 ## Practical Compatibility Assessment
 
@@ -264,7 +264,7 @@ Those belong to the mailbox platform.
 
 Wrap existing runtimes first.
 
-### 2. Force tools through mailbox boundaries
+### 2. Force tools through thread boundaries
 
 This is the main source of control, observability, and resumability.
 
@@ -274,16 +274,16 @@ Do not rely on live process memory for correctness.
 
 ### 4. Model resources explicitly
 
-Browser sessions, sandboxes, temporary workdirs, and credentials should be represented as mailbox-known resources or capabilities.
+Browser sessions, sandboxes, temporary workdirs, and credentials should be represented as thread-known resources or capabilities.
 
 ## Bottom Line
 
-Most OpenCode-style and modern tool-using agents should be adaptable to Agent Mailbox.
+Most OpenCode-style and modern tool-using agents should be adaptable to Weave.
 
 The easiest path is:
 
 - adapter layer
-- mailbox-backed tools
+- thread-backed tools
 - bounded runner turns
 - replay and reinvocation
 

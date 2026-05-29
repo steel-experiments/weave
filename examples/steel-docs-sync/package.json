@@ -1,5 +1,5 @@
 {
-  "name": "@agent-mailbox/steel-docs-sync",
+  "name": "weave-steel-docs-sync",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,6 +9,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@agent-mailbox/core": "file:../.."
+    "weave": "file:../.."
   }
 }

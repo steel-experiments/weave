@@ -1,7 +1,7 @@
 import type { z } from "zod";
-import type { MailboxArtifactStore } from "./artifacts.js";
+import type { ThreadArtifactStore } from "./artifacts.js";
 import type { CredentialRequest, ResolvedCredentials } from "./credentials.js";
-import type { MailboxEvent } from "./events.js";
+import type { ThreadEvent } from "./events.js";
 import type { ToolObserver } from "./observability.js";
 
 export type ToolCompletionOutput = {
@@ -30,14 +30,14 @@ export class RetryableToolError extends Error {
 }
 
 export type ToolRunContext<Input> = {
-  mailboxId: string;
+  threadId: string;
   toolCallId: string;
   toolName: string;
   input: Input;
   credentials: ResolvedCredentials;
-  artifactStore: MailboxArtifactStore;
+  artifactStore: ThreadArtifactStore;
   observe: ToolObserver;
-  request: Extract<MailboxEvent, { type: "tool.requested" }>;
+  request: Extract<ThreadEvent, { type: "tool.requested" }>;
   progress(update: ToolProgressUpdate): Promise<void>;
 };
 

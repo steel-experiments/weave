@@ -5,9 +5,9 @@ import { pathToFileURL } from "node:url";
 import type { Pool } from "pg";
 import { z } from "zod";
 
-export const MailboxArtifactSchema = z.object({
+export const ThreadArtifactSchema = z.object({
   artifactId: z.string().uuid(),
-  mailboxId: z.string().min(1),
+  threadId: z.string().min(1),
   toolCallId: z.string().uuid().nullable(),
   kind: z.string().min(1),
   mediaType: z.string().min(1),
@@ -17,20 +17,20 @@ export const MailboxArtifactSchema = z.object({
   sourceUrl: z.string().url(),
   createdAt: z.string().datetime(),
 });
-export type MailboxArtifact = z.infer<typeof MailboxArtifactSchema>;
+export type ThreadArtifact = z.infer<typeof ThreadArtifactSchema>;
 
-export const MailboxSnapshotSchema = z.object({
+export const ThreadSnapshotSchema = z.object({
   snapshotKey: z.string().min(1),
-  mailboxId: z.string().min(1),
+  threadId: z.string().min(1),
   artifactId: z.string().uuid(),
   sha256: z.string().length(64),
   metadata: z.record(z.string(), z.unknown()).optional(),
   updatedAt: z.string().datetime(),
 });
-export type MailboxSnapshot = z.infer<typeof MailboxSnapshotSchema>;
+export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;
 
-export type PutMailboxArtifactInput = {
-  mailboxId: string;
+export type PutThreadArtifactInput = {
+  threadId: string;
   toolCallId?: string;
   kind: string;
   mediaType: string;
@@ -38,57 +38,57 @@ export type PutMailboxArtifactInput = {
   body: string | Uint8Array;
 };
 
-export type PutMailboxSnapshotInput = {
+export type PutThreadSnapshotInput = {
   snapshotKey: string;
-  mailboxId: string;
+  threadId: string;
   artifactId: string;
   sha256: string;
   metadata?: Record<string, unknown>;
 };
 
-export interface MailboxArtifactStore {
-  putArtifact(input: PutMailboxArtifactInput): Promise<MailboxArtifact>;
-  listArtifacts(mailboxId: string): Promise<MailboxArtifact[]>;
-  getSnapshot(snapshotKey: string): Promise<MailboxSnapshot | null>;
-  putSnapshot(input: PutMailboxSnapshotInput): Promise<MailboxSnapshot>;
+export interface ThreadArtifactStore {
+  putArtifact(input: PutThreadArtifactInput): Promise<ThreadArtifact>;
+  listArtifacts(threadId: string): Promise<ThreadArtifact[]>;
+  getSnapshot(snapshotKey: string): Promise<ThreadSnapshot | null>;
+  putSnapshot(input: PutThreadSnapshotInput): Promise<ThreadSnapshot>;
 }
 
-export class NoopMailboxArtifactStore implements MailboxArtifactStore {
-  async putArtifact(): Promise<MailboxArtifact> {
+export class NoopThreadArtifactStore implements ThreadArtifactStore {
+  async putArtifact(): Promise<ThreadArtifact> {
     throw new Error("Artifact store not configured");
   }
 
-  async listArtifacts(): Promise<MailboxArtifact[]> {
+  async listArtifacts(): Promise<ThreadArtifact[]> {
     return [];
   }
 
-  async getSnapshot(): Promise<MailboxSnapshot | null> {
+  async getSnapshot(): Promise<ThreadSnapshot | null> {
     return null;
   }
 
-  async putSnapshot(): Promise<MailboxSnapshot> {
+  async putSnapshot(): Promise<ThreadSnapshot> {
     throw new Error("Artifact store not configured");
   }
 }
 
-export class PostgresMailboxArtifactStore implements MailboxArtifactStore {
+export class PostgresThreadArtifactStore implements ThreadArtifactStore {
   constructor(
     private readonly pool: Pool,
     private readonly options: { rootDir?: string } = {},
   ) {}
 
-  async putArtifact(input: PutMailboxArtifactInput): Promise<MailboxArtifact> {
+  async putArtifact(input: PutThreadArtifactInput): Promise<ThreadArtifact> {
     const artifactId = randomUUID();
     const buffer = typeof input.body === "string" ? Buffer.from(input.body, "utf8") : Buffer.from(input.body);
     const sha256 = createHash("sha256").update(buffer).digest("hex");
     const byteLength = buffer.byteLength;
-    const filePath = join(this.options.rootDir ?? "/tmp/opencode/agent-mailbox-artifacts", artifactId);
+    const filePath = join(this.options.rootDir ?? "/tmp/opencode/weave-artifacts", artifactId);
     await mkdir(join(filePath, ".."), { recursive: true });
     await writeFile(filePath, buffer);
 
     const result = await this.pool.query<{
       artifact_id: string;
-      mailbox_id: string;
+      thread_id: string;
       tool_call_id: string | null;
       kind: string;
       media_type: string;
@@ -98,9 +98,9 @@ export class PostgresMailboxArtifactStore implements MailboxArtifactStore {
       source_url: string;
       created_at: Date;
     }>(
-      `insert into agent_mailbox.mailbox_artifact(
+      `insert into weave.thread_artifact(
          artifact_id,
-         mailbox_id,
+         thread_id,
          tool_call_id,
          kind,
          media_type,
@@ -112,7 +112,7 @@ export class PostgresMailboxArtifactStore implements MailboxArtifactStore {
        returning *`,
       [
         artifactId,
-        input.mailboxId,
+        input.threadId,
         input.toolCallId ?? null,
         input.kind,
         input.mediaType,
@@ -126,10 +126,10 @@ export class PostgresMailboxArtifactStore implements MailboxArtifactStore {
     return artifactFromRow(result.rows[0]);
   }
 
-  async listArtifacts(mailboxId: string): Promise<MailboxArtifact[]> {
+  async listArtifacts(threadId: string): Promise<ThreadArtifact[]> {
     const result = await this.pool.query<{
       artifact_id: string;
-      mailbox_id: string;
+      thread_id: string;
       tool_call_id: string | null;
       kind: string;
       media_type: string;
@@ -140,26 +140,26 @@ export class PostgresMailboxArtifactStore implements MailboxArtifactStore {
       created_at: Date;
     }>(
       `select *
-       from agent_mailbox.mailbox_artifact
-       where mailbox_id = $1
+       from weave.thread_artifact
+       where thread_id = $1
        order by created_at asc, artifact_id asc`,
-      [mailboxId],
+      [threadId],
     );
 
     return result.rows.map(artifactFromRow);
   }
 
-  async getSnapshot(snapshotKey: string): Promise<MailboxSnapshot | null> {
+  async getSnapshot(snapshotKey: string): Promise<ThreadSnapshot | null> {
     const result = await this.pool.query<{
       snapshot_key: string;
-      mailbox_id: string;
+      thread_id: string;
       artifact_id: string;
       sha256: string;
       metadata_json: Record<string, unknown> | null;
       updated_at: Date;
     }>(
       `select *
-       from agent_mailbox.mailbox_snapshot
+       from weave.thread_snapshot
        where snapshot_key = $1`,
       [snapshotKey],
     );
@@ -168,30 +168,30 @@ export class PostgresMailboxArtifactStore implements MailboxArtifactStore {
     return row ? snapshotFromRow(row) : null;
   }
 
-  async putSnapshot(input: PutMailboxSnapshotInput): Promise<MailboxSnapshot> {
+  async putSnapshot(input: PutThreadSnapshotInput): Promise<ThreadSnapshot> {
     const result = await this.pool.query<{
       snapshot_key: string;
-      mailbox_id: string;
+      thread_id: string;
       artifact_id: string;
       sha256: string;
       metadata_json: Record<string, unknown> | null;
       updated_at: Date;
     }>(
-      `insert into agent_mailbox.mailbox_snapshot(
+      `insert into weave.thread_snapshot(
          snapshot_key,
-         mailbox_id,
+         thread_id,
          artifact_id,
          sha256,
          metadata_json
        ) values ($1, $2, $3, $4, $5)
        on conflict (snapshot_key) do update
-         set mailbox_id = excluded.mailbox_id,
+         set thread_id = excluded.thread_id,
              artifact_id = excluded.artifact_id,
              sha256 = excluded.sha256,
              metadata_json = excluded.metadata_json,
              updated_at = now()
        returning *`,
-      [input.snapshotKey, input.mailboxId, input.artifactId, input.sha256, JSON.stringify(input.metadata ?? {})],
+      [input.snapshotKey, input.threadId, input.artifactId, input.sha256, JSON.stringify(input.metadata ?? {})],
     );
 
     const row = result.rows[0];
@@ -205,7 +205,7 @@ export class PostgresMailboxArtifactStore implements MailboxArtifactStore {
 
 function artifactFromRow(row: {
   artifact_id: string;
-  mailbox_id: string;
+  thread_id: string;
   tool_call_id: string | null;
   kind: string;
   media_type: string;
@@ -214,14 +214,14 @@ function artifactFromRow(row: {
   uri: string;
   source_url: string;
   created_at: Date;
-} | undefined): MailboxArtifact {
+} | undefined): ThreadArtifact {
   if (!row) {
     throw new Error("Artifact row missing");
   }
 
-  return MailboxArtifactSchema.parse({
+  return ThreadArtifactSchema.parse({
     artifactId: row.artifact_id,
-    mailboxId: row.mailbox_id,
+    threadId: row.thread_id,
     toolCallId: row.tool_call_id,
     kind: row.kind,
     mediaType: row.media_type,
@@ -235,15 +235,15 @@ function artifactFromRow(row: {
 
 function snapshotFromRow(row: {
   snapshot_key: string;
-  mailbox_id: string;
+  thread_id: string;
   artifact_id: string;
   sha256: string;
   metadata_json: Record<string, unknown> | null;
   updated_at: Date;
-}): MailboxSnapshot {
-  return MailboxSnapshotSchema.parse({
+}): ThreadSnapshot {
+  return ThreadSnapshotSchema.parse({
     snapshotKey: row.snapshot_key,
-    mailboxId: row.mailbox_id,
+    threadId: row.thread_id,
     artifactId: row.artifact_id,
     sha256: row.sha256,
     metadata: row.metadata_json ?? undefined,

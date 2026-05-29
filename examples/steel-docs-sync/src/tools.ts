@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { MailboxArtifactSchema, RetryableToolError, defineTool } from "@agent-mailbox/core";
+import { ThreadArtifactSchema, RetryableToolError, defineTool } from "weave";
 import { z } from "zod";
 
 const SteelDocsAuditFindingSchema = z.object({
@@ -8,7 +8,7 @@ const SteelDocsAuditFindingSchema = z.object({
   evidence: z.array(z.string().min(1)).min(1),
 });
 
-const SteelDocsAuditArtifactSchema = MailboxArtifactSchema.extend({
+const SteelDocsAuditArtifactSchema = ThreadArtifactSchema.extend({
   kind: z.enum(["docs-page", "llms-txt", "openapi-spec"]),
 });
 
@@ -55,7 +55,7 @@ export const steelAuditTool = defineTool({
     requiresManualApproval: z.literal(false),
     data: SteelDocsAuditDataSchema,
   }),
-  async run({ artifactStore, mailboxId, progress, input, toolCallId }) {
+  async run({ artifactStore, threadId, progress, input, toolCallId }) {
     await progress({ percent: 15, message: "Fetching docs landing page." });
     const docs = await fetchBoundedText(input.docsBaseUrl);
     await progress({ percent: 40, message: "Fetching llms.txt." });
@@ -68,7 +68,7 @@ export const steelAuditTool = defineTool({
     const findings = buildFindings(docs, llms, openApi);
     const artifacts = [
       await artifactStore.putArtifact({
-        mailboxId,
+        threadId,
         toolCallId,
         kind: "docs-page",
         mediaType: docs.mediaType,
@@ -76,7 +76,7 @@ export const steelAuditTool = defineTool({
         body: docs.body,
       }),
       await artifactStore.putArtifact({
-        mailboxId,
+        threadId,
         toolCallId,
         kind: "llms-txt",
         mediaType: llms.mediaType,
@@ -84,7 +84,7 @@ export const steelAuditTool = defineTool({
         body: llms.body,
       }),
       await artifactStore.putArtifact({
-        mailboxId,
+        threadId,
         toolCallId,
         kind: "openapi-spec",
         mediaType: openApi.mediaType,
@@ -98,7 +98,7 @@ export const steelAuditTool = defineTool({
         const previous = await artifactStore.getSnapshot(snapshotKey);
         await artifactStore.putSnapshot({
           snapshotKey,
-          mailboxId,
+          threadId,
           artifactId: artifact.artifactId,
           sha256: artifact.sha256,
           metadata: { kind: artifact.kind, sourceUrl: artifact.sourceUrl },

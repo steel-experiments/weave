@@ -3,19 +3,19 @@ import { createHmac } from "node:crypto";
 import { AddressInfo } from "node:net";
 import {
   ContractToolWorker,
-  MailboxArtifactSchema,
-  MailboxRunner,
-  createMailboxRuntime,
-  MailboxService,
-  PostgresMailboxArtifactStore,
-  PostgresMailboxEngine,
+  ThreadArtifactSchema,
+  ThreadRunner,
+  createWeaveRuntime,
+  ThreadService,
+  PostgresThreadArtifactStore,
+  PostgresThreadEngine,
   createPool,
   getAgent,
   migrate,
-  type MailboxEvent,
-  type MailboxProjection,
-  type MailboxSummary,
-} from "@agent-mailbox/core";
+  type ThreadEvent,
+  type ThreadProjection,
+  type ThreadSummary,
+} from "weave";
 import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";
 import { startSteelFixtureServer } from "./fixtures.js";
@@ -23,7 +23,7 @@ import { createSteelDocsSyncApiServer, type SteelDocsSyncWebhookPayload } from "
 
 const ToolArtifactSchema = z.object({
   artifactId: z.string().uuid(),
-  mailboxId: z.string().min(1),
+  threadId: z.string().min(1),
   toolCallId: z.string().uuid().nullable(),
   kind: z.enum(["docs-page", "llms-txt", "openapi-spec"]),
   uri: z.string().min(1),
@@ -41,7 +41,7 @@ const ToolBaselineSchema = z.object({
   previousSha256: z.string().length(64).nullable(),
   changed: z.boolean(),
 });
-const PersistedArtifactListSchema = z.array(MailboxArtifactSchema).length(3);
+const PersistedArtifactListSchema = z.array(ThreadArtifactSchema).length(3);
 const InboxDiagnosticsSchema = z.array(
   z.object({
     id: z.number().int().positive(),
@@ -65,10 +65,10 @@ const fixtures = await startSteelFixtureServer();
 try {
   await migrate(pool, { reset: true });
 
-  const engine = new PostgresMailboxEngine(pool);
-  const artifactStore = new PostgresMailboxArtifactStore(pool);
+  const engine = new PostgresThreadEngine(pool);
+  const artifactStore = new PostgresThreadArtifactStore(pool);
   const runtimeApp = { ...steelDocsSyncApp, artifactStore };
-  const service = new MailboxService(engine);
+  const service = new ThreadService(engine);
   const fixtureHost = new URL(fixtures.baseUrl).host;
   const server = createSteelDocsSyncApiServer(engine, service, {
     artifactStore: runtimeApp.artifactStore,
@@ -81,7 +81,7 @@ try {
   assert(isAddressInfo(address));
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const activeAgent = getAgent(runtimeApp, "steel-docs");
-  const runtime = createMailboxRuntime({
+  const runtime = createWeaveRuntime({
     app: runtimeApp,
     agentName: "steel-docs",
     engine,
@@ -119,24 +119,24 @@ try {
 
     const created = await postWebhook(baseUrl, payload);
     assert.equal(created.status, 202);
-    assert(typeof created.body.mailboxId === "string");
+    assert(typeof created.body.threadId === "string");
     assert(typeof created.body.statusUrl === "string");
     assert(typeof created.body.eventsUrl === "string");
 
     const duplicate = await postWebhook(baseUrl, payload);
     assert.equal(duplicate.status, 202);
-    assert.equal(duplicate.body.mailboxId, created.body.mailboxId);
+    assert.equal(duplicate.body.threadId, created.body.threadId);
 
-    const firstStreamEvent = await readFirstStreamEvent(baseUrl, created.body.mailboxId);
-    const streamed = await readTerminalStream(baseUrl, created.body.mailboxId, {
+    const firstStreamEvent = await readFirstStreamEvent(baseUrl, created.body.threadId);
+    const streamed = await readTerminalStream(baseUrl, created.body.threadId, {
       lastEventId: firstStreamEvent.id,
     });
-    const finalProjection = await getJson<MailboxProjection>(`${baseUrl}/mailboxes/${created.body.mailboxId}`);
-    const summary = await getJson<MailboxSummary>(`${baseUrl}/mailboxes/${created.body.mailboxId}/summary`);
+    const finalProjection = await getJson<ThreadProjection>(`${baseUrl}/threads/${created.body.threadId}`);
+    const summary = await getJson<ThreadSummary>(`${baseUrl}/threads/${created.body.threadId}/summary`);
     const artifactListing = await getJson<{ artifacts: z.infer<typeof PersistedArtifactListSchema> }>(
-      `${baseUrl}/mailboxes/${created.body.mailboxId}/artifacts`,
+      `${baseUrl}/threads/${created.body.threadId}/artifacts`,
     );
-    const events = await getEvents(baseUrl, created.body.mailboxId);
+    const events = await getEvents(baseUrl, created.body.threadId);
     const sessionStarted = events.find((event) => event.type === "session.started");
     const promptReceived = events.find((event) => event.type === "prompt.received");
     const toolRequested = events.find((event) => event.type === "tool.requested");
@@ -192,10 +192,10 @@ try {
     };
     const flakySuccessCreated = await postWebhook(baseUrl, flakySuccessPayload);
     assert.equal(flakySuccessCreated.status, 202);
-    assert(typeof flakySuccessCreated.body.mailboxId === "string");
-    const flakyStreamed = await readTerminalStream(baseUrl, flakySuccessCreated.body.mailboxId);
+    assert(typeof flakySuccessCreated.body.threadId === "string");
+    const flakyStreamed = await readTerminalStream(baseUrl, flakySuccessCreated.body.threadId);
     assert.equal(flakyStreamed.completed.status, "completed");
-    const flakyEvents = await getEvents(baseUrl, flakySuccessCreated.body.mailboxId);
+    const flakyEvents = await getEvents(baseUrl, flakySuccessCreated.body.threadId);
     assert(
       flakyEvents.some(
         (event) => event.type === "tool.progress" && event.payload.message.includes("Retrying after transient failure"),
@@ -208,10 +208,10 @@ try {
     };
     const baselineSuccessCreated = await postWebhook(baseUrl, baselineSuccessPayload);
     assert.equal(baselineSuccessCreated.status, 202);
-    assert(typeof baselineSuccessCreated.body.mailboxId === "string");
-    const baselineStreamed = await readTerminalStream(baseUrl, baselineSuccessCreated.body.mailboxId);
+    assert(typeof baselineSuccessCreated.body.threadId === "string");
+    const baselineStreamed = await readTerminalStream(baseUrl, baselineSuccessCreated.body.threadId);
     assert.equal(baselineStreamed.completed.status, "completed");
-    const baselineEvents = await getEvents(baseUrl, baselineSuccessCreated.body.mailboxId);
+    const baselineEvents = await getEvents(baseUrl, baselineSuccessCreated.body.threadId);
     const baselineToolCompleted = baselineEvents.find((event) => event.type === "tool.completed");
     assert(baselineToolCompleted?.type === "tool.completed");
     const baselineComparisons = readBaselines(baselineToolCompleted.payload.output.data);
@@ -225,12 +225,12 @@ try {
     };
     const executionFailureCreated = await postWebhook(baseUrl, executionFailurePayload);
     assert.equal(executionFailureCreated.status, 202);
-    assert(typeof executionFailureCreated.body.mailboxId === "string");
-    const failedFirstStreamEvent = await readFirstStreamEvent(baseUrl, executionFailureCreated.body.mailboxId);
-    const failedStreamed = await readTerminalStream(baseUrl, executionFailureCreated.body.mailboxId, {
+    assert(typeof executionFailureCreated.body.threadId === "string");
+    const failedFirstStreamEvent = await readFirstStreamEvent(baseUrl, executionFailureCreated.body.threadId);
+    const failedStreamed = await readTerminalStream(baseUrl, executionFailureCreated.body.threadId, {
       lastEventId: failedFirstStreamEvent.id,
     });
-    const failedSummary = await getJson<MailboxSummary>(`${baseUrl}/mailboxes/${executionFailureCreated.body.mailboxId}/summary`);
+    const failedSummary = await getJson<ThreadSummary>(`${baseUrl}/threads/${executionFailureCreated.body.threadId}/summary`);
     assert.equal(failedSummary.status, "failed");
     assert.equal(failedSummary.outcome, null);
     assert.equal(failedSummary.execution.status, "failed");
@@ -242,7 +242,7 @@ try {
     assert.equal(failedStreamed.completed.status, "failed");
     assert(failedStreamed.events.every((event) => (event.seq ?? 0) > failedFirstStreamEvent.id));
     const failedInboxDiagnostics = await getJson<{ items: z.infer<typeof InboxDiagnosticsSchema> }>(
-      `${baseUrl}/mailboxes/${executionFailureCreated.body.mailboxId}/diagnostics/inbox`,
+      `${baseUrl}/threads/${executionFailureCreated.body.threadId}/diagnostics/inbox`,
     );
     assert(
       failedInboxDiagnostics.items.some(
@@ -252,19 +252,19 @@ try {
 
     console.log("Steel webhook demo verified");
     console.log(`api=${baseUrl}`);
-    console.log(`mailboxId=${created.body.mailboxId}`);
+    console.log(`threadId=${created.body.threadId}`);
     console.log(`statusUrl=${created.body.statusUrl}`);
     console.log(`eventsUrl=${created.body.eventsUrl}`);
-    console.log(`artifactsUrl=${baseUrl}/mailboxes/${created.body.mailboxId}/artifacts`);
-    console.log(`summaryUrl=${baseUrl}/mailboxes/${created.body.mailboxId}/summary`);
-    console.log(`streamUrl=${baseUrl}/mailboxes/${created.body.mailboxId}/stream`);
+    console.log(`artifactsUrl=${baseUrl}/threads/${created.body.threadId}/artifacts`);
+    console.log(`summaryUrl=${baseUrl}/threads/${created.body.threadId}/summary`);
+    console.log(`streamUrl=${baseUrl}/threads/${created.body.threadId}/stream`);
     console.log(`outcome=${summary.outcome}`);
     console.log(`execution=${summary.execution.status}`);
     console.log(`resumedFrom=${firstStreamEvent.id}`);
     console.log(`artifacts=${artifacts.length}`);
     console.log(`finalStatus=${finalProjection.status}`);
     console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
-    console.log(`failedMailboxId=${executionFailureCreated.body.mailboxId}`);
+    console.log(`failedThreadId=${executionFailureCreated.body.threadId}`);
     console.log(`failedExecution=${failedSummary.execution.status}`);
     console.log(`failedInboxState=${failedInboxDiagnostics.items.at(-1)?.state ?? "unknown"}`);
   } finally {
@@ -283,10 +283,10 @@ function listen(server: ReturnType<typeof createSteelDocsSyncApiServer>): Promis
 
 async function readTerminalStream(
   baseUrl: string,
-  mailboxId: string,
+  threadId: string,
   options: { lastEventId?: number } = {},
-): Promise<{ events: MailboxEvent[]; summary: MailboxSummary; completed: MailboxSummary }> {
-  const response = await fetch(`${baseUrl}/mailboxes/${mailboxId}/stream`, {
+): Promise<{ events: ThreadEvent[]; summary: ThreadSummary; completed: ThreadSummary }> {
+  const response = await fetch(`${baseUrl}/threads/${threadId}/stream`, {
     headers: options.lastEventId !== undefined ? { "Last-Event-ID": String(options.lastEventId) } : undefined,
   });
   if (!response.ok || !response.body) {
@@ -296,8 +296,8 @@ async function readTerminalStream(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  const events: MailboxEvent[] = [];
-  let latestSummary: MailboxSummary | null = null;
+  const events: ThreadEvent[] = [];
+  let latestSummary: ThreadSummary | null = null;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -311,15 +311,15 @@ async function readTerminalStream(
       const rawRecord = buffer.slice(0, separatorIndex);
       buffer = buffer.slice(separatorIndex + 2);
       const record = parseSseRecord(rawRecord);
-      if (record?.event === "mailbox.event") {
-        events.push(record.data as MailboxEvent);
+      if (record?.event === "thread.event") {
+        events.push(record.data as ThreadEvent);
       }
-      if (record?.event === "mailbox.summary") {
-        const summary = record.data as MailboxSummary;
+      if (record?.event === "thread.summary") {
+        const summary = record.data as ThreadSummary;
         latestSummary = summary;
       }
-      if (record?.event === "mailbox.completed") {
-        const completed = record.data as MailboxSummary;
+      if (record?.event === "thread.completed") {
+        const completed = record.data as ThreadSummary;
         await reader.cancel();
         return { events, summary: latestSummary ?? completed, completed };
       }
@@ -327,11 +327,11 @@ async function readTerminalStream(
     }
   }
 
-  throw new Error(`Stream ended before terminal summary for mailbox ${mailboxId}`);
+  throw new Error(`Stream ended before terminal summary for thread ${threadId}`);
 }
 
-async function readFirstStreamEvent(baseUrl: string, mailboxId: string): Promise<{ id: number; event: MailboxEvent }> {
-  const response = await fetch(`${baseUrl}/mailboxes/${mailboxId}/stream`);
+async function readFirstStreamEvent(baseUrl: string, threadId: string): Promise<{ id: number; event: ThreadEvent }> {
+  const response = await fetch(`${baseUrl}/threads/${threadId}/stream`);
   if (!response.ok || !response.body) {
     throw new Error(`Failed to open SSE stream: HTTP ${response.status}`);
   }
@@ -352,22 +352,22 @@ async function readFirstStreamEvent(baseUrl: string, mailboxId: string): Promise
       const rawRecord = buffer.slice(0, separatorIndex);
       buffer = buffer.slice(separatorIndex + 2);
       const record = parseSseRecord(rawRecord);
-      if (record?.event === "mailbox.event") {
+      if (record?.event === "thread.event") {
         await reader.cancel();
         if (record.id === undefined) {
-          throw new Error(`Streamed mailbox event missing id for mailbox ${mailboxId}`);
+          throw new Error(`Streamed thread event missing id for thread ${threadId}`);
         }
-        return { id: record.id, event: record.data as MailboxEvent };
+        return { id: record.id, event: record.data as ThreadEvent };
       }
       separatorIndex = buffer.indexOf("\n\n");
     }
   }
 
-  throw new Error(`Stream ended before first mailbox event for mailbox ${mailboxId}`);
+  throw new Error(`Stream ended before first thread event for thread ${threadId}`);
 }
 
-async function getEvents(baseUrl: string, mailboxId: string): Promise<MailboxEvent[]> {
-  const body = await getJson<{ events: MailboxEvent[] }>(`${baseUrl}/mailboxes/${mailboxId}/events`);
+async function getEvents(baseUrl: string, threadId: string): Promise<ThreadEvent[]> {
+  const body = await getJson<{ events: ThreadEvent[] }>(`${baseUrl}/threads/${threadId}/events`);
   return body.events;
 }
 
@@ -380,7 +380,7 @@ async function postWebhook(
   baseUrl: string,
   payload: SteelDocsSyncWebhookPayload,
   options: { secret?: string; timestamp?: number } = {},
-): Promise<{ status: number; body: { mailboxId?: string; statusUrl?: string; eventsUrl?: string; error?: string } }> {
+): Promise<{ status: number; body: { threadId?: string; statusUrl?: string; eventsUrl?: string; error?: string } }> {
   const timestamp = options.timestamp ?? Date.now();
   const body = JSON.stringify(payload);
   const secret = options.secret ?? webhookSecret;
@@ -390,15 +390,15 @@ async function postWebhook(
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-agent-mailbox-timestamp": String(timestamp),
-      "x-agent-mailbox-signature": signature,
+      "x-weave-timestamp": String(timestamp),
+      "x-weave-signature": signature,
     },
     body,
   });
 
   return {
     status: response.status,
-    body: (await response.json()) as { mailboxId?: string; statusUrl?: string; eventsUrl?: string; error?: string },
+    body: (await response.json()) as { threadId?: string; statusUrl?: string; eventsUrl?: string; error?: string },
   };
 }
 

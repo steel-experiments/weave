@@ -1,8 +1,8 @@
-# Agent Mailbox Primitive Research
+# Weave Primitive Research
 
 ## Thesis
 
-The core idea is sound: treat each agent as a durable, message-driven actor whose source of truth is an append-only mailbox, while execution is disposable.
+The core idea is sound: treat each agent as a durable, message-driven actor whose source of truth is an append-only thread, while execution is disposable.
 
 This is not a new systems pattern, but it is a strong recombination of a few proven ideas:
 
@@ -44,7 +44,7 @@ LangGraph reinforces a simpler version of the same idea:
 
 Relevant lesson:
 
-The mailbox runtime should assume re-entry and replay. Side effects must be modeled explicitly as requests and results.
+The thread runtime should assume re-entry and replay. Side effects must be modeled explicitly as requests and results.
 
 ### Orleans and virtual actors
 
@@ -56,7 +56,7 @@ Orleans validates the identity and activation model:
 
 Relevant lesson:
 
-An agent mailbox should have a stable address and a wake mechanism, while compute stays ephemeral.
+An agent thread should have a stable address and a wake mechanism, while compute stays ephemeral.
 
 ### Cloudflare Durable Objects
 
@@ -68,7 +68,7 @@ Durable Objects validate the coordination boundary:
 
 Relevant lesson:
 
-Per-agent serialization is valuable. A mailbox should strongly prefer one active runner lease per agent mailbox.
+Per-agent serialization is valuable. A thread should strongly prefer one active runner lease per agent thread.
 
 ### Event sourcing guidance
 
@@ -93,31 +93,31 @@ JetStream validates the replayable inbox side:
 
 Relevant lesson:
 
-The mailbox needs durable delivery semantics and replay, but a broker alone is not enough. You still need per-mailbox event history, concurrency control, and policy state.
+The thread needs durable delivery semantics and replay, but a broker alone is not enough. You still need per-thread event history, concurrency control, and policy state.
 
 ### SpiceDB / relationship-based auth
 
 Relationship-based auth is relevant for delegated identity and capability scope:
 
-- who may operate which mailbox
+- who may operate which thread
 - which human may resolve which gate
 - which runner may consume which secret capability
 
 Relevant lesson:
 
-Keep policy facts and mailbox history separate. The mailbox should ask a policy system questions; it should not become the whole authorization graph.
+Keep policy facts and thread history separate. The thread should ask a policy system questions; it should not become the whole authorization graph.
 
 ## Recommended Architectural Shape
 
 ## Core model
 
-Each mailbox is a durable stream plus a few derived indexes.
+Each thread is a durable stream plus a few derived indexes.
 
 The stream is authoritative.
 
 Derived state exists for:
 
-- current mailbox status
+- current thread status
 - next runnable event offset
 - pending gates
 - active runner lease
@@ -127,15 +127,15 @@ Derived state exists for:
 Conceptually:
 
 ```txt
-Mailbox
+Thread
   id
   identity bindings
   policy bindings
   capability bindings
   lease state
 
-MailboxEvent
-  mailbox_id
+ThreadEvent
+  thread_id
   seq
   event_id
   causation_id
@@ -145,8 +145,8 @@ MailboxEvent
   created_at
   actor
 
-MailboxCursor
-  mailbox_id
+ThreadCursor
+  thread_id
   consumer_name
   last_seq
 ```
@@ -155,12 +155,12 @@ MailboxCursor
 
 Use four logical layers.
 
-### 1. Mailbox service
+### 1. Thread service
 
 Responsible for:
 
 - append events atomically
-- enforce per-mailbox ordering
+- enforce per-thread ordering
 - maintain inbox visibility state
 - manage leases and wakeups
 - expose replay APIs
@@ -169,8 +169,8 @@ Responsible for:
 
 Responsible for:
 
-- acquire mailbox lease
-- load mailbox state or snapshot
+- acquire thread lease
+- load thread state or snapshot
 - replay from last checkpoint
 - invoke agent logic on newly visible events
 - emit effect requests, internal state events, or sleeps
@@ -228,9 +228,9 @@ runner.wake.triggered
 Use envelopes with stable metadata:
 
 ```ts
-type MailboxEvent = {
+type ThreadEvent = {
   eventId: string
-  mailboxId: string
+  threadId: string
   seq: number
   type: string
   occurredAt: string
@@ -259,7 +259,7 @@ Example:
 
 - `llm.call.started` belongs in history, but does not necessarily enter the runnable inbox
 - `llm.call.completed` likely does
-- `gate.created` may suspend the mailbox
+- `gate.created` may suspend the thread
 - `gate.resolved` should re-enter the runnable inbox
 
 ## Determinism model
@@ -284,8 +284,8 @@ Use Postgres first.
 Reasons:
 
 - strong transactions for append + index updates
-- row locking and advisory locks for mailbox lease control
-- easy ordered per-mailbox streams
+- row locking and advisory locks for thread lease control
+- easy ordered per-thread streams
 - `LISTEN/NOTIFY` for low-latency wakeups
 - good fit for audit queries and operational tooling
 - can later use logical decoding or outbox patterns for downstream replication
@@ -309,7 +309,7 @@ Recommendation:
 ## Minimal schema for an MVP
 
 ```sql
-create table mailbox (
+create table thread (
   id text primary key,
   status text not null,
   created_at timestamptz not null default now(),
@@ -321,8 +321,8 @@ create table mailbox (
   snapshot_blob jsonb
 );
 
-create table mailbox_event (
-  mailbox_id text not null references mailbox(id),
+create table thread_event (
+  thread_id text not null references thread(id),
   seq bigint not null,
   event_id text not null,
   type text not null,
@@ -332,21 +332,21 @@ create table mailbox_event (
   actor_id text not null,
   payload jsonb not null,
   created_at timestamptz not null default now(),
-  primary key (mailbox_id, seq),
+  primary key (thread_id, seq),
   unique (event_id)
 );
 
-create table mailbox_inbox (
-  mailbox_id text not null references mailbox(id),
+create table thread_inbox (
+  thread_id text not null references thread(id),
   seq bigint not null,
   visible_at timestamptz not null default now(),
   state text not null,
-  primary key (mailbox_id, seq)
+  primary key (thread_id, seq)
 );
 
-create table mailbox_gate (
+create table thread_gate (
   id text primary key,
-  mailbox_id text not null references mailbox(id),
+  thread_id text not null references thread(id),
   event_seq bigint not null,
   gate_type text not null,
   status text not null,
@@ -355,9 +355,9 @@ create table mailbox_gate (
   resolution jsonb
 );
 
-create table mailbox_capability (
+create table thread_capability (
   id text primary key,
-  mailbox_id text not null references mailbox(id),
+  thread_id text not null references thread(id),
   capability_type text not null,
   scope jsonb not null,
   expires_at timestamptz,
@@ -370,7 +370,7 @@ create table mailbox_capability (
 The runner contract can stay very small.
 
 ```txt
-1. poll or receive wake signal for mailbox
+1. poll or receive wake signal for thread
 2. acquire lease if none active
 3. read snapshot + events since snapshot
 4. rebuild agent state
@@ -382,7 +382,7 @@ The runner contract can stay very small.
 
 Important constraints:
 
-- one active lease per mailbox
+- one active lease per thread
 - bounded step budget per wake to avoid monopolization
 - appends must be atomic with inbox and gate side effects
 - runner must be safe to crash at any point
@@ -395,7 +395,7 @@ Example:
 
 ```txt
 agent emits browser.navigation.requested
-mailbox service evaluates policy
+thread service evaluates policy
 if allowed -> enqueue browser worker input
 if gated -> append gate.created
 if denied -> append action.denied
@@ -412,8 +412,8 @@ The design goal here should be capability transport, not secret transport.
 Use references like:
 
 ```txt
-cap://mailbox/{id}/otp/google-account
-cap://mailbox/{id}/smtp/send-as/support
+cap://thread/{id}/otp/google-account
+cap://thread/{id}/smtp/send-as/support
 cap://session/{browserSessionId}/origin/https://accounts.google.com/fill-otp
 ```
 
@@ -431,7 +431,7 @@ Avoid returning raw OTPs or passwords into the runner unless a product requireme
 
 ## Human-in-the-loop design
 
-Treat approvals as mailbox-native state, not ad hoc callback state.
+Treat approvals as thread-native state, not ad hoc callback state.
 
 Suggested lifecycle:
 
@@ -445,25 +445,25 @@ action.released
 action.completed | action.denied
 ```
 
-A gate should be addressable and replayable like any other mailbox object.
+A gate should be addressable and replayable like any other thread object.
 
 ## Federated identity model
 
-Do not embed email addresses, phone numbers, browser sessions, and OAuth grants directly into the mailbox core table.
+Do not embed email addresses, phone numbers, browser sessions, and OAuth grants directly into the thread core table.
 
 Model them as bound ingress or capability resources with explicit lifetime and provenance.
 
 Example bindings:
 
-- mailbox `m_123` can receive mail from alias `case-123@inbox.example`
-- mailbox `m_123` can consume SMS from leased number `+1...` until expiry
-- mailbox `m_123` can instruct browser session `bs_456` for origin set X
+- thread `m_123` can receive mail from alias `case-123@inbox.example`
+- thread `m_123` can consume SMS from leased number `+1...` until expiry
+- thread `m_123` can instruct browser session `bs_456` for origin set X
 
 That keeps identity delegation auditable and revocable.
 
 ## Observability and traceability
 
-The mailbox event stream already gives most of the audit surface.
+The thread event stream already gives most of the audit surface.
 
 Add:
 
@@ -477,30 +477,30 @@ Large blobs should not live in hot event rows. Store references.
 
 ## Where this should be stricter than a workflow engine
 
-The mailbox primitive should be opinionated about:
+The thread primitive should be opinionated about:
 
 - append-only event history
 - explicit effect requests/results
-- one active runner lease per mailbox
+- one active runner lease per thread
 - first-class gates and capabilities
 - replayable policy decisions
 
 ## Where this should be looser than a workflow engine
 
-The mailbox primitive should avoid baking in:
+The thread primitive should avoid baking in:
 
 - a DSL for workflow programming
 - mandatory graph compilation
 - language-level determinism constraints everywhere
 - a giant built-in activity catalog
 
-The mailbox is the substrate. Higher-level agent frameworks can sit on top.
+The thread is the substrate. Higher-level agent frameworks can sit on top.
 
 ## Key risks
 
 ### 1. Rebuilding a workflow engine by accident
 
-If retries, timers, compensation, branching, child agents, and approvals all become bespoke mailbox features, you can recreate Temporal poorly.
+If retries, timers, compensation, branching, child agents, and approvals all become bespoke thread features, you can recreate Temporal poorly.
 
 Mitigation:
 
@@ -508,7 +508,7 @@ Keep the primitive small. Events, inboxes, gates, leases, capabilities, and work
 
 ### 2. Too much replay cost
 
-Long-lived mailboxes can accumulate large histories.
+Long-lived threads can accumulate large histories.
 
 Mitigation:
 
@@ -551,10 +551,10 @@ Build the smallest end-to-end slice that proves resumability and gates.
 
 ### MVP scope
 
-- Postgres-backed mailbox service
-- append-only event store per mailbox
+- Postgres-backed thread service
+- append-only event store per thread
 - inbox table for runnable events
-- single runner process with mailbox leases
+- single runner process with thread leases
 - one human gate type
 - one timer or sleep mechanism
 - one activity worker type, likely HTTP/tool call or browser action
@@ -579,7 +579,7 @@ user asks agent to log in
 agent requests browser navigation
 browser detects OTP requirement
 worker emits otp.required
-mailbox creates gate
+thread creates gate
 human supplies OTP or approves OTP capability use
 gate resolves
 runner wakes and continues
@@ -628,8 +628,8 @@ If that works reliably across process restarts, the primitive is real.
 If we build this, we should start with:
 
 - Postgres as the durable control-plane store
-- mailbox-local ordered event streams
-- mailbox leases instead of long-lived runtimes
+- thread-local ordered event streams
+- thread leases instead of long-lived runtimes
 - explicit requested/completed side-effect events
 - first-class gates and capability references
 
@@ -644,7 +644,7 @@ We should not start with:
 
 The design is feasible and well-supported by adjacent systems.
 
-The novel part is not append-only logs or actors by themselves. The novel part is treating the mailbox as the single durable boundary where:
+The novel part is not append-only logs or actors by themselves. The novel part is treating the thread as the single durable boundary where:
 
 - agent execution resumes
 - side effects are mediated
@@ -655,7 +655,7 @@ The novel part is not append-only logs or actors by themselves. The novel part i
 
 That is a coherent primitive.
 
-The best first implementation is a small Postgres-backed mailbox service with leases, append-only events, runnable inbox rows, and effect workers. If that slice works for OTP, approval, and browser resumption, the rest of the architecture can grow around it.
+The best first implementation is a small Postgres-backed thread service with leases, append-only events, runnable inbox rows, and effect workers. If that slice works for OTP, approval, and browser resumption, the rest of the architecture can grow around it.
 
 ## References
 

@@ -1,13 +1,13 @@
 import {
-  MailboxSummarySchema,
-  type MailboxEvent,
-  type MailboxExecutionStatus,
-  type MailboxProjection,
-  type MailboxSummary,
-  type MailboxSummaryOutcome,
+  ThreadSummarySchema,
+  type ThreadEvent,
+  type ThreadExecutionStatus,
+  type ThreadProjection,
+  type ThreadSummary,
+  type ThreadSummaryOutcome,
 } from "./events.js";
 
-export function buildMailboxSummary(projection: MailboxProjection, events: MailboxEvent[]): MailboxSummary {
+export function buildThreadSummary(projection: ThreadProjection, events: ThreadEvent[]): ThreadSummary {
   const findings = {
     critical: 0,
     warning: 0,
@@ -38,8 +38,8 @@ export function buildMailboxSummary(projection: MailboxProjection, events: Mailb
   const outcome = deriveOutcome(projection.status, findings);
   const executionStatus = deriveExecutionStatus(projection.status);
 
-  return MailboxSummarySchema.parse({
-    mailboxId: projection.mailboxId,
+  return ThreadSummarySchema.parse({
+    threadId: projection.threadId,
     status: projection.status,
     outcome,
     execution: {
@@ -56,9 +56,9 @@ export function buildMailboxSummary(projection: MailboxProjection, events: Mailb
 }
 
 function deriveOutcome(
-  status: MailboxProjection["status"],
-  findings: MailboxSummary["findings"],
-): MailboxSummaryOutcome | null {
+  status: ThreadProjection["status"],
+  findings: ThreadSummary["findings"],
+): ThreadSummaryOutcome | null {
   if (status !== "completed") {
     return null;
   }
@@ -74,7 +74,7 @@ function deriveOutcome(
   return "passed";
 }
 
-function deriveExecutionStatus(status: MailboxProjection["status"]): MailboxExecutionStatus {
+function deriveExecutionStatus(status: ThreadProjection["status"]): ThreadExecutionStatus {
   if (status === "failed") {
     return "failed";
   }

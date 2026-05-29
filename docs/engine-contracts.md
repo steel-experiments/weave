@@ -4,7 +4,7 @@
 
 This document defines the minimal typed contracts needed for the Postgres-backed PoC.
 
-These contracts should be treated as mailbox-level interfaces, not Postgres-specific APIs.
+These contracts should be treated as thread-level interfaces, not Postgres-specific APIs.
 
 ## Design Goals
 
@@ -19,8 +19,8 @@ These contracts should be treated as mailbox-level interfaces, not Postgres-spec
 ```ts
 import { z } from "zod"
 
-export const MailboxId = z.string().min(1)
-export type MailboxId = z.infer<typeof MailboxId>
+export const ThreadId = z.string().min(1)
+export type ThreadId = z.infer<typeof ThreadId>
 
 export const EventId = z.string().uuid()
 export type EventId = z.infer<typeof EventId>
@@ -52,7 +52,7 @@ The payload union is defined in `event-taxonomy.md`.
 ```ts
 export const EventEnvelopeBase = z.object({
   eventId: EventId,
-  mailboxId: MailboxId,
+  threadId: ThreadId,
   seq: z.number().int().nonnegative().optional(),
   type: z.string().min(1),
   occurredAt: IsoDateTime,
@@ -116,14 +116,14 @@ export type FollowCursor = z.infer<typeof FollowCursor>
 Rules:
 
 - follow yields only durable events
-- follow preserves mailbox-local order
+- follow preserves thread-local order
 - follow is a delivery convenience, not the source of truth
 
 ## Lease Contract
 
 ```ts
 export const Lease = z.object({
-  mailboxId: MailboxId,
+  threadId: ThreadId,
   ownerId: z.string().min(1),
   token: z.string().uuid(),
   expiresAt: IsoDateTime,
@@ -133,7 +133,7 @@ export type Lease = z.infer<typeof Lease>
 
 Rules:
 
-- at most one active lease per mailbox
+- at most one active lease per thread
 - lease acquire returns `null` if another active lease exists
 - runner must renew long-running leases
 - expired leases may be acquired by another runner
@@ -141,7 +141,7 @@ Rules:
 ## Projection Contract
 
 ```ts
-export const MailboxStatus = z.enum([
+export const ThreadStatus = z.enum([
   "idle",
   "running",
   "waiting",
@@ -149,17 +149,17 @@ export const MailboxStatus = z.enum([
   "completed",
   "failed",
 ])
-export type MailboxStatus = z.infer<typeof MailboxStatus>
+export type ThreadStatus = z.infer<typeof ThreadStatus>
 
-export const MailboxProjection = z.object({
-  mailboxId: MailboxId,
-  status: MailboxStatus,
+export const ThreadProjection = z.object({
+  threadId: ThreadId,
+  status: ThreadStatus,
   tailSeq: z.number().int().nonnegative(),
   activeLeaseOwnerId: z.string().min(1).nullable(),
   pendingGateIds: z.array(z.string().min(1)),
   updatedAt: IsoDateTime,
 })
-export type MailboxProjection = z.infer<typeof MailboxProjection>
+export type ThreadProjection = z.infer<typeof ThreadProjection>
 ```
 
 This projection is not the source of truth. It is a convenience view updated transactionally with event appends where practical.
@@ -167,22 +167,22 @@ This projection is not the source of truth. It is a convenience view updated tra
 ## Engine Interfaces
 
 ```ts
-export interface MailboxEngine {
-  createMailbox(mailboxId: MailboxId): Promise<void>
-  append(events: MailboxEvent[], options?: AppendOptions): Promise<AppendResult>
-  read(mailboxId: MailboxId, options?: Partial<ReadOptions>): Promise<MailboxEvent[]>
-  follow(mailboxId: MailboxId, cursor?: FollowCursor): AsyncIterable<MailboxEvent>
-  getTail(mailboxId: MailboxId): Promise<{ tailSeq: number; updatedAt: string }>
+export interface ThreadEngine {
+  createThread(threadId: ThreadId): Promise<void>
+  append(events: ThreadEvent[], options?: AppendOptions): Promise<AppendResult>
+  read(threadId: ThreadId, options?: Partial<ReadOptions>): Promise<ThreadEvent[]>
+  follow(threadId: ThreadId, cursor?: FollowCursor): AsyncIterable<ThreadEvent>
+  getTail(threadId: ThreadId): Promise<{ tailSeq: number; updatedAt: string }>
 }
 
-export interface MailboxLeaseStore {
-  acquireLease(mailboxId: MailboxId, ownerId: string, ttlMs: number): Promise<Lease | null>
-  renewLease(mailboxId: MailboxId, token: string, ttlMs: number): Promise<Lease>
-  releaseLease(mailboxId: MailboxId, token: string): Promise<void>
+export interface ThreadLeaseStore {
+  acquireLease(threadId: ThreadId, ownerId: string, ttlMs: number): Promise<Lease | null>
+  renewLease(threadId: ThreadId, token: string, ttlMs: number): Promise<Lease>
+  releaseLease(threadId: ThreadId, token: string): Promise<void>
 }
 
-export interface MailboxProjectionStore {
-  get(mailboxId: MailboxId): Promise<MailboxProjection | null>
+export interface ThreadProjectionStore {
+  get(threadId: ThreadId): Promise<ThreadProjection | null>
 }
 ```
 
@@ -190,11 +190,11 @@ export interface MailboxProjectionStore {
 
 The PoC Postgres engine should provide:
 
-- one table for mailbox metadata
+- one table for thread metadata
 - one append-only event table
 - one table for leases
 - one table for gates
-- one projection table or a transactionally updated mailbox row
+- one projection table or a transactionally updated thread row
 - optional `LISTEN/NOTIFY` on new event append for wake hints
 
 ## Transaction Boundaries
@@ -204,8 +204,8 @@ Each append transaction should:
 - verify append preconditions
 - assign sequence numbers
 - insert event rows
-- update mailbox tail
+- update thread tail
 - update projection fields affected by those events
 - notify listeners
 
-This keeps the mailbox history and convenient state view consistent enough for the PoC.
+This keeps the thread history and convenient state view consistent enough for the PoC.

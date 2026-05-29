@@ -1,6 +1,6 @@
-# Agent Mailbox PoC
+# Weave PoC
 
-This repository contains the planning docs and a first Postgres-backed proof of concept for Agent Mailbox.
+This repository contains the planning docs and a first Postgres-backed proof of concept for Weave, Steel's durable control plane for agent execution.
 
 ## Local Database
 
@@ -44,9 +44,9 @@ Run the mock SRE north-star demo:
 npm run sre:demo
 ```
 
-The PoC script resets only the dedicated `agent_mailbox` schema, then verifies:
+The PoC script resets only the dedicated `weave` schema, then verifies:
 
-- mailbox creation
+- thread creation
 - prompt ingestion
 - runner lease and deterministic mock agent step
 - async mock tool progress and completion
@@ -60,19 +60,19 @@ Do not run `npm run poc` and `npm run system:poc` at the same time because both 
 
 - `src/events.ts`: Zod event schemas and typed event union
 - `src/postgres-engine.ts`: Postgres event log, projection, lease, and gate persistence
-- `src/mailbox-service.ts`: session start and gate resolution service
+- `src/thread-service.ts`: session start and gate resolution service
 - `src/mock-agent.ts`: deterministic mock agent adapter
 - `src/mock-tool-worker.ts`: async mock tool worker with progress events
-- `src/runner.ts`: one-step mailbox runner
+- `src/runner.ts`: one-step thread runner
 - `src/daemons.ts`: runner and tool worker daemons backed by explicit inbox claims
 - `src/scripts/poc.ts`: end-to-end verification script
-- `src/api-server.ts`: minimal HTTP API for mailbox sessions, events, projections, and gate resolution
+- `src/api-server.ts`: minimal HTTP API for thread sessions, events, projections, and gate resolution
 - `src/scripts/system-poc.ts`: API-driven verification with background daemons
 - `src/sre-agent.ts`: deterministic SRE investigation agent for the north-star demo
 - `src/sre-tool-worker.ts`: mock SRE observability and remediation tools
-- `src/scripts/sre-demo.ts`: API-driven SRE demo using the mailbox service and daemons
+- `src/scripts/sre-demo.ts`: API-driven SRE demo using the thread service and daemons
 
-The service milestone uses an explicit `agent_mailbox.mailbox_inbox` table. Event appends route wake events into per-consumer inbox rows, and daemons claim those rows before processing work.
+The service milestone uses an explicit `weave.thread_inbox` table. Event appends route wake events into per-consumer inbox rows, and daemons claim those rows before processing work.
 
 The SRE demo is fully mocked and deterministic. It exercises Axiom, Grafana, Sentry, deploy metadata, and gated infrastructure remediation without requiring real external credentials.
 

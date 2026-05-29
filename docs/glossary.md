@@ -8,7 +8,7 @@ The reasoning system that decides what to do next. It may run in different envir
 
 The execution environment for an agent, such as a local process, hosted coding runtime, browser-capable environment, or cloud sandbox.
 
-## Mailbox
+## Thread
 
 A durable execution boundary that stores events, coordinates wake and resume behavior, and mediates interactions between an agent and the outside world.
 
@@ -18,7 +18,7 @@ An immutable record that something happened, was requested, or was resolved.
 
 ## Event Stream
 
-The ordered sequence of events associated with a mailbox.
+The ordered sequence of events associated with a thread.
 
 ## Inbox
 
@@ -26,7 +26,7 @@ The subset of events that should wake or notify a consumer, rather than the full
 
 ## Runner
 
-An ephemeral process that acquires a mailbox, reconstructs state, performs bounded work, and emits new events.
+An ephemeral process that acquires a thread, reconstructs state, performs bounded work, and emits new events.
 
 ## Worker
 
@@ -42,7 +42,7 @@ The formal description of how a tool is invoked, how it reports progress, and ho
 
 ## Gate
 
-A mailbox-native pause point that represents pending approval, human input, or another external dependency.
+A thread-native pause point that represents pending approval, human input, or another external dependency.
 
 ## Interrupt
 
@@ -50,7 +50,7 @@ A signal that normal execution should pause, wait, or be redirected.
 
 ## Supervisor
 
-An observer or controller that listens to mailbox events and may trigger actions such as escalation, retry, notification, or resumption.
+An observer or controller that listens to thread events and may trigger actions such as escalation, retry, notification, or resumption.
 
 ## Capability
 
@@ -74,11 +74,11 @@ An identifier linking one event to the earlier event that caused it.
 
 ## Stream Link
 
-A controlled connection where one mailbox or event stream can feed another mailbox, supervisor path, or child workflow.
+A controlled connection where one thread or event stream can feed another thread, supervisor path, or child workflow.
 
 ## Subagent
 
-A child agent or delegated execution path that may have its own mailbox while still being trace-linked to a parent session.
+A child agent or delegated execution path that may have its own thread while still being trace-linked to a parent session.
 
 ## Durable Execution
 

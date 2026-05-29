@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { NoopMailboxArtifactStore, type MailboxArtifactStore } from "./artifacts.js";
-import type { MailboxEngine } from "./contracts.js";
+import { NoopThreadArtifactStore, type ThreadArtifactStore } from "./artifacts.js";
+import type { ThreadEngine } from "./contracts.js";
 import {
   EmptyCredentialProvider,
   ResolvedCredentials,
@@ -8,7 +8,7 @@ import {
   type CredentialRequest,
   type CredentialResolution,
 } from "./credentials.js";
-import { eventKey, nowIso, type MailboxEvent } from "./events.js";
+import { eventKey, nowIso, type ThreadEvent } from "./events.js";
 import {
   NoopObservabilitySink,
   ToolObserver,
@@ -28,7 +28,7 @@ import {
   type ToolProgressUpdate,
 } from "./tool-contract.js";
 
-type ToolRequestedEvent = Extract<MailboxEvent, { type: "tool.requested" }>;
+type ToolRequestedEvent = Extract<ThreadEvent, { type: "tool.requested" }>;
 
 export type ToolWorkerResult = {
   acted: boolean;
@@ -41,18 +41,18 @@ export class ContractToolWorker {
   private readonly registry: ToolRegistry;
 
   constructor(
-    private readonly engine: MailboxEngine,
+    private readonly engine: ThreadEngine,
     tools: readonly AnyToolContract[] | ToolRegistry,
     private readonly workerId = `tool-worker-${process.pid}`,
     private readonly credentialProvider: CredentialProvider = new EmptyCredentialProvider(),
     private readonly observability: ObservabilitySink = new NoopObservabilitySink(),
-    private readonly artifactStore: MailboxArtifactStore = new NoopMailboxArtifactStore(),
+    private readonly artifactStore: ThreadArtifactStore = new NoopThreadArtifactStore(),
   ) {
     this.registry = tools instanceof ToolRegistry ? tools : createToolRegistry(tools);
   }
 
-  async processOnce(mailboxId: string): Promise<ToolWorkerResult> {
-    const events = await this.engine.read(mailboxId);
+  async processOnce(threadId: string): Promise<ToolWorkerResult> {
+    const events = await this.engine.read(threadId);
     const request = events.find((event): event is ToolRequestedEvent => {
       return event.type === "tool.requested" && !hasTerminalEvent(events, event.payload.toolCallId);
     });
@@ -64,33 +64,33 @@ export class ContractToolWorker {
     const toolCallId = request.payload.toolCallId;
     const started = events.some((event) => event.type === "tool.started" && event.payload.toolCallId === toolCallId);
     if (!started) {
-      const event = this.startedEvent(mailboxId, request);
+      const event = this.startedEvent(threadId, request);
       await this.engine.append([event]);
       return { acted: true, eventType: event.type };
     }
 
     const tool = this.registry.get(request.payload.toolName);
     if (!tool) {
-      const event = this.failedEvent(mailboxId, request, "unknown_tool", `No tool contract registered for ${request.payload.toolName}`);
+      const event = this.failedEvent(threadId, request, "unknown_tool", `No tool contract registered for ${request.payload.toolName}`);
       await this.engine.append([event]);
       return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
     }
 
-    return this.executeTool(mailboxId, request, tool);
+    return this.executeTool(threadId, request, tool);
   }
 
   private async executeTool(
-    mailboxId: string,
+    threadId: string,
     request: ToolRequestedEvent,
     tool: AnyToolContract,
   ): Promise<ToolWorkerResult> {
-    const spanContext = this.newToolSpanContext(mailboxId, request);
+    const spanContext = this.newToolSpanContext(threadId, request);
     const rootStartedAt = new Date();
 
     const inputResult = tool.input.safeParse(request.payload.args);
     if (!inputResult.success) {
       const event = this.failedEvent(
-        mailboxId,
+        threadId,
         request,
         "input_validation_failed",
         formatZodError(inputResult.error),
@@ -105,20 +105,20 @@ export class ContractToolWorker {
       return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
     }
 
-    const progressEvents: MailboxEvent[] = [];
-    const credentialEvents: MailboxEvent[] = [];
+    const progressEvents: ThreadEvent[] = [];
+    const credentialEvents: ThreadEvent[] = [];
     const progress = async (update: ToolProgressUpdate): Promise<void> => {
-      progressEvents.push(this.progressEvent(mailboxId, request, progressEvents.length, update));
+      progressEvents.push(this.progressEvent(threadId, request, progressEvents.length, update));
     };
 
     await this.emitToolLog(spanContext, "info", "Tool execution started", {
       toolName: request.payload.toolName,
     });
 
-    const credentialResult = await this.resolveCredentials(mailboxId, request, tool, inputResult.data, spanContext);
+    const credentialResult = await this.resolveCredentials(threadId, request, tool, inputResult.data, spanContext);
     credentialEvents.push(...credentialResult.events);
     if (credentialResult.failed) {
-      const event = this.failedEvent(mailboxId, request, "credential_resolution_failed", credentialResult.message);
+      const event = this.failedEvent(threadId, request, "credential_resolution_failed", credentialResult.message);
       await this.emitToolLog(spanContext, "error", "Credential resolution failed", {
         errorCode: "credential_resolution_failed",
         message: credentialResult.message,
@@ -138,7 +138,7 @@ export class ContractToolWorker {
           "tool.run",
           () =>
             tool.run({
-              mailboxId,
+              threadId,
               toolCallId: request.payload.toolCallId,
               toolName: request.payload.toolName,
               input: inputResult.data,
@@ -153,7 +153,7 @@ export class ContractToolWorker {
       const outputResult = tool.output.safeParse(output);
       if (!outputResult.success) {
         const event = this.failedEvent(
-          mailboxId,
+          threadId,
           request,
           "output_validation_failed",
           formatZodError(outputResult.error),
@@ -168,7 +168,7 @@ export class ContractToolWorker {
         return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
       }
 
-      const event = this.completedEvent(mailboxId, request, outputResult.data);
+      const event = this.completedEvent(threadId, request, outputResult.data);
         await this.emitToolLog(spanContext, "info", "Tool execution completed", {
           attempt,
           progressEvents: progressEvents.length,
@@ -197,7 +197,7 @@ export class ContractToolWorker {
           continue;
         }
 
-        const event = this.failedEvent(mailboxId, request, "execution_failed", errorMessage(error));
+        const event = this.failedEvent(threadId, request, "execution_failed", errorMessage(error));
         await this.emitToolLog(spanContext, "error", "Tool execution failed", {
           attempt,
           errorCode: "execution_failed",
@@ -215,34 +215,34 @@ export class ContractToolWorker {
   }
 
   private async resolveCredentials(
-    mailboxId: string,
+    threadId: string,
     request: ToolRequestedEvent,
     tool: AnyToolContract,
     input: unknown,
     parentContext: ObservabilityContext,
   ): Promise<
-    | { failed: false; events: MailboxEvent[]; credentials: ResolvedCredentials }
-    | { failed: true; events: MailboxEvent[]; credentials: ResolvedCredentials; message: string }
+    | { failed: false; events: ThreadEvent[]; credentials: ResolvedCredentials }
+    | { failed: true; events: ThreadEvent[]; credentials: ResolvedCredentials; message: string }
   > {
     const credentialRequests = normalizeCredentialRequests(tool.credentials?.({ input }));
-    const events: MailboxEvent[] = [];
+    const events: ThreadEvent[] = [];
     const resolutions: CredentialResolution[] = [];
 
     for (const credentialRequest of credentialRequests) {
       const spanContext = { ...parentContext, spanId: newSpanId() };
       const startedAt = new Date();
-      events.push(this.credentialRequestedEvent(mailboxId, request, credentialRequest));
+      events.push(this.credentialRequestedEvent(threadId, request, credentialRequest));
 
       let resolution: CredentialResolution | null;
       try {
         resolution = await this.credentialProvider.resolve(credentialRequest, {
-          mailboxId,
+          threadId,
           toolCallId: request.payload.toolCallId,
           toolName: request.payload.toolName,
         });
       } catch (error) {
         const message = errorMessage(error);
-        events.push(this.credentialFailedEvent(mailboxId, request, credentialRequest, "credential_provider_error", message));
+        events.push(this.credentialFailedEvent(threadId, request, credentialRequest, "credential_provider_error", message));
         await this.emitCredentialSpan(parentContext, spanContext, startedAt, credentialRequest, "error", {
           errorCode: "credential_provider_error",
           error: message,
@@ -256,7 +256,7 @@ export class ContractToolWorker {
       }
 
       if (!resolution) {
-        events.push(this.credentialFailedEvent(mailboxId, request, credentialRequest, "credential_not_found", "Credential provider returned no credential"));
+        events.push(this.credentialFailedEvent(threadId, request, credentialRequest, "credential_not_found", "Credential provider returned no credential"));
         await this.emitCredentialSpan(parentContext, spanContext, startedAt, credentialRequest, "error", {
           errorCode: "credential_not_found",
         });
@@ -269,7 +269,7 @@ export class ContractToolWorker {
       }
 
       resolutions.push(resolution);
-      events.push(this.credentialResolvedEvent(mailboxId, request, resolution));
+      events.push(this.credentialResolvedEvent(threadId, request, resolution));
       await this.emitCredentialSpan(parentContext, spanContext, startedAt, credentialRequest, "ok", {
         source: resolution.source,
       });
@@ -278,11 +278,11 @@ export class ContractToolWorker {
     return { failed: false, events, credentials: new ResolvedCredentials(resolutions) };
   }
 
-  private newToolSpanContext(mailboxId: string, request: ToolRequestedEvent): ObservabilityContext {
+  private newToolSpanContext(threadId: string, request: ToolRequestedEvent): ObservabilityContext {
     return {
       traceId: newTraceId(),
       spanId: newSpanId(),
-      mailboxId,
+      threadId,
       eventId: request.eventId,
       correlationId: request.correlationId,
       causationId: request.causationId,
@@ -352,12 +352,12 @@ export class ContractToolWorker {
   }
 
   private startedEvent(
-    mailboxId: string,
+    threadId: string,
     request: ToolRequestedEvent,
-  ): Extract<MailboxEvent, { type: "tool.started" }> {
+  ): Extract<ThreadEvent, { type: "tool.started" }> {
     return {
-      eventId: eventKey(mailboxId, "tool.started", request.payload.toolCallId),
-      mailboxId,
+      eventId: eventKey(threadId, "tool.started", request.payload.toolCallId),
+      threadId,
       type: "tool.started",
       occurredAt: nowIso(),
       correlationId: request.correlationId,
@@ -368,14 +368,14 @@ export class ContractToolWorker {
   }
 
   private progressEvent(
-    mailboxId: string,
+    threadId: string,
     request: ToolRequestedEvent,
     index: number,
     update: ToolProgressUpdate,
-  ): MailboxEvent {
+  ): ThreadEvent {
     return {
-      eventId: eventKey(mailboxId, "tool.progress", `${request.payload.toolCallId}:${index}:${update.percent}`),
-      mailboxId,
+      eventId: eventKey(threadId, "tool.progress", `${request.payload.toolCallId}:${index}:${update.percent}`),
+      threadId,
       type: "tool.progress",
       occurredAt: nowIso(),
       correlationId: request.correlationId,
@@ -390,13 +390,13 @@ export class ContractToolWorker {
   }
 
   private completedEvent(
-    mailboxId: string,
+    threadId: string,
     request: ToolRequestedEvent,
-    output: Extract<MailboxEvent, { type: "tool.completed" }>["payload"]["output"],
-  ): Extract<MailboxEvent, { type: "tool.completed" }> {
+    output: Extract<ThreadEvent, { type: "tool.completed" }>["payload"]["output"],
+  ): Extract<ThreadEvent, { type: "tool.completed" }> {
     return {
-      eventId: eventKey(mailboxId, "tool.completed", request.payload.toolCallId),
-      mailboxId,
+      eventId: eventKey(threadId, "tool.completed", request.payload.toolCallId),
+      threadId,
       type: "tool.completed",
       occurredAt: nowIso(),
       correlationId: request.correlationId,
@@ -410,13 +410,13 @@ export class ContractToolWorker {
   }
 
   private credentialRequestedEvent(
-    mailboxId: string,
+    threadId: string,
     request: ToolRequestedEvent,
     credential: CredentialRequest,
-  ): MailboxEvent {
+  ): ThreadEvent {
     return {
-      eventId: eventKey(mailboxId, "credential.requested", `${request.payload.toolCallId}:${credential.name}`),
-      mailboxId,
+      eventId: eventKey(threadId, "credential.requested", `${request.payload.toolCallId}:${credential.name}`),
+      threadId,
       type: "credential.requested",
       occurredAt: nowIso(),
       correlationId: request.correlationId,
@@ -435,13 +435,13 @@ export class ContractToolWorker {
   }
 
   private credentialResolvedEvent(
-    mailboxId: string,
+    threadId: string,
     request: ToolRequestedEvent,
     resolution: CredentialResolution,
-  ): MailboxEvent {
+  ): ThreadEvent {
     return {
-      eventId: eventKey(mailboxId, "credential.resolved", `${request.payload.toolCallId}:${resolution.name}`),
-      mailboxId,
+      eventId: eventKey(threadId, "credential.resolved", `${request.payload.toolCallId}:${resolution.name}`),
+      threadId,
       type: "credential.resolved",
       occurredAt: nowIso(),
       correlationId: request.correlationId,
@@ -459,15 +459,15 @@ export class ContractToolWorker {
   }
 
   private credentialFailedEvent(
-    mailboxId: string,
+    threadId: string,
     request: ToolRequestedEvent,
     credential: CredentialRequest,
     errorCode: string,
     message: string,
-  ): MailboxEvent {
+  ): ThreadEvent {
     return {
-      eventId: eventKey(mailboxId, "credential.failed", `${request.payload.toolCallId}:${credential.name}:${errorCode}`),
-      mailboxId,
+      eventId: eventKey(threadId, "credential.failed", `${request.payload.toolCallId}:${credential.name}:${errorCode}`),
+      threadId,
       type: "credential.failed",
       occurredAt: nowIso(),
       correlationId: request.correlationId,
@@ -484,14 +484,14 @@ export class ContractToolWorker {
   }
 
   private failedEvent(
-    mailboxId: string,
+    threadId: string,
     request: ToolRequestedEvent,
     errorCode: string,
     message: string,
-  ): Extract<MailboxEvent, { type: "tool.failed" }> {
+  ): Extract<ThreadEvent, { type: "tool.failed" }> {
     return {
-      eventId: eventKey(mailboxId, "tool.failed", `${request.payload.toolCallId}:${errorCode}`),
-      mailboxId,
+      eventId: eventKey(threadId, "tool.failed", `${request.payload.toolCallId}:${errorCode}`),
+      threadId,
       type: "tool.failed",
       occurredAt: nowIso(),
       correlationId: request.correlationId,
@@ -506,7 +506,7 @@ export class ContractToolWorker {
   }
 }
 
-function hasTerminalEvent(events: MailboxEvent[], toolCallId: string): boolean {
+function hasTerminalEvent(events: ThreadEvent[], toolCallId: string): boolean {
   return events.some((event) => {
     return (event.type === "tool.completed" || event.type === "tool.failed") && event.payload.toolCallId === toolCallId;
   });

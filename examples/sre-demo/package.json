@@ -1,5 +1,5 @@
 {
-  "name": "@agent-mailbox/sre-demo",
+  "name": "weave-sre-demo",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,6 +8,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@agent-mailbox/core": "file:../.."
+    "weave": "file:../.."
   }
 }

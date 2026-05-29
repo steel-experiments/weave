@@ -2,22 +2,22 @@ import {
   deterministicUuid,
   eventKey,
   nowIso,
-  type MailboxEvent,
+  type ThreadEvent,
 } from "./events.js";
 
-type PromptReceivedEvent = Extract<MailboxEvent, { type: "prompt.received" }>;
-type ToolRequestedEvent = Extract<MailboxEvent, { type: "tool.requested" }>;
-type ToolCompletedEvent = Extract<MailboxEvent, { type: "tool.completed" }>;
-type GateCreatedEvent = Extract<MailboxEvent, { type: "gate.created" }>;
-type GateResolvedEvent = Extract<MailboxEvent, { type: "gate.resolved" }>;
+type PromptReceivedEvent = Extract<ThreadEvent, { type: "prompt.received" }>;
+type ToolRequestedEvent = Extract<ThreadEvent, { type: "tool.requested" }>;
+type ToolCompletedEvent = Extract<ThreadEvent, { type: "tool.completed" }>;
+type GateCreatedEvent = Extract<ThreadEvent, { type: "gate.created" }>;
+type GateResolvedEvent = Extract<ThreadEvent, { type: "gate.resolved" }>;
 
 export type MockAgentPlan = {
   resumeReason: "new-prompt" | "tool-completed" | "gate-resolved";
-  events: MailboxEvent[];
+  events: ThreadEvent[];
 };
 
 export class DeterministicMockAgent {
-  plan(mailboxId: string, events: MailboxEvent[]): MockAgentPlan | null {
+  plan(threadId: string, events: ThreadEvent[]): MockAgentPlan | null {
     const prompt = events.find(isPromptReceivedEvent);
     if (!prompt) {
       return null;
@@ -25,7 +25,7 @@ export class DeterministicMockAgent {
 
     const toolRequested = events.find(isToolRequestedEvent);
     if (!toolRequested) {
-      return this.requestTool(mailboxId, prompt);
+      return this.requestTool(threadId, prompt);
     }
 
     const toolCompleted = events.find(
@@ -40,7 +40,7 @@ export class DeterministicMockAgent {
       );
 
       if (!gateCreated) {
-        return this.createGate(mailboxId, toolCompleted, toolRequested.payload.toolCallId);
+        return this.createGate(threadId, toolCompleted, toolRequested.payload.toolCallId);
       }
 
       const gateResolved = events.find(
@@ -50,24 +50,24 @@ export class DeterministicMockAgent {
 
       const responseProduced = events.some((event) => event.type === "agent.response.produced");
       if (gateResolved && !responseProduced) {
-        return this.produceResponse(mailboxId, gateResolved, toolCompleted);
+        return this.produceResponse(threadId, gateResolved, toolCompleted);
       }
     }
 
     return null;
   }
 
-  private requestTool(mailboxId: string, prompt: PromptReceivedEvent): MockAgentPlan {
-    const stepId = deterministicUuid("step", mailboxId, "request-tool");
-    const toolCallId = deterministicUuid("tool-call", mailboxId, "mock.async-progress", "first");
+  private requestTool(threadId: string, prompt: PromptReceivedEvent): MockAgentPlan {
+    const stepId = deterministicUuid("step", threadId, "request-tool");
+    const toolCallId = deterministicUuid("tool-call", threadId, "mock.async-progress", "first");
     const correlationId = prompt.correlationId;
 
     return {
       resumeReason: "new-prompt",
       events: [
         {
-          eventId: eventKey(mailboxId, "agent.step.started", "request-tool"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.step.started", "request-tool"),
+          threadId,
           type: "agent.step.started",
           occurredAt: nowIso(),
           correlationId,
@@ -76,8 +76,8 @@ export class DeterministicMockAgent {
           payload: { stepId, reason: "prompt" },
         },
         {
-          eventId: eventKey(mailboxId, "tool.requested", toolCallId),
-          mailboxId,
+          eventId: eventKey(threadId, "tool.requested", toolCallId),
+          threadId,
           type: "tool.requested",
           occurredAt: nowIso(),
           correlationId,
@@ -90,8 +90,8 @@ export class DeterministicMockAgent {
           },
         },
         {
-          eventId: eventKey(mailboxId, "agent.step.completed", "request-tool"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.step.completed", "request-tool"),
+          threadId,
           type: "agent.step.completed",
           occurredAt: nowIso(),
           correlationId,
@@ -103,16 +103,16 @@ export class DeterministicMockAgent {
     };
   }
 
-  private createGate(mailboxId: string, toolCompleted: ToolCompletedEvent, toolCallId: string): MockAgentPlan {
-    const stepId = deterministicUuid("step", mailboxId, "create-gate");
-    const gateId = deterministicUuid("gate", mailboxId, toolCallId);
+  private createGate(threadId: string, toolCompleted: ToolCompletedEvent, toolCallId: string): MockAgentPlan {
+    const stepId = deterministicUuid("step", threadId, "create-gate");
+    const gateId = deterministicUuid("gate", threadId, toolCallId);
 
     return {
       resumeReason: "tool-completed",
       events: [
         {
-          eventId: eventKey(mailboxId, "agent.step.started", "create-gate"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.step.started", "create-gate"),
+          threadId,
           type: "agent.step.started",
           occurredAt: nowIso(),
           correlationId: toolCompleted.correlationId,
@@ -121,8 +121,8 @@ export class DeterministicMockAgent {
           payload: { stepId, reason: "tool-completed" },
         },
         {
-          eventId: eventKey(mailboxId, "gate.created", gateId),
-          mailboxId,
+          eventId: eventKey(threadId, "gate.created", gateId),
+          threadId,
           type: "gate.created",
           occurredAt: nowIso(),
           correlationId: toolCompleted.correlationId,
@@ -136,8 +136,8 @@ export class DeterministicMockAgent {
           },
         },
         {
-          eventId: eventKey(mailboxId, "agent.step.completed", "create-gate"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.step.completed", "create-gate"),
+          threadId,
           type: "agent.step.completed",
           occurredAt: nowIso(),
           correlationId: toolCompleted.correlationId,
@@ -150,11 +150,11 @@ export class DeterministicMockAgent {
   }
 
   private produceResponse(
-    mailboxId: string,
+    threadId: string,
     gateResolved: GateResolvedEvent,
     toolCompleted: ToolCompletedEvent,
   ): MockAgentPlan {
-    const stepId = deterministicUuid("step", mailboxId, "produce-response");
+    const stepId = deterministicUuid("step", threadId, "produce-response");
     const approved = gateResolved.payload.resolution === "approved";
     const message = approved
       ? `Approved result: ${toolCompleted.payload.output.summary}`
@@ -164,8 +164,8 @@ export class DeterministicMockAgent {
       resumeReason: "gate-resolved",
       events: [
         {
-          eventId: eventKey(mailboxId, "agent.step.started", "produce-response"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.step.started", "produce-response"),
+          threadId,
           type: "agent.step.started",
           occurredAt: nowIso(),
           correlationId: gateResolved.correlationId,
@@ -174,8 +174,8 @@ export class DeterministicMockAgent {
           payload: { stepId, reason: "gate-resolved" },
         },
         {
-          eventId: eventKey(mailboxId, "agent.response.produced", "final"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.response.produced", "final"),
+          threadId,
           type: "agent.response.produced",
           occurredAt: nowIso(),
           correlationId: gateResolved.correlationId,
@@ -184,8 +184,8 @@ export class DeterministicMockAgent {
           payload: { message },
         },
         {
-          eventId: eventKey(mailboxId, "agent.step.completed", "produce-response"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.step.completed", "produce-response"),
+          threadId,
           type: "agent.step.completed",
           occurredAt: nowIso(),
           correlationId: gateResolved.correlationId,
@@ -198,10 +198,10 @@ export class DeterministicMockAgent {
   }
 }
 
-function isPromptReceivedEvent(event: MailboxEvent): event is PromptReceivedEvent {
+function isPromptReceivedEvent(event: ThreadEvent): event is PromptReceivedEvent {
   return event.type === "prompt.received";
 }
 
-function isToolRequestedEvent(event: MailboxEvent): event is ToolRequestedEvent {
+function isToolRequestedEvent(event: ThreadEvent): event is ToolRequestedEvent {
   return event.type === "tool.requested";
 }

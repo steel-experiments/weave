@@ -2,12 +2,12 @@ import { ToolWorkerDaemon } from "../daemons.js";
 import { createPool } from "../db.js";
 import { migrate } from "../migrate.js";
 import { MockAsyncToolWorker } from "../mock-tool-worker.js";
-import { PostgresMailboxEngine } from "../postgres-engine.js";
+import { PostgresThreadEngine } from "../postgres-engine.js";
 
 const pool = createPool();
 await migrate(pool);
 
-const engine = new PostgresMailboxEngine(pool);
+const engine = new PostgresThreadEngine(pool);
 const worker = new MockAsyncToolWorker(engine);
 const daemon = new ToolWorkerDaemon(engine, worker);
 

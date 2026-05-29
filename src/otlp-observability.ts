@@ -1,7 +1,7 @@
 import type {
   LogLevel,
-  MailboxLogRecord,
-  MailboxSpanRecord,
+  ThreadLogRecord,
+  ThreadSpanRecord,
   ObservabilityAttributes,
   ObservabilitySink,
   SpanKind,
@@ -29,13 +29,13 @@ export class OtlpHttpObservabilitySink implements ObservabilitySink {
     this.tracesUrl = otlpSignalUrl(options.endpoint, "traces");
     this.logsUrl = otlpSignalUrl(options.endpoint, "logs");
     this.headers = options.headers ?? {};
-    this.serviceName = options.serviceName ?? "agent-mailbox";
+    this.serviceName = options.serviceName ?? "weave";
     this.serviceVersion = options.serviceVersion;
     this.resourceAttributes = options.resourceAttributes ?? {};
     this.timeoutMs = options.timeoutMs ?? 5_000;
   }
 
-  async emitSpan(span: MailboxSpanRecord): Promise<void> {
+  async emitSpan(span: ThreadSpanRecord): Promise<void> {
     await this.post(this.tracesUrl, {
       resourceSpans: [
         {
@@ -48,7 +48,7 @@ export class OtlpHttpObservabilitySink implements ObservabilitySink {
           },
           scopeSpans: [
             {
-              scope: { name: "@agent-mailbox/core" },
+              scope: { name: "weave" },
               spans: [spanToOtlp(span)],
             },
           ],
@@ -57,7 +57,7 @@ export class OtlpHttpObservabilitySink implements ObservabilitySink {
     });
   }
 
-  async emitLog(record: MailboxLogRecord): Promise<void> {
+  async emitLog(record: ThreadLogRecord): Promise<void> {
     await this.post(this.logsUrl, {
       resourceLogs: [
         {
@@ -70,7 +70,7 @@ export class OtlpHttpObservabilitySink implements ObservabilitySink {
           },
           scopeLogs: [
             {
-              scope: { name: "@agent-mailbox/core" },
+              scope: { name: "weave" },
               logRecords: [logToOtlp(record)],
             },
           ],
@@ -114,7 +114,7 @@ export function otlpFromEnv(options: Partial<OtlpHttpObservabilityOptions> = {})
       ...parseOtlpHeaders(process.env.OTEL_EXPORTER_OTLP_HEADERS),
       ...options.headers,
     },
-    serviceName: options.serviceName ?? process.env.OTEL_SERVICE_NAME ?? "agent-mailbox",
+    serviceName: options.serviceName ?? process.env.OTEL_SERVICE_NAME ?? "weave",
     serviceVersion: options.serviceVersion,
     resourceAttributes: {
       ...parseOtlpResourceAttributes(process.env.OTEL_RESOURCE_ATTRIBUTES),
@@ -124,7 +124,7 @@ export function otlpFromEnv(options: Partial<OtlpHttpObservabilityOptions> = {})
   });
 }
 
-function spanToOtlp(span: MailboxSpanRecord): Record<string, unknown> {
+function spanToOtlp(span: ThreadSpanRecord): Record<string, unknown> {
   return compact({
     traceId: span.traceId,
     spanId: span.spanId,
@@ -135,8 +135,8 @@ function spanToOtlp(span: MailboxSpanRecord): Record<string, unknown> {
     endTimeUnixNano: dateToUnixNano(span.endedAt),
     attributes: attributesToOtlp({
       ...contextAttributes(span),
-      "agent_mailbox.span.kind": span.kind,
-      "agent_mailbox.span.duration_ms": span.durationMs,
+      "weave.span.kind": span.kind,
+      "weave.span.duration_ms": span.durationMs,
       ...span.attributes,
     }),
     status: {
@@ -145,7 +145,7 @@ function spanToOtlp(span: MailboxSpanRecord): Record<string, unknown> {
   });
 }
 
-function logToOtlp(record: MailboxLogRecord): Record<string, unknown> {
+function logToOtlp(record: ThreadLogRecord): Record<string, unknown> {
   return {
     timeUnixNano: dateToUnixNano(record.timestamp),
     observedTimeUnixNano: dateToUnixNano(new Date().toISOString()),
@@ -159,14 +159,14 @@ function logToOtlp(record: MailboxLogRecord): Record<string, unknown> {
   };
 }
 
-function contextAttributes(record: Partial<MailboxSpanRecord | MailboxLogRecord>): ObservabilityAttributes {
+function contextAttributes(record: Partial<ThreadSpanRecord | ThreadLogRecord>): ObservabilityAttributes {
   return compact({
-    "agent_mailbox.mailbox_id": record.mailboxId,
-    "agent_mailbox.event_id": record.eventId,
-    "agent_mailbox.correlation_id": record.correlationId,
-    "agent_mailbox.causation_id": record.causationId,
-    "agent_mailbox.tool_call_id": record.toolCallId,
-    "agent_mailbox.tool_name": record.toolName,
+    "weave.thread_id": record.threadId,
+    "weave.event_id": record.eventId,
+    "weave.correlation_id": record.correlationId,
+    "weave.causation_id": record.causationId,
+    "weave.tool_call_id": record.toolCallId,
+    "weave.tool_name": record.toolName,
   });
 }
 

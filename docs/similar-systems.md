@@ -2,16 +2,16 @@
 
 ## Purpose
 
-This document compares Agent Mailbox to adjacent systems so we can be clear about:
+This document compares Weave to adjacent systems so we can be clear about:
 
 - what already exists
 - what ideas we should borrow
-- where Agent Mailbox is genuinely different
+- where Weave is genuinely different
 - what systems may complement it rather than compete with it
 
 ## Short Summary
 
-There is no single existing system that fully matches the Agent Mailbox idea.
+There is no single existing system that fully matches the Weave idea.
 
 Instead, the space breaks into a few categories:
 
@@ -21,15 +21,15 @@ Instead, the space breaks into a few categories:
 - event-native databases and event stores
 - agent frameworks with persistence or interrupts
 
-Agent Mailbox sits between those categories.
+Weave sits between those categories.
 
 The strongest framing is not that those systems are pure competitors.
 
-The strongest framing is that many of them can become engines, adapters, or companion services behind the mailbox control plane.
+The strongest framing is that many of them can become engines, adapters, or companion services behind the thread control plane.
 
 It is closest to:
 
-- a durable actor mailbox
+- a durable actor thread
 - an event-sourced control plane
 - a policy and supervision boundary for agents
 
@@ -42,7 +42,7 @@ It is not exactly:
 
 ## Comparison Criteria
 
-To compare systems fairly, these are the capabilities that matter most for Agent Mailbox:
+To compare systems fairly, these are the capabilities that matter most for Weave:
 
 - durable append-only history
 - replay or resumability
@@ -56,7 +56,7 @@ To compare systems fairly, these are the capabilities that matter most for Agent
 
 ## Category 1: Durable Workflow Systems
 
-These systems solve long-running execution very well, but they tend to center the workflow runtime rather than a mailbox abstraction.
+These systems solve long-running execution very well, but they tend to center the workflow runtime rather than a thread abstraction.
 
 ### Temporal
 
@@ -71,11 +71,11 @@ Strengths:
 - well-developed timers, retries, child workflows, and signals
 - clear separation between workflow code and external activities
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
 - more heavyweight than the primitive we want
 - deterministic workflow constraints leak into application design
-- workflow is the main abstraction, not mailbox or event boundary
+- workflow is the main abstraction, not thread or event boundary
 - policy, credential mediation, and human gate semantics are not the primary core abstraction
 
 Best lesson for us:
@@ -85,7 +85,7 @@ Best lesson for us:
 Bottom line:
 
 - Temporal is the strongest reference for durability and replay
-- Agent Mailbox should borrow its durability discipline without becoming a full workflow platform first
+- Weave should borrow its durability discipline without becoming a full workflow platform first
 
 ### Inngest
 
@@ -100,10 +100,10 @@ Strengths:
 - strong step and retry semantics
 - good event-triggered function story
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
 - still function and workflow centered
-- not primarily a mailbox or per-agent durable control-plane model
+- not primarily a thread or per-agent durable control-plane model
 - tool mediation, identity ingress, and approval gates are not its central abstraction
 
 Best lesson for us:
@@ -113,7 +113,7 @@ Best lesson for us:
 Bottom line:
 
 - very relevant for serverless durable execution ideas
-- less relevant as the full conceptual model for mailbox-native agents
+- less relevant as the full conceptual model for thread-native agents
 
 ### Trigger.dev
 
@@ -127,10 +127,10 @@ Strengths:
 - checkpointing and resumable waits
 - observability and tracing story
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
-- task oriented rather than mailbox oriented
-- checkpoint-resume is a different core technique than event-first durable mailboxes
+- task oriented rather than thread oriented
+- checkpoint-resume is a different core technique than event-first durable threads
 - less natural fit for agent identity, inbox semantics, and stream-linked supervision
 
 Best lesson for us:
@@ -140,7 +140,7 @@ Best lesson for us:
 Bottom line:
 
 - strong inspiration for async task execution and tracing
-- not the same primitive as a durable mailbox
+- not the same primitive as a durable thread
 
 ### LangGraph
 
@@ -155,7 +155,7 @@ Strengths:
 - checkpointing and resume are built in
 - pushes developers toward explicit task boundaries for side effects
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
 - graph execution is the core abstraction
 - still closer to an agent runtime than a neutral cross-runtime control plane
@@ -168,7 +168,7 @@ Best lesson for us:
 Bottom line:
 
 - probably the most relevant agent-oriented execution system to compare against
-- Agent Mailbox differs by wanting to sit outside the agent framework itself
+- Weave differs by wanting to sit outside the agent framework itself
 
 ### Sandcastle and Four Framework style systems
 
@@ -182,9 +182,9 @@ Strengths:
 
 - strong fit for how an agent actually runs
 - useful for tool exposure and sandboxing
-- likely good integrations on the execution side of Agent Mailbox
+- likely good integrations on the execution side of Weave
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
 - usually not the durable source of truth
 - not primarily the cross-runtime event boundary
@@ -192,12 +192,12 @@ Weaknesses relative to Agent Mailbox:
 
 Best lesson for us:
 
-- keep runtime harness concerns separate from mailbox control-plane concerns
+- keep runtime harness concerns separate from thread control-plane concerns
 
 Bottom line:
 
 - your intuition is correct
-- these are better treated as runtime-side integrations or execution engines than as mailbox competitors
+- these are better treated as runtime-side integrations or execution engines than as thread competitors
 
 ## Category 2: Actor and Virtual Actor Systems
 
@@ -216,15 +216,15 @@ Strengths:
 - reminders/timers are durable
 - strong mental model for one logical entity with resumable behavior
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
-- state is usually modeled as grain state, not an append-only event mailbox
+- state is usually modeled as grain state, not an append-only event thread
 - not primarily built around traceable external side-effect events
 - policy and credential mediation are outside the core concept
 
 Best lesson for us:
 
-- mailbox identity should be stable even if execution is not
+- thread identity should be stable even if execution is not
 
 Bottom line:
 
@@ -238,12 +238,12 @@ What it is:
 
 Strengths:
 
-- canonical actor mailbox semantics
+- canonical actor thread semantics
 - strong supervision model
 - sequential message handling per actor
 - supports persistence and event sourcing in the wider platform
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
 - lower-level application framework, not a focused agent control-plane product
 - durable history and policy boundary need more explicit assembly
@@ -251,11 +251,11 @@ Weaknesses relative to Agent Mailbox:
 
 Best lesson for us:
 
-- actor mailboxes plus supervision are extremely relevant
+- actor threads plus supervision are extremely relevant
 
 Bottom line:
 
-- strong conceptual ancestor of the mailbox idea
+- strong conceptual ancestor of the thread idea
 - too general-purpose to be the direct product shape we want
 
 ### Cloudflare Durable Objects
@@ -270,7 +270,7 @@ Strengths:
 - strong fit for coordination-heavy workloads
 - serverless operational model
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
 - stateful object is the unit, but append-only event history is not the main abstraction
 - cross-tool policy, credential mediation, and trace-first agent orchestration are not built in
@@ -278,15 +278,15 @@ Weaknesses relative to Agent Mailbox:
 
 Best lesson for us:
 
-- one named durable coordination unit per agent or mailbox is a powerful primitive
+- one named durable coordination unit per agent or thread is a powerful primitive
 
 Bottom line:
 
-- perhaps the best serverless systems analogy for the mailbox runtime boundary
+- perhaps the best serverless systems analogy for the thread runtime boundary
 
 ## Category 3: Event Streams and Messaging Systems
 
-These systems are best viewed as substrates, not full mailbox products.
+These systems are best viewed as substrates, not full thread products.
 
 ### NATS JetStream
 
@@ -301,9 +301,9 @@ Strengths:
 - low-latency fanout and operational flexibility
 - compare-and-set and KV/object store features in the broader platform
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
-- stream broker, not an event store per mailbox by default
+- stream broker, not an event store per thread by default
 - per-entity optimistic concurrency and event-sourced entity loading are not the primary model
 - policy, gates, and credential boundaries are not first-class
 
@@ -314,7 +314,7 @@ Best lesson for us:
 Bottom line:
 
 - good substrate candidate for delivery and fanout
-- not sufficient alone as the mailbox source of truth
+- not sufficient alone as the thread source of truth
 
 ### S2 / s2-lite
 
@@ -325,19 +325,19 @@ What it is:
 Strengths:
 
 - strong per-stream ordering
-- follow semantics map well to mailbox subscriptions
+- follow semantics map well to thread subscriptions
 - durable before acknowledgment
-- naturally mailbox-like if one stream equals one mailbox
+- naturally thread-like if one stream equals one thread
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
-- stream engine, not mailbox product
+- stream engine, not thread product
 - auth and lifecycle gaps in `s2-lite`
 - single-node implementation today
 
 Best lesson for us:
 
-- one stream per mailbox is a very clean and attractive engine shape
+- one stream per thread is a very clean and attractive engine shape
 
 Bottom line:
 
@@ -359,21 +359,21 @@ Strengths:
 - append-only streams are a first-class database concept
 - event sourcing, projections, and replay are core
 - causation and correlation are part of the mental model
-- much closer to mailbox history than a general broker is
+- much closer to thread history than a general broker is
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
 - still a data platform rather than an agent control plane
 - human gates, tool execution lifecycle, and runtime adapters sit above it
-- may be more event-sourcing-heavy than needed for a simple early mailbox implementation
+- may be more event-sourcing-heavy than needed for a simple early thread implementation
 
 Best lesson for us:
 
-- first-class streams plus projections are a strong fit for mailbox history and derived views
+- first-class streams plus projections are a strong fit for thread history and derived views
 
 Bottom line:
 
-- one of the closest storage-layer comparisons to the mailbox event log idea
+- one of the closest storage-layer comparisons to the thread event log idea
 
 ### Event sourcing as a pattern
 
@@ -384,17 +384,17 @@ What it is:
 Strengths:
 
 - excellent fit for audit, replay, and historical reconstruction
-- per-entity streams match mailbox identity well
-- projections map cleanly to mailbox views like status, pending gates, and latest agent response
+- per-entity streams match thread identity well
+- projections map cleanly to thread views like status, pending gates, and latest agent response
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
 - it is a pattern, not a full system
 - does not by itself define agent runtime integration, tool mediation, or supervision
 
 Best lesson for us:
 
-- the mailbox event log should be the source of truth, and projections should stay secondary
+- the thread event log should be the source of truth, and projections should stay secondary
 
 Bottom line:
 
@@ -413,17 +413,17 @@ What they are:
 Strengths:
 
 - strong fit for answering who may access what
-- good for mailbox ownership, gate resolution permissions, and delegated capabilities
+- good for thread ownership, gate resolution permissions, and delegated capabilities
 
-Weaknesses relative to Agent Mailbox:
+Weaknesses relative to Weave:
 
 - authorization only
-- no durable mailbox event model
+- no durable thread event model
 - no runner or tool lifecycle
 
 Best lesson for us:
 
-- keep policy facts separate from mailbox history
+- keep policy facts separate from thread history
 
 Bottom line:
 
@@ -439,7 +439,7 @@ The nearest neighbors by category are:
 - S2 and JetStream for durable stream substrates
 - EventStoreDB/KurrentDB for event-native persistence
 
-The distinctive Agent Mailbox angle is combining these concerns into one boundary:
+The distinctive Weave angle is combining these concerns into one boundary:
 
 - durable event log
 - ordered inbox
@@ -452,19 +452,19 @@ That combination is what makes it feel like a separate product category.
 
 ## Comparison Table
 
-| System | Closest category | Strongest overlap | Biggest gap vs Agent Mailbox |
+| System | Closest category | Strongest overlap | Biggest gap vs Weave |
 | --- | --- | --- | --- |
 | Temporal | Workflow engine | Replay, durability, external activities | More workflow-centric and heavier than desired |
-| Inngest | Durable execution platform | Serverless-friendly durable steps | Function-centric, not mailbox-centric |
-| Trigger.dev | Async task runtime | Long-running execution, resume, tracing | Task orchestration more than mailbox control plane |
+| Inngest | Durable execution platform | Serverless-friendly durable steps | Function-centric, not thread-centric |
+| Trigger.dev | Async task runtime | Long-running execution, resume, tracing | Task orchestration more than thread control plane |
 | LangGraph | Agent runtime with persistence | Agent interrupts and durable execution | Still a runtime/framework, not neutral control layer |
-| Orleans | Virtual actor system | Stable identity, ephemeral activation | Not append-only mailbox-first |
-| Akka | Actor/supervision framework | Mailboxes, supervision, sequential processing | Lower-level and less event-log/product focused |
+| Orleans | Virtual actor system | Stable identity, ephemeral activation | Not append-only thread-first |
+| Akka | Actor/supervision framework | Threads, supervision, sequential processing | Lower-level and less event-log/product focused |
 | Durable Objects | Serverless coordination primitive | Named durable coordination units | Not event-history-first or cross-runtime neutral |
-| JetStream | Stream substrate | Replayable durable streams | Not an event store or mailbox product by itself |
-| S2 | Durable stream engine | Per-stream ordering and follow semantics | Engine only, not mailbox platform |
+| JetStream | Stream substrate | Replayable durable streams | Not an event store or thread product by itself |
+| S2 | Durable stream engine | Per-stream ordering and follow semantics | Engine only, not thread platform |
 | EventStoreDB/KurrentDB | Event-native database | Streams, projections, replay | Not an agent control plane |
-| SpiceDB | Policy engine | Fine-grained authorization | Not execution, mailbox, or stream coordination |
+| SpiceDB | Policy engine | Fine-grained authorization | Not execution, thread, or stream coordination |
 
 ## What We Should Borrow
 
@@ -487,8 +487,8 @@ That combination is what makes it feel like a separate product category.
 
 ### From Orleans, Akka, and Durable Objects
 
-- stable identity per logical agent or mailbox
-- one serialized execution path per mailbox
+- stable identity per logical agent or thread
+- one serialized execution path per thread
 - ephemeral compute with durable wake behavior
 - supervision concepts
 
@@ -503,14 +503,14 @@ That combination is what makes it feel like a separate product category.
 
 - keep authorization and relationship policy as a separate specialized layer
 
-## What Seems Most Unique About Agent Mailbox
+## What Seems Most Unique About Weave
 
 The strongest product distinction is not any one feature.
 
 It is the combination of these into one durable boundary for agents:
 
 - event sourcing
-- mailbox semantics
+- thread semantics
 - resumable runner surface
 - tool mediation
 - human approval gates
@@ -521,7 +521,7 @@ Most other systems cover only a subset.
 
 ## Practical Conclusion
 
-Agent Mailbox should not try to beat every category at its own game.
+Weave should not try to beat every category at its own game.
 
 Instead it should:
 
@@ -529,11 +529,11 @@ Instead it should:
 - use actor systems as identity and serialization inspiration
 - use stream engines and event stores as storage inspiration
 - use policy engines as companion systems
-- treat adjacent systems as pluggable parts behind one stable mailbox boundary
+- treat adjacent systems as pluggable parts behind one stable thread boundary
 
 The project becomes strongest if it stays focused on the missing layer between them:
 
-`durable, policy-aware, traceable, runtime-neutral agent coordination through mailboxes`
+`durable, policy-aware, traceable, runtime-neutral agent coordination through threads`
 
 This means many “competitors” are better understood as:
 
@@ -543,13 +543,13 @@ This means many “competitors” are better understood as:
 - event stores
 - policy companions
 
-all sitting behind or beside Agent Mailbox.
+all sitting behind or beside Weave.
 
 ## Recommended Strategy From This Comparison
 
 ### Build ourselves
 
-- mailbox model
+- thread model
 - event taxonomy
 - runner and adapter interface
 - gate and policy boundary
@@ -569,7 +569,7 @@ all sitting behind or beside Agent Mailbox.
 - do not build a full general-purpose actor platform in v1
 - do not build a full secret management system in v1
 
-The right first move is still a narrow mailbox primitive with strong event semantics.
+The right first move is still a narrow thread primitive with strong event semantics.
 
 ## References
 

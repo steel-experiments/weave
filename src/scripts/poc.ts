@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createPool } from "../db.js";
-import { MailboxService } from "../mailbox-service.js";
+import { ThreadService } from "../thread-service.js";
 import { migrate } from "../migrate.js";
 import { MockAsyncToolWorker } from "../mock-tool-worker.js";
-import { PostgresMailboxEngine } from "../postgres-engine.js";
-import { MailboxRunner } from "../runner.js";
-import type { MailboxEvent } from "../events.js";
+import { PostgresThreadEngine } from "../postgres-engine.js";
+import { ThreadRunner } from "../runner.js";
+import type { ThreadEvent } from "../events.js";
 import { toMermaidTimeline } from "../timeline.js";
 
 const pool = createPool();
@@ -13,22 +13,22 @@ const pool = createPool();
 try {
   await migrate(pool, { reset: true });
 
-  const engine = new PostgresMailboxEngine(pool);
-  const service = new MailboxService(engine);
-  const runner = new MailboxRunner(engine, engine);
+  const engine = new PostgresThreadEngine(pool);
+  const service = new ThreadService(engine);
+  const runner = new ThreadRunner(engine, engine);
   const worker = new MockAsyncToolWorker(engine);
 
-  const { mailboxId } = await service.startSession(
+  const { threadId } = await service.startSession(
     "Run the mock async job and ask for manual approval before producing the final answer.",
   );
 
-  const firstRun = await runner.runOnce(mailboxId);
+  const firstRun = await runner.runOnce(threadId);
   assert.equal(firstRun.acted, true);
   assert.equal(firstRun.reason, "new-prompt");
 
   const workerEvents: string[] = [];
   while (true) {
-    const result = await worker.processOnce(mailboxId);
+    const result = await worker.processOnce(threadId);
     if (!result.acted) {
       break;
     }
@@ -44,29 +44,29 @@ try {
     "tool.completed",
   ]);
 
-  const secondRun = await runner.runOnce(mailboxId);
+  const secondRun = await runner.runOnce(threadId);
   assert.equal(secondRun.acted, true);
   assert.equal(secondRun.reason, "tool-completed");
 
-  const blockedProjection = await engine.getProjection(mailboxId);
+  const blockedProjection = await engine.getProjection(threadId);
   assert(blockedProjection);
   assert.equal(blockedProjection.status, "blocked");
   assert.equal(blockedProjection.pendingGateIds.length, 1);
 
   const gateId = blockedProjection.pendingGateIds[0];
   assert(gateId);
-  await service.resolveGate(mailboxId, gateId, "approved", "PoC approval granted");
+  await service.resolveGate(threadId, gateId, "approved", "PoC approval granted");
 
-  const finalRun = await runner.runOnce(mailboxId);
+  const finalRun = await runner.runOnce(threadId);
   assert.equal(finalRun.acted, true);
   assert.equal(finalRun.reason, "gate-resolved");
 
-  const finalProjection = await engine.getProjection(mailboxId);
+  const finalProjection = await engine.getProjection(threadId);
   assert(finalProjection);
   assert.equal(finalProjection.status, "completed");
   assert.equal(finalProjection.pendingGateIds.length, 0);
 
-  const events = await engine.read(mailboxId);
+  const events = await engine.read(threadId);
   const eventTypes = events.map((event) => event.type);
   assert(eventTypes.includes("agent.response.produced"));
   assert.equal(events.length, finalProjection.tailSeq);
@@ -75,7 +75,7 @@ try {
   assert(finalResponse?.payload.message.includes("Approved result"));
 
   console.log("PoC flow verified");
-  console.log(`mailboxId=${mailboxId}`);
+  console.log(`threadId=${threadId}`);
   console.log("timeline:");
   for (const event of events) {
     console.log(`${String(event.seq).padStart(2, "0")} ${event.type}`);

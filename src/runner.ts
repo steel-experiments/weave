@@ -1,5 +1,5 @@
-import type { MailboxEngine, MailboxLeaseStore } from "./contracts.js";
-import { eventKey, nowIso, type MailboxEvent } from "./events.js";
+import type { ThreadEngine, ThreadLeaseStore } from "./contracts.js";
+import { eventKey, nowIso, type ThreadEvent } from "./events.js";
 import { DeterministicMockAgent } from "./mock-agent.js";
 import {
   NoopObservabilitySink,
@@ -19,26 +19,26 @@ export type RunnerStepResult = {
 
 export type AgentPlan = {
   resumeReason: "new-prompt" | "tool-completed" | "gate-resolved";
-  events: MailboxEvent[];
+  events: ThreadEvent[];
 };
 
 export type AgentPlanner = {
-  plan(mailboxId: string, events: MailboxEvent[]): AgentPlan | null;
+  plan(threadId: string, events: ThreadEvent[]): AgentPlan | null;
 };
 
-export class MailboxRunner {
+export class ThreadRunner {
   constructor(
-    private readonly engine: MailboxEngine,
-    private readonly leases: MailboxLeaseStore,
+    private readonly engine: ThreadEngine,
+    private readonly leases: ThreadLeaseStore,
     private readonly agent: AgentPlanner = new DeterministicMockAgent(),
     private readonly ownerId = `runner-${process.pid}`,
     private readonly observability: ObservabilitySink = new NoopObservabilitySink(),
   ) {}
 
-  async runOnce(mailboxId: string): Promise<RunnerStepResult> {
-    const context = { traceId: newTraceId(), spanId: newSpanId(), mailboxId };
+  async runOnce(threadId: string): Promise<RunnerStepResult> {
+    const context = { traceId: newTraceId(), spanId: newSpanId(), threadId };
     const startedAt = new Date();
-    const lease = await this.leases.acquireLease(mailboxId, this.ownerId, 10_000);
+    const lease = await this.leases.acquireLease(threadId, this.ownerId, 10_000);
     if (!lease) {
       await safeEmitLog(this.observability, {
         ...context,
@@ -52,11 +52,11 @@ export class MailboxRunner {
     }
 
     try {
-      const history = await this.engine.read(mailboxId);
+      const history = await this.engine.read(threadId);
       const planStartedAt = new Date();
       let plan: AgentPlan | null;
       try {
-        plan = this.agent.plan(mailboxId, history);
+        plan = this.agent.plan(threadId, history);
         await safeEmitSpan(this.observability, {
           ...context,
           spanId: newSpanId(),
@@ -97,9 +97,9 @@ export class MailboxRunner {
       }
 
       const causationId = newestEvent(history)?.eventId;
-      const runnerResumed: MailboxEvent = {
-        eventId: eventKey(mailboxId, "runner.resumed", `${plan.resumeReason}:${causationId ?? history.length}`),
-        mailboxId,
+      const runnerResumed: ThreadEvent = {
+        eventId: eventKey(threadId, "runner.resumed", `${plan.resumeReason}:${causationId ?? history.length}`),
+        threadId,
         type: "runner.resumed",
         occurredAt: nowIso(),
         correlationId: newestEvent(history)?.correlationId,
@@ -133,12 +133,12 @@ export class MailboxRunner {
       await this.emitRunnerSpan(context, startedAt, "error", { error: errorMessage(error) });
       throw error;
     } finally {
-      await this.leases.releaseLease(mailboxId, lease.token);
+      await this.leases.releaseLease(threadId, lease.token);
     }
   }
 
   private async emitRunnerSpan(
-    context: { traceId: string; spanId: string; mailboxId: string },
+    context: { traceId: string; spanId: string; threadId: string },
     startedAt: Date,
     status: "ok" | "error",
     attributes: Record<string, unknown>,
@@ -156,7 +156,7 @@ export class MailboxRunner {
   }
 }
 
-function newestEvent(events: MailboxEvent[]): MailboxEvent | undefined {
+function newestEvent(events: ThreadEvent[]): ThreadEvent | undefined {
   return events.at(-1);
 }
 

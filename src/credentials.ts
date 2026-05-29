@@ -21,7 +21,7 @@ export type CredentialResolution = {
 };
 
 export type CredentialResolutionContext = {
-  mailboxId: string;
+  threadId: string;
   toolCallId: string;
   toolName: string;
 };

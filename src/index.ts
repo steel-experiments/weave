@@ -6,7 +6,7 @@ export * from "./contracts.js";
 export * from "./daemons.js";
 export * from "./db.js";
 export * from "./events.js";
-export * from "./mailbox-service.js";
+export * from "./thread-service.js";
 export * from "./migrate.js";
 export * from "./mock-agent.js";
 export * from "./mock-tool-worker.js";

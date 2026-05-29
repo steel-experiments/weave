@@ -10,7 +10,7 @@ The inbox stores only work that should wake a specific consumer.
 
 ## Why This Exists
 
-The first PoC daemon implementation inferred work by scanning broad mailbox state and event history.
+The first PoC daemon implementation inferred work by scanning broad thread state and event history.
 
 That worked for a script, but it blurred two different concepts:
 
@@ -21,13 +21,13 @@ The explicit inbox model makes that separation real.
 
 ## Current PoC Table
 
-The PoC stores work in `agent_mailbox.mailbox_inbox`.
+The PoC stores work in `weave.thread_inbox`.
 
 Each row represents one event routed to one consumer.
 
 Fields include:
 
-- mailbox ID
+- thread ID
 - consumer name
 - event sequence number
 - state: `pending`, `claimed`, or `done`
@@ -75,7 +75,7 @@ Consumers use claim semantics rather than broad scans.
 ```txt
 consumer polls inbox
   -> claims pending rows with expiry
-  -> processes related mailbox
+  -> processes related thread
   -> marks claimed rows done
 ```
 

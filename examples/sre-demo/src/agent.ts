@@ -4,42 +4,42 @@ import {
   nowIso,
   type AgentPlan,
   type AgentPlanner,
-  type MailboxEvent,
-} from "@agent-mailbox/core";
+  type ThreadEvent,
+} from "weave";
 import type { SreToolName } from "./tools.js";
 
-type PromptReceivedEvent = Extract<MailboxEvent, { type: "prompt.received" }>;
-type ToolRequestedEvent = Extract<MailboxEvent, { type: "tool.requested" }>;
-type ToolCompletedEvent = Extract<MailboxEvent, { type: "tool.completed" }>;
-type GateCreatedEvent = Extract<MailboxEvent, { type: "gate.created" }>;
-type GateResolvedEvent = Extract<MailboxEvent, { type: "gate.resolved" }>;
+type PromptReceivedEvent = Extract<ThreadEvent, { type: "prompt.received" }>;
+type ToolRequestedEvent = Extract<ThreadEvent, { type: "tool.requested" }>;
+type ToolCompletedEvent = Extract<ThreadEvent, { type: "tool.completed" }>;
+type GateCreatedEvent = Extract<ThreadEvent, { type: "gate.created" }>;
+type GateResolvedEvent = Extract<ThreadEvent, { type: "gate.resolved" }>;
 
 export class DeterministicSreAgent implements AgentPlanner {
-  plan(mailboxId: string, events: MailboxEvent[]): AgentPlan | null {
+  plan(threadId: string, events: ThreadEvent[]): AgentPlan | null {
     const prompt = events.find(isPromptReceivedEvent);
     if (!prompt) {
       return null;
     }
 
     if (!toolRequested(events, "axiom.searchLogs")) {
-      return this.requestAxiom(mailboxId, prompt);
+      return this.requestAxiom(threadId, prompt);
     }
 
     if (toolCompleted(events, "axiom.searchLogs") && !toolRequested(events, "grafana.queryMetrics")) {
-      return this.requestGrafana(mailboxId, completedTool(events, "axiom.searchLogs") ?? prompt);
+      return this.requestGrafana(threadId, completedTool(events, "axiom.searchLogs") ?? prompt);
     }
 
     if (toolCompleted(events, "grafana.queryMetrics") && !toolRequested(events, "sentry.findIssues")) {
-      return this.requestSentry(mailboxId, completedTool(events, "grafana.queryMetrics") ?? prompt);
+      return this.requestSentry(threadId, completedTool(events, "grafana.queryMetrics") ?? prompt);
     }
 
     if (toolCompleted(events, "sentry.findIssues") && !toolRequested(events, "deploy.inspectRecentChanges")) {
-      return this.requestDeploy(mailboxId, completedTool(events, "sentry.findIssues") ?? prompt);
+      return this.requestDeploy(threadId, completedTool(events, "sentry.findIssues") ?? prompt);
     }
 
     const deployCompleted = completedTool(events, "deploy.inspectRecentChanges");
     if (deployCompleted && !events.some((event) => event.type === "agent.finding.produced")) {
-      return this.produceFindingAndGate(mailboxId, deployCompleted);
+      return this.produceFindingAndGate(threadId, deployCompleted);
     }
 
     const gateCreated = events.find(
@@ -53,23 +53,23 @@ export class DeterministicSreAgent implements AgentPlanner {
       : undefined;
 
     if (gateResolved?.payload.resolution === "approved" && !toolRequested(events, "infra.rebuildNode")) {
-      return this.requestRebuild(mailboxId, gateResolved);
+      return this.requestRebuild(threadId, gateResolved);
     }
 
     if (gateResolved?.payload.resolution === "denied" && !events.some((event) => event.type === "agent.incident_report.produced")) {
-      return this.produceDeniedReport(mailboxId, gateResolved);
+      return this.produceDeniedReport(threadId, gateResolved);
     }
 
     const rebuildCompleted = completedTool(events, "infra.rebuildNode");
     if (rebuildCompleted && !events.some((event) => event.type === "agent.incident_report.produced")) {
-      return this.produceFinalReport(mailboxId, rebuildCompleted);
+      return this.produceFinalReport(threadId, rebuildCompleted);
     }
 
     return null;
   }
 
-  private requestAxiom(mailboxId: string, cause: PromptReceivedEvent): AgentPlan {
-    return this.toolPlan(mailboxId, cause, "new-prompt", "axiom.searchLogs", {
+  private requestAxiom(threadId: string, cause: PromptReceivedEvent): AgentPlan {
+    return this.toolPlan(threadId, cause, "new-prompt", "axiom.searchLogs", {
       environment: "production",
       query: "service:checkout-api level:error DatabaseTimeoutError",
       timeRangeMinutes: 30,
@@ -77,8 +77,8 @@ export class DeterministicSreAgent implements AgentPlanner {
     });
   }
 
-  private requestGrafana(mailboxId: string, cause: MailboxEvent): AgentPlan {
-    return this.toolPlan(mailboxId, cause, "tool-completed", "grafana.queryMetrics", {
+  private requestGrafana(threadId: string, cause: ThreadEvent): AgentPlan {
+    return this.toolPlan(threadId, cause, "tool-completed", "grafana.queryMetrics", {
       environment: "production",
       service: "checkout-api",
       metrics: ["http_5xx_rate", "latency_p95", "db_pool_wait_ms"],
@@ -86,8 +86,8 @@ export class DeterministicSreAgent implements AgentPlanner {
     });
   }
 
-  private requestSentry(mailboxId: string, cause: MailboxEvent): AgentPlan {
-    return this.toolPlan(mailboxId, cause, "tool-completed", "sentry.findIssues", {
+  private requestSentry(threadId: string, cause: ThreadEvent): AgentPlan {
+    return this.toolPlan(threadId, cause, "tool-completed", "sentry.findIssues", {
       environment: "production",
       project: "checkout-api",
       query: "DatabaseTimeoutError release:latest",
@@ -95,16 +95,16 @@ export class DeterministicSreAgent implements AgentPlanner {
     });
   }
 
-  private requestDeploy(mailboxId: string, cause: MailboxEvent): AgentPlan {
-    return this.toolPlan(mailboxId, cause, "tool-completed", "deploy.inspectRecentChanges", {
+  private requestDeploy(threadId: string, cause: ThreadEvent): AgentPlan {
+    return this.toolPlan(threadId, cause, "tool-completed", "deploy.inspectRecentChanges", {
       environment: "production",
       service: "checkout-api",
       timeRangeMinutes: 60,
     });
   }
 
-  private requestRebuild(mailboxId: string, cause: GateResolvedEvent): AgentPlan {
-    return this.toolPlan(mailboxId, cause, "gate-resolved", "infra.rebuildNode", {
+  private requestRebuild(threadId: string, cause: GateResolvedEvent): AgentPlan {
+    return this.toolPlan(threadId, cause, "gate-resolved", "infra.rebuildNode", {
       environment: "production",
       nodeId: "nats-prod-1",
       reason: "Drain and rebuild node after correlated checkout-api database timeout incident.",
@@ -112,22 +112,22 @@ export class DeterministicSreAgent implements AgentPlanner {
   }
 
   private toolPlan(
-    mailboxId: string,
-    cause: MailboxEvent,
+    threadId: string,
+    cause: ThreadEvent,
     resumeReason: AgentPlan["resumeReason"],
     toolName: SreToolName,
     args: Record<string, unknown>,
   ): AgentPlan {
-    const stepId = deterministicUuid("sre-step", mailboxId, `request:${toolName}`);
-    const toolCallId = deterministicUuid("sre-tool-call", mailboxId, toolName);
+    const stepId = deterministicUuid("sre-step", threadId, `request:${toolName}`);
+    const toolCallId = deterministicUuid("sre-tool-call", threadId, toolName);
 
     return {
       resumeReason,
       events: [
-        this.stepStarted(mailboxId, cause, stepId, resumeReason === "new-prompt" ? "prompt" : resumeReason),
+        this.stepStarted(threadId, cause, stepId, resumeReason === "new-prompt" ? "prompt" : resumeReason),
         {
-          eventId: eventKey(mailboxId, "tool.requested", toolName),
-          mailboxId,
+          eventId: eventKey(threadId, "tool.requested", toolName),
+          threadId,
           type: "tool.requested",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
@@ -135,24 +135,24 @@ export class DeterministicSreAgent implements AgentPlanner {
           actor: { type: "agent", id: "sre-mock-agent" },
           payload: { toolCallId, toolName, args },
         },
-        this.stepCompleted(mailboxId, cause, stepId, "requested-tool"),
+        this.stepCompleted(threadId, cause, stepId, "requested-tool"),
       ],
     };
   }
 
-  private produceFindingAndGate(mailboxId: string, cause: ToolCompletedEvent): AgentPlan {
-    const stepId = deterministicUuid("sre-step", mailboxId, "finding-and-gate");
-    const findingId = deterministicUuid("sre-finding", mailboxId, "checkout-api-db-timeout");
-    const remediationId = deterministicUuid("sre-remediation", mailboxId, "rebuild-nats-prod-1");
-    const gateId = deterministicUuid("sre-gate", mailboxId, "rebuild-nats-prod-1");
+  private produceFindingAndGate(threadId: string, cause: ToolCompletedEvent): AgentPlan {
+    const stepId = deterministicUuid("sre-step", threadId, "finding-and-gate");
+    const findingId = deterministicUuid("sre-finding", threadId, "checkout-api-db-timeout");
+    const remediationId = deterministicUuid("sre-remediation", threadId, "rebuild-nats-prod-1");
+    const gateId = deterministicUuid("sre-gate", threadId, "rebuild-nats-prod-1");
 
     return {
       resumeReason: "tool-completed",
       events: [
-        this.stepStarted(mailboxId, cause, stepId, "tool-completed"),
+        this.stepStarted(threadId, cause, stepId, "tool-completed"),
         {
-          eventId: eventKey(mailboxId, "agent.finding.produced", findingId),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.finding.produced", findingId),
+          threadId,
           type: "agent.finding.produced",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
@@ -171,8 +171,8 @@ export class DeterministicSreAgent implements AgentPlanner {
           },
         },
         {
-          eventId: eventKey(mailboxId, "agent.remediation.proposed", remediationId),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.remediation.proposed", remediationId),
+          threadId,
           type: "agent.remediation.proposed",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
@@ -187,8 +187,8 @@ export class DeterministicSreAgent implements AgentPlanner {
           },
         },
         {
-          eventId: eventKey(mailboxId, "gate.created", gateId),
-          mailboxId,
+          eventId: eventKey(threadId, "gate.created", gateId),
+          threadId,
           type: "gate.created",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
@@ -201,17 +201,17 @@ export class DeterministicSreAgent implements AgentPlanner {
             proposedAction: "Approve rebuilding nats-prod-1 in production.",
           },
         },
-        this.stepCompleted(mailboxId, cause, stepId, "created-gate"),
+        this.stepCompleted(threadId, cause, stepId, "created-gate"),
       ],
     };
   }
 
-  private produceFinalReport(mailboxId: string, cause: ToolCompletedEvent): AgentPlan {
-    const stepId = deterministicUuid("sre-step", mailboxId, "final-report");
+  private produceFinalReport(threadId: string, cause: ToolCompletedEvent): AgentPlan {
+    const stepId = deterministicUuid("sre-step", threadId, "final-report");
     const report = {
       title: "SRE investigation complete: checkout-api production incident",
       summary:
-        "The mailbox-backed SRE agent correlated logs, metrics, Sentry errors, and deploy metadata. Human approval was required before the remediation tool executed.",
+        "The thread-backed SRE agent correlated logs, metrics, Sentry errors, and deploy metadata. Human approval was required before the remediation tool executed.",
       rootCause: "checkout-api release 2026.05.20.1 triggered database timeout failures under checkout traffic.",
       actions: [
         "Queried Axiom logs for production checkout-api errors.",
@@ -232,10 +232,10 @@ export class DeterministicSreAgent implements AgentPlanner {
     return {
       resumeReason: "tool-completed",
       events: [
-        this.stepStarted(mailboxId, cause, stepId, "tool-completed"),
+        this.stepStarted(threadId, cause, stepId, "tool-completed"),
         {
-          eventId: eventKey(mailboxId, "agent.incident_report.produced", "final"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.incident_report.produced", "final"),
+          threadId,
           type: "agent.incident_report.produced",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
@@ -244,8 +244,8 @@ export class DeterministicSreAgent implements AgentPlanner {
           payload: report,
         },
         {
-          eventId: eventKey(mailboxId, "agent.response.produced", "sre-final"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.response.produced", "sre-final"),
+          threadId,
           type: "agent.response.produced",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
@@ -253,20 +253,20 @@ export class DeterministicSreAgent implements AgentPlanner {
           actor: { type: "agent", id: "sre-mock-agent" },
           payload: { message: `${report.title}: ${report.rootCause}` },
         },
-        this.stepCompleted(mailboxId, cause, stepId, "produced-response"),
+        this.stepCompleted(threadId, cause, stepId, "produced-response"),
       ],
     };
   }
 
-  private produceDeniedReport(mailboxId: string, cause: GateResolvedEvent): AgentPlan {
-    const stepId = deterministicUuid("sre-step", mailboxId, "denied-report");
+  private produceDeniedReport(threadId: string, cause: GateResolvedEvent): AgentPlan {
+    const stepId = deterministicUuid("sre-step", threadId, "denied-report");
     return {
       resumeReason: "gate-resolved",
       events: [
-        this.stepStarted(mailboxId, cause, stepId, "gate-resolved"),
+        this.stepStarted(threadId, cause, stepId, "gate-resolved"),
         {
-          eventId: eventKey(mailboxId, "agent.incident_report.produced", "denied"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.incident_report.produced", "denied"),
+          threadId,
           type: "agent.incident_report.produced",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
@@ -281,8 +281,8 @@ export class DeterministicSreAgent implements AgentPlanner {
           },
         },
         {
-          eventId: eventKey(mailboxId, "agent.response.produced", "sre-denied"),
-          mailboxId,
+          eventId: eventKey(threadId, "agent.response.produced", "sre-denied"),
+          threadId,
           type: "agent.response.produced",
           occurredAt: nowIso(),
           correlationId: cause.correlationId,
@@ -290,20 +290,20 @@ export class DeterministicSreAgent implements AgentPlanner {
           actor: { type: "agent", id: "sre-mock-agent" },
           payload: { message: "Remediation was denied. Investigation report produced without action." },
         },
-        this.stepCompleted(mailboxId, cause, stepId, "produced-response"),
+        this.stepCompleted(threadId, cause, stepId, "produced-response"),
       ],
     };
   }
 
   private stepStarted(
-    mailboxId: string,
-    cause: MailboxEvent,
+    threadId: string,
+    cause: ThreadEvent,
     stepId: string,
     reason: "prompt" | "tool-completed" | "gate-resolved" | "manual-resume",
-  ): MailboxEvent {
+  ): ThreadEvent {
     return {
-      eventId: eventKey(mailboxId, "agent.step.started", stepId),
-      mailboxId,
+      eventId: eventKey(threadId, "agent.step.started", stepId),
+      threadId,
       type: "agent.step.started",
       occurredAt: nowIso(),
       correlationId: cause.correlationId,
@@ -314,14 +314,14 @@ export class DeterministicSreAgent implements AgentPlanner {
   }
 
   private stepCompleted(
-    mailboxId: string,
-    cause: MailboxEvent,
+    threadId: string,
+    cause: ThreadEvent,
     stepId: string,
     outcome: "requested-tool" | "created-gate" | "produced-response",
-  ): MailboxEvent {
+  ): ThreadEvent {
     return {
-      eventId: eventKey(mailboxId, "agent.step.completed", stepId),
-      mailboxId,
+      eventId: eventKey(threadId, "agent.step.completed", stepId),
+      threadId,
       type: "agent.step.completed",
       occurredAt: nowIso(),
       correlationId: cause.correlationId,
@@ -332,19 +332,19 @@ export class DeterministicSreAgent implements AgentPlanner {
   }
 }
 
-function isPromptReceivedEvent(event: MailboxEvent): event is PromptReceivedEvent {
+function isPromptReceivedEvent(event: ThreadEvent): event is PromptReceivedEvent {
   return event.type === "prompt.received";
 }
 
-function toolRequested(events: MailboxEvent[], toolName: SreToolName): boolean {
+function toolRequested(events: ThreadEvent[], toolName: SreToolName): boolean {
   return events.some((event) => event.type === "tool.requested" && event.payload.toolName === toolName);
 }
 
-function toolCompleted(events: MailboxEvent[], toolName: SreToolName): boolean {
+function toolCompleted(events: ThreadEvent[], toolName: SreToolName): boolean {
   return completedTool(events, toolName) !== undefined;
 }
 
-function completedTool(events: MailboxEvent[], toolName: SreToolName): ToolCompletedEvent | undefined {
+function completedTool(events: ThreadEvent[], toolName: SreToolName): ToolCompletedEvent | undefined {
   const request = events.find(
     (event): event is ToolRequestedEvent => event.type === "tool.requested" && event.payload.toolName === toolName,
   );

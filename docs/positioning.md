@@ -2,20 +2,20 @@
 
 ## Core Framing
 
-Agent Mailbox should be positioned as the control plane for agents.
+Weave should be positioned as the control plane for agents.
 
 It should not be positioned as a monolithic replacement for every workflow engine, event store, runtime, or policy system.
 
 The strongest framing is:
 
 ```txt
-Agent Mailbox = durable control plane
+Weave = durable control plane
 Other systems = engines, adapters, or companion services
 ```
 
 ## What This Means
 
-Agent Mailbox defines the stable boundary for:
+Weave defines the stable boundary for:
 
 - durable event history
 - ordered inbox semantics
@@ -24,13 +24,13 @@ Agent Mailbox defines the stable boundary for:
 - human gates and approvals
 - trace and audit boundaries
 - policy and credential mediation
-- mailbox-to-mailbox coordination
+- thread-to-thread coordination
 
 It does not need to own every implementation detail below that boundary.
 
 ## The Main Positioning Statement
 
-Agent Mailbox is a durable, runtime-neutral control plane for agents.
+Weave is a durable, runtime-neutral control plane for agents.
 
 It lets teams plug in:
 
@@ -40,11 +40,11 @@ It lets teams plug in:
 - policy and identity systems
 - external integrations
 
-while preserving one stable mailbox model.
+while preserving one stable thread model.
 
 ## Why This Is Stronger Than Competing Head-On
 
-If we position Agent Mailbox as a direct competitor to every adjacent system, the product becomes conceptually bloated.
+If we position Weave as a direct competitor to every adjacent system, the product becomes conceptually bloated.
 
 If we position it as the control boundary above and between those systems, the product becomes:
 
@@ -61,10 +61,10 @@ what they lack is a coherent, durable boundary that ties them together safely fo
 
 ## Product Boundary
 
-### Agent Mailbox owns
+### Weave owns
 
-- mailbox identity
-- mailbox event model
+- thread identity
+- thread event model
 - runner and wake model
 - gate and approval semantics
 - trace model
@@ -72,7 +72,7 @@ what they lack is a coherent, durable boundary that ties them together safely fo
 - adapter interfaces
 - stream-link and subagent coordination model
 
-### Agent Mailbox does not need to own
+### Weave does not need to own
 
 - every workflow runtime
 - every storage backend
@@ -81,7 +81,7 @@ what they lack is a coherent, durable boundary that ties them together safely fo
 - every credential system
 - every browser or sandbox implementation
 
-Those can be attached behind the mailbox.
+Those can be attached behind the thread.
 
 ## How To Think About Adjacent Systems
 
@@ -97,7 +97,7 @@ Examples:
 - Codex-like runtimes
 - Claude Code-like runtimes
 
-These can execute work on behalf of a mailbox.
+These can execute work on behalf of a thread.
 
 ### Coordination engines
 
@@ -107,7 +107,7 @@ Examples:
 - Akka
 - Cloudflare Durable Objects
 
-These can host mailbox-local coordination or stable entity execution.
+These can host thread-local coordination or stable entity execution.
 
 ### Stream and storage engines
 
@@ -119,7 +119,7 @@ Examples:
 - Postgres
 - SQLite
 
-These can store mailbox events, power replay, or drive subscriptions.
+These can store thread events, power replay, or drive subscriptions.
 
 ### Policy and identity companions
 
@@ -143,13 +143,13 @@ Examples:
 - browser session providers
 - sandbox providers
 
-These consume and emit mailbox events.
+These consume and emit thread events.
 
 ## Key Differentiator
 
-The key differentiator is not that Agent Mailbox has better workflow execution than Temporal or better stream durability than EventStoreDB.
+The key differentiator is not that Weave has better workflow execution than Temporal or better stream durability than EventStoreDB.
 
-The differentiator is that Agent Mailbox gives all of those systems one shared control boundary for agent work.
+The differentiator is that Weave gives all of those systems one shared control boundary for agent work.
 
 That boundary is where:
 
@@ -165,15 +165,15 @@ That boundary is where:
 
 ### Short form
 
-Agent Mailbox is the control plane for agents.
+Weave is the control plane for agents.
 
 ### Slightly longer form
 
-Agent Mailbox is a durable event and coordination boundary that lets different agent runtimes, tools, engines, and policy systems work together through one mailbox model.
+Weave is a durable event and coordination boundary that lets different agent runtimes, tools, engines, and policy systems work together through one thread model.
 
 ### Contributor form
 
-You do not need to replace your workflow engine, event store, or runtime to use Agent Mailbox. You plug them into the mailbox model as engines or adapters.
+You do not need to replace your workflow engine, event store, or runtime to use Weave. You plug them into the thread model as engines or adapters.
 
 ## Strategic Benefit
 
@@ -189,28 +189,28 @@ Instead of saying:
 we say:
 
 - connect them
-- normalize them behind one mailbox abstraction
+- normalize them behind one thread abstraction
 - make them interoperable for agent control flows
 
 That opens up many adoption paths.
 
 ## Adoption Paths
 
-### Path 1: existing runtime, new mailbox
+### Path 1: existing runtime, new thread
 
-A team keeps its current agent runtime but adds mailbox durability, tracing, and gates.
+A team keeps its current agent runtime but adds thread durability, tracing, and gates.
 
 ### Path 2: existing store, new control plane
 
-A team keeps Postgres, EventStoreDB, or S2, but uses Agent Mailbox as the new orchestration boundary.
+A team keeps Postgres, EventStoreDB, or S2, but uses Weave as the new orchestration boundary.
 
-### Path 3: existing workflow engine, mailbox wrapper
+### Path 3: existing workflow engine, thread wrapper
 
-A team continues using Temporal or Inngest under the hood, but adopts mailbox semantics for cross-agent coordination.
+A team continues using Temporal or Inngest under the hood, but adopts thread semantics for cross-agent coordination.
 
-### Path 4: full greenfield mailbox-native system
+### Path 4: full greenfield thread-native system
 
-A team builds directly around the mailbox abstraction from the start.
+A team builds directly around the thread abstraction from the start.
 
 ## What To Avoid In Messaging
 
@@ -229,10 +229,10 @@ Better framing:
 
 ## Bottom Line
 
-Agent Mailbox is strongest when framed as:
+Weave is strongest when framed as:
 
 - the durable control plane for agents
-- the mailbox abstraction that unifies runtimes, engines, tools, humans, and policies
+- the thread abstraction that unifies runtimes, engines, tools, humans, and policies
 - the stable boundary above interchangeable engines and integrations
 
 That is a bigger and more defensible category than trying to replace each adjacent system directly.

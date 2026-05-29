@@ -8,11 +8,11 @@ This document freezes the first proof-of-concept scope so implementation can beg
 
 These decisions are locked for the PoC.
 
-### Mailbox model
+### Thread model
 
-- one mailbox = one agent session
-- parent and child mailbox relationships are future work
-- the mailbox is the durable source of truth for the session
+- one thread = one agent session
+- parent and child thread relationships are future work
+- the thread is the durable source of truth for the session
 
 ### Execution model
 
@@ -35,12 +35,12 @@ These decisions are locked for the PoC.
 
 ## PoC Goal
 
-The PoC should prove that Agent Mailbox works as a real primitive.
+The PoC should prove that Weave works as a real primitive.
 
 It must demonstrate:
 
 - durable event history per session
-- runner restart or reinvocation from mailbox state
+- runner restart or reinvocation from thread state
 - structured tool lifecycle with progress
 - a manual approval gate
 - traceable end-to-end flow from prompt to final response
@@ -51,7 +51,7 @@ The first demo flow is:
 
 ```txt
 user starts session
-mailbox records prompt
+thread records prompt
 runner invokes deterministic mock agent
 agent requests mock async tool
 tool emits started and progress events
@@ -60,25 +60,25 @@ runner resumes and creates a manual approval gate
 human resolves gate
 runner resumes again
 agent emits final response
-mailbox is completed
+thread is completed
 ```
 
 This proves both asynchronous tool work and resumable execution after human input.
 
 ## In Scope
 
-### Mailbox core
+### Thread core
 
-- create mailbox for a session
+- create thread for a session
 - append strongly typed events
 - read event history by sequence number
-- lease a mailbox to one runner
-- maintain a simple mailbox state projection
+- lease a thread to one runner
+- maintain a simple thread state projection
 
 ### Runner
 
 - acquire a lease
-- read mailbox history
+- read thread history
 - build deterministic input for the mock agent
 - append agent-generated events
 - release or renew the lease
@@ -87,7 +87,7 @@ This proves both asynchronous tool work and resumable execution after human inpu
 
 - deterministic
 - no real LLM
-- outputs fixed next actions based on mailbox history
+- outputs fixed next actions based on thread history
 - creates exactly one tool request and one final response
 
 ### Mock tool worker
@@ -106,7 +106,7 @@ This proves both asynchronous tool work and resumable execution after human inpu
 
 ### Projection
 
-- mailbox status
+- thread status
 - tail sequence number
 - active lease owner
 - pending gate IDs
@@ -115,7 +115,7 @@ This proves both asynchronous tool work and resumable execution after human inpu
 ## Out Of Scope
 
 - multiple agent runtimes
-- child mailboxes
+- child threads
 - policy engine integration
 - secret management
 - browser sessions
@@ -128,7 +128,7 @@ This proves both asynchronous tool work and resumable execution after human inpu
 
 The PoC is successful if:
 
-- one mailbox session can be created and completed
+- one thread session can be created and completed
 - every state change is reconstructable from durable events
 - the mock tool emits observable progress over time
 - the session blocks on approval and later resumes correctly
@@ -156,15 +156,15 @@ These loops may run in the same process at first if that speeds iteration.
 - no real coding agent
 - deterministic adapter logic only
 
-This keeps the PoC focused on mailbox semantics rather than model behavior.
+This keeps the PoC focused on thread semantics rather than model behavior.
 
 ## Component List
 
 The PoC needs these components:
 
-- mailbox API/service
+- thread API/service
 - Postgres engine
-- mailbox projection updater
+- thread projection updater
 - runner
 - deterministic mock agent adapter
 - mock tool worker
@@ -176,7 +176,7 @@ Build in this order:
 
 1. Postgres schema and engine
 2. event schemas and contracts
-3. mailbox service and projection updates
+3. thread service and projection updates
 4. deterministic runner and mock agent adapter
 5. mock tool worker with progress
 6. manual gate resolution path
@@ -190,6 +190,6 @@ Even though this is a PoC, keep these seams explicit:
 - agent adapter interface
 - worker contract
 - event typing and validation
-- parent-child mailbox relationship as a future extension
+- parent-child thread relationship as a future extension
 
 This keeps the PoC from turning into a dead end.

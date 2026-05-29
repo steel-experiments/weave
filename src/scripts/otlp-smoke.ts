@@ -12,7 +12,7 @@ assert(endpoint);
 
 const sink = new OtlpHttpObservabilitySink({
   endpoint,
-  serviceName: "agent-mailbox-otlp-smoke",
+  serviceName: "weave-otlp-smoke",
   resourceAttributes: {
     "deployment.environment": "smoke",
   },
@@ -21,14 +21,14 @@ const sink = new OtlpHttpObservabilitySink({
 const traceId = newTraceId();
 const spanId = newSpanId();
 const now = new Date().toISOString();
-const mailboxId = randomUUID();
+const threadId = randomUUID();
 const toolCallId = randomUUID();
 
 try {
   await sink.emitSpan({
     traceId,
     spanId,
-    mailboxId,
+    threadId,
     toolCallId,
     toolName: "smoke.tool",
     name: "tool.execute smoke.tool",
@@ -45,7 +45,7 @@ try {
   await sink.emitLog({
     traceId,
     spanId,
-    mailboxId,
+    threadId,
     toolCallId,
     toolName: "smoke.tool",
     timestamp: new Date().toISOString(),

@@ -1,8 +1,8 @@
-# ECC Features For Mailbox
+# ECC Features For Thread
 
 ## Purpose
 
-This document looks specifically at ECC features that overlap with Agent Mailbox goals:
+This document looks specifically at ECC features that overlap with Weave goals:
 
 - security and governance
 - skills
@@ -16,8 +16,8 @@ The main question here is not just "what does ECC do?"
 The main question is:
 
 ```txt
-Which ECC feature patterns belong in a mailbox-adjacent layer,
-and which belong in the mailbox core?
+Which ECC feature patterns belong in a thread-adjacent layer,
+and which belong in the thread core?
 ```
 
 This analysis is based on DeepWiki material for `affaan-m/ECC` and cross-checks against the repo docs and code already reviewed locally.
@@ -29,7 +29,7 @@ ECC handles these concerns mostly at the harness and operator layer.
 That means:
 
 - it is strong on runtime guardrails, packaging, and operator ergonomics
-- it is weaker as a model for durable mailbox-native state transitions
+- it is weaker as a model for durable thread-native state transitions
 
 So the right move is:
 
@@ -75,11 +75,11 @@ ECC is strong on:
 - treating secrets and MCPs as first-class risk surfaces
 - making risky behavior visible to operators
 
-That is exactly the right instinct for mailbox systems too.
+That is exactly the right instinct for thread systems too.
 
-## Where it differs from Agent Mailbox
+## Where it differs from Weave
 
-ECC does not model governance as a durable mailbox-native object.
+ECC does not model governance as a durable thread-native object.
 
 It mostly uses:
 
@@ -88,7 +88,7 @@ It mostly uses:
 - operator-facing readiness signals
 - documented release gates
 
-That is different from the mailbox direction, where we want:
+That is different from the thread direction, where we want:
 
 - `gate.created`
 - `gate.resolved`
@@ -100,7 +100,7 @@ In other words:
 
 ```txt
 ECC security is boundary enforcement.
-Mailbox security should be boundary enforcement plus durable gate state.
+Thread security should be boundary enforcement plus durable gate state.
 ```
 
 ## What to adapt
@@ -117,11 +117,11 @@ Mailbox security should be boundary enforcement plus durable gate state.
 - markdown approval artifacts as the only representation of approval state
 - governance alerts without first-class durable gate objects
 
-## Mailbox implication
+## Thread implication
 
-Agent Mailbox should turn ECC-style enforcement into event-native state:
+Weave should turn ECC-style enforcement into event-native state:
 
-- request enters mailbox
+- request enters thread
 - policy is evaluated
 - if more evidence is needed, append a gate event
 - if approval is needed, create a first-class gate object
@@ -164,17 +164,17 @@ ECC has a clean distinction between:
 - execution assets
 - UX entrypoints
 
-That is useful for Agent Mailbox because it reduces a common design failure:
+That is useful for Weave because it reduces a common design failure:
 
 - mixing prompts, state, execution control, and user interface into one abstraction
 
-## Where it differs from Agent Mailbox
+## Where it differs from Weave
 
 ECC skills are largely static knowledge packs.
 
-Agent Mailbox is about durable control flow and side-effect mediation.
+Weave is about durable control flow and side-effect mediation.
 
-So ECC skills are not a model for mailbox execution itself.
+So ECC skills are not a model for thread execution itself.
 They are closer to:
 
 - runtime-side policy packs
@@ -192,16 +192,16 @@ They are closer to:
 ## What not to adapt directly
 
 - treating static skill bundles as the durable unit of execution
-- allowing skill activation to stand in for explicit mailbox events and state transitions
+- allowing skill activation to stand in for explicit thread events and state transitions
 
-## Mailbox implication
+## Thread implication
 
-For Agent Mailbox, skills should likely sit above or beside the mailbox core:
+For Weave, skills should likely sit above or beside the thread core:
 
-- mailboxes hold durable event history and state
+- threads hold durable event history and state
 - runtimes may load skills to decide what to do
 - skills influence planning and behavior
-- the mailbox remains the system of record
+- the thread remains the system of record
 
 This is already aligned with the project's current positioning as a control plane rather than a monolithic runtime.
 
@@ -239,14 +239,14 @@ ECC gets two important things right here:
 - learning is incremental and evidence-backed
 - promotion into durable reusable assets is explicit rather than automatic magic
 
-That maps well to how mailbox-native learning should work.
+That maps well to how thread-native learning should work.
 
-## Where it differs from Agent Mailbox
+## Where it differs from Weave
 
 ECC's instinct system is fundamentally filesystem and observer based.
 
 It is learned memory layered around a harness.
-It is not integrated into a mailbox event stream as first-class replayable control state.
+It is not integrated into a thread event stream as first-class replayable control state.
 
 That means:
 
@@ -265,15 +265,15 @@ That means:
 - filesystem logs as the main substrate for long-term control-plane learning
 - background learning flows that are disconnected from the authoritative execution history
 
-## Mailbox implication
+## Thread implication
 
-Agent Mailbox should probably model learning as a derived system off mailbox events.
+Weave should probably model learning as a derived system off thread events.
 
 One clean design would be:
 
-- mailbox history remains authoritative
-- a learning pipeline consumes mailbox events and worker outcomes
-- it emits candidate instincts or playbooks into a separate learning store or mailbox family
+- thread history remains authoritative
+- a learning pipeline consumes thread events and worker outcomes
+- it emits candidate instincts or playbooks into a separate learning store or thread family
 - promotion into reusable skills or policies is explicit
 
 That gives us ECC's good parts without splitting learning away from the main event source.
@@ -314,7 +314,7 @@ This is the part that starts to look like a local control plane.
 
 The `ecc2` work adds a more explicit SQLite-backed state store for session lifecycle and operator views.
 
-This is more structured than the older hook-plus-filesystem model, but still centered on operator session management rather than mailbox-native replay.
+This is more structured than the older hook-plus-filesystem model, but still centered on operator session management rather than thread-native replay.
 
 ## What is good about it
 
@@ -327,9 +327,9 @@ It implicitly separates:
 - operational session state
 - install and governance state
 
-That separation is exactly what Agent Mailbox needs too.
+That separation is exactly what Weave needs too.
 
-## Where it differs from Agent Mailbox
+## Where it differs from Weave
 
 ECC's persistence is mostly:
 
@@ -338,14 +338,14 @@ ECC's persistence is mostly:
 - session oriented
 - partially snapshot based
 
-Agent Mailbox wants:
+Weave wants:
 
-- append-only mailbox history
+- append-only thread history
 - explicit event replay
 - durable inbox and gate semantics
-- per-mailbox coordination leases
+- per-thread coordination leases
 
-So ECC's memory model is closer to a runtime shell than to the mailbox core.
+So ECC's memory model is closer to a runtime shell than to the thread core.
 
 ## What to adapt
 
@@ -359,54 +359,54 @@ So ECC's memory model is closer to a runtime shell than to the mailbox core.
 - injected session context as the primary persistence mechanism
 - snapshots and summaries as the authoritative execution record
 
-## Mailbox implication
+## Thread implication
 
-Agent Mailbox should likely distinguish at least these memory classes:
+Weave should likely distinguish at least these memory classes:
 
-- mailbox working state: rebuilt from mailbox events
+- thread working state: rebuilt from thread events
 - runtime continuity memory: adapter-managed session context for a specific harness
-- learned behavior memory: derived instincts or playbooks promoted from many mailboxes
+- learned behavior memory: derived instincts or playbooks promoted from many threads
 - operator state: projections for dashboards, queues, and readiness
 
 That would be a cleaner and more explicit version of the separations ECC already hints at.
 
 ## Synthesis
 
-## Best ECC ideas for mailbox-adjacent features
+## Best ECC ideas for thread-adjacent features
 
 - boundary-centric security checks
 - portable knowledge packs separated from execution state
 - evidence-backed incremental learning
 - explicit distinction between short-term memory, learned memory, and operator state
 
-## Best mailbox-specific upgrade over ECC
+## Best thread-specific upgrade over ECC
 
-The mailbox version of these features should be stricter and more durable:
+The thread version of these features should be stricter and more durable:
 
 - security becomes replayable policy and gate state
 - skills stay external to the source of truth
-- instincts are derived from mailbox history instead of separate ad hoc logs
-- memory is divided cleanly between mailbox state, runtime continuity, learning, and projections
+- instincts are derived from thread history instead of separate ad hoc logs
+- memory is divided cleanly between thread state, runtime continuity, learning, and projections
 
 ## Concrete Recommendations
 
 ## 1. Add a gate model, not just governance events
 
-If we borrow ECC's governance ideas, we should formalize them as mailbox objects and events.
+If we borrow ECC's governance ideas, we should formalize them as thread objects and events.
 
-## 2. Keep skills outside the mailbox core
+## 2. Keep skills outside the thread core
 
-Mailbox state should never be confused with prompt packs, skill packs, or command UX.
+Thread state should never be confused with prompt packs, skill packs, or command UX.
 
-## 3. Build learning off the mailbox event stream
+## 3. Build learning off the thread event stream
 
-Use mailbox history as the evidence source for future instinct-like learning.
+Use thread history as the evidence source for future instinct-like learning.
 
 ## 4. Define memory classes explicitly in the docs
 
 The project should document separate layers for:
 
-- mailbox state
+- thread state
 - runtime continuity state
 - learned memory
 - operator projections
@@ -418,11 +418,11 @@ ECC already contains several patterns we want, but mostly in harness-native form
 The strongest adaptation path is:
 
 - preserve ECC's boundary and operator ideas
-- re-express them with mailbox-native durability and replay
+- re-express them with thread-native durability and replay
 
 In short:
 
 ```txt
 ECC shows how these features feel in a runtime shell.
-Agent Mailbox should make the important ones durable.
+Weave should make the important ones durable.
 ```

@@ -3,11 +3,11 @@ import { AddressInfo } from "node:net";
 import {
   CompositeObservabilitySink,
   ContractToolWorker,
-  MailboxRunner,
-  createMailboxRuntime,
-  MailboxService,
+  ThreadRunner,
+  createWeaveRuntime,
+  ThreadService,
   PostgresObservabilitySink,
-  PostgresMailboxEngine,
+  PostgresThreadEngine,
   createApiServer,
   createPool,
   getAgent,
@@ -15,9 +15,9 @@ import {
   otlpFromEnv,
   toMermaidTimeline,
   toTextTimeline,
-  type MailboxEvent,
-  type MailboxProjection,
-} from "@agent-mailbox/core";
+  type ThreadEvent,
+  type ThreadProjection,
+} from "weave";
 import { sreDemoApp } from "./app.js";
 
 const pool = createPool();
@@ -34,14 +34,14 @@ const style = {
 try {
   await migrate(pool, { reset: true });
 
-  const engine = new PostgresMailboxEngine(pool);
+  const engine = new PostgresThreadEngine(pool);
   const postgresObservability = new PostgresObservabilitySink(pool);
-  const otlpObservability = otlpFromEnv({ serviceName: "agent-mailbox-sre-demo" });
+  const otlpObservability = otlpFromEnv({ serviceName: "weave-sre-demo" });
   const observability = otlpObservability
     ? new CompositeObservabilitySink([postgresObservability, otlpObservability])
     : postgresObservability;
   const runtimeApp = { ...sreDemoApp, observability };
-  const service = new MailboxService(engine);
+  const service = new ThreadService(engine);
   const server = createApiServer(engine, service, {
     observability: runtimeApp.observability,
     observabilityReader: postgresObservability,
@@ -52,7 +52,7 @@ try {
   assert(isAddressInfo(address));
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const activeAgent = getAgent(runtimeApp, "sre");
-  const runtime = createMailboxRuntime({
+  const runtime = createWeaveRuntime({
     app: runtimeApp,
     agentName: "sre",
     engine,
@@ -66,13 +66,13 @@ try {
 
   try {
     const prompt = "@sre can you investigate the production checkout-api 5xx spike and ask before taking risky remediation?";
-    const created = await postJson<{ mailboxId: string; correlationId: string }>(`${baseUrl}/mailboxes`, { prompt });
+    const created = await postJson<{ threadId: string; correlationId: string }>(`${baseUrl}/threads`, { prompt });
 
-    const blockedProjection = await waitForProjection(baseUrl, created.mailboxId, (projection) => {
+    const blockedProjection = await waitForProjection(baseUrl, created.threadId, (projection) => {
       return projection.status === "blocked" && projection.pendingGateIds.length === 1;
     });
 
-    const beforeApprovalEvents = await getEvents(baseUrl, created.mailboxId);
+    const beforeApprovalEvents = await getEvents(baseUrl, created.threadId);
     assertToolSequence(beforeApprovalEvents, [
       "axiom.searchLogs",
       "grafana.queryMetrics",
@@ -93,20 +93,20 @@ try {
     const gateId = blockedProjection.pendingGateIds[0];
     assert(gateId);
 
-    await postJson(`${baseUrl}/mailboxes/${created.mailboxId}/gates/${gateId}/resolve`, {
+    await postJson(`${baseUrl}/threads/${created.threadId}/gates/${gateId}/resolve`, {
       resolution: "approved",
       comment: "On-call approves mock rebuild for the demo.",
     });
 
-    const finalProjection = await waitForProjection(baseUrl, created.mailboxId, (projection) => {
+    const finalProjection = await waitForProjection(baseUrl, created.threadId, (projection) => {
       return projection.status === "completed";
     });
 
-    const events = await getEvents(baseUrl, created.mailboxId);
-    const spans = await postgresObservability.listSpans(created.mailboxId);
-    const logs = await postgresObservability.listLogs(created.mailboxId);
-    const apiSpans = await getJson<{ spans: typeof spans }>(`${baseUrl}/mailboxes/${created.mailboxId}/observability/spans`);
-    const apiLogs = await getJson<{ logs: typeof logs }>(`${baseUrl}/mailboxes/${created.mailboxId}/observability/logs`);
+    const events = await getEvents(baseUrl, created.threadId);
+    const spans = await postgresObservability.listSpans(created.threadId);
+    const logs = await postgresObservability.listLogs(created.threadId);
+    const apiSpans = await getJson<{ spans: typeof spans }>(`${baseUrl}/threads/${created.threadId}/observability/spans`);
+    const apiLogs = await getJson<{ logs: typeof logs }>(`${baseUrl}/threads/${created.threadId}/observability/logs`);
     assertToolSequence(events, [
       "axiom.searchLogs",
       "grafana.queryMetrics",
@@ -135,7 +135,7 @@ try {
     } else {
       console.log("SRE north-star demo verified");
       console.log(`api=${baseUrl}`);
-      console.log(`mailboxId=${created.mailboxId}`);
+      console.log(`threadId=${created.threadId}`);
       console.log(`app=${runtimeApp.name}`);
       console.log(`agent=${activeAgent.name}`);
       console.log("registeredTools:");
@@ -184,15 +184,15 @@ try {
   await pool.end();
 }
 
-function assertToolSequence(events: MailboxEvent[], expected: string[]): void {
+function assertToolSequence(events: ThreadEvent[], expected: string[]): void {
   const actual = events.filter((event) => event.type === "tool.requested").map((event) => event.payload.toolName);
   assert.deepEqual(actual, expected);
 }
 
-async function logConversation(events: MailboxEvent[], finalProjection: MailboxProjection): Promise<void> {
+async function logConversation(events: ThreadEvent[], finalProjection: ThreadProjection): Promise<void> {
   const toolNamesByCallId = new Map<string, string>();
 
-  console.log(style.dim("Agent Mailbox SRE demo"));
+  console.log(style.dim("Weave SRE demo"));
   console.log(style.dim("----------------------"));
   console.log();
 
@@ -257,7 +257,7 @@ async function logConversation(events: MailboxEvent[], finalProjection: MailboxP
   }
 
   console.log();
-  await say("system", `Demo finished with mailbox status=${finalProjection.status}`, 0);
+  await say("system", `Demo finished with thread status=${finalProjection.status}`, 0);
 }
 
 async function say(role: "user" | "system" | "agent" | "human", message: string, delayMs = 450): Promise<void> {
@@ -312,24 +312,24 @@ function listen(server: ReturnType<typeof createApiServer>): Promise<void> {
 
 async function waitForProjection(
   baseUrl: string,
-  mailboxId: string,
-  predicate: (projection: MailboxProjection) => boolean,
-): Promise<MailboxProjection> {
+  threadId: string,
+  predicate: (projection: ThreadProjection) => boolean,
+): Promise<ThreadProjection> {
   const deadline = Date.now() + 8_000;
 
   while (Date.now() < deadline) {
-    const projection = await getJson<MailboxProjection>(`${baseUrl}/mailboxes/${mailboxId}`);
+    const projection = await getJson<ThreadProjection>(`${baseUrl}/threads/${threadId}`);
     if (predicate(projection)) {
       return projection;
     }
     await sleep(25);
   }
 
-  throw new Error(`Timed out waiting for projection predicate on mailbox ${mailboxId}`);
+  throw new Error(`Timed out waiting for projection predicate on thread ${threadId}`);
 }
 
-async function getEvents(baseUrl: string, mailboxId: string): Promise<MailboxEvent[]> {
-  const body = await getJson<{ events: MailboxEvent[] }>(`${baseUrl}/mailboxes/${mailboxId}/events`);
+async function getEvents(baseUrl: string, threadId: string): Promise<ThreadEvent[]> {
+  const body = await getJson<{ events: ThreadEvent[] }>(`${baseUrl}/threads/${threadId}/events`);
   return body.events;
 }
 

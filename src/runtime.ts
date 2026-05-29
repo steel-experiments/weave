@@ -1,31 +1,31 @@
-import type { MailboxAppDefinition } from "./app-contract.js";
+import type { WeaveAppDefinition } from "./app-contract.js";
 import { getAgent } from "./app-contract.js";
 import { RunnerDaemon, ToolWorkerDaemon } from "./daemons.js";
-import type { MailboxService } from "./mailbox-service.js";
-import type { PostgresMailboxEngine } from "./postgres-engine.js";
-import { MailboxRunner } from "./runner.js";
+import type { ThreadService } from "./thread-service.js";
+import type { PostgresThreadEngine } from "./postgres-engine.js";
+import { ThreadRunner } from "./runner.js";
 import { ContractToolWorker } from "./tool-worker.js";
 
-export type MailboxRuntimeOptions<Agents extends readonly { name: string }[] = readonly { name: string }[]> = {
-  app: MailboxAppDefinition<any>;
+export type WeaveRuntimeOptions<Agents extends readonly { name: string }[] = readonly { name: string }[]> = {
+  app: WeaveAppDefinition<any>;
   agentName: Agents[number]["name"] | string;
-  engine: PostgresMailboxEngine;
-  service: MailboxService;
+  engine: PostgresThreadEngine;
+  service: ThreadService;
   intervalMs?: number;
   runnerOwnerId?: string;
   toolWorkerId?: string;
 };
 
-export type MailboxRuntime = {
-  runner: MailboxRunner;
+export type WeaveRuntime = {
+  runner: ThreadRunner;
   toolWorker: ContractToolWorker;
   runnerDaemon: RunnerDaemon;
   toolDaemon: ToolWorkerDaemon;
 };
 
-export function createMailboxRuntime(options: MailboxRuntimeOptions): MailboxRuntime {
+export function createWeaveRuntime(options: WeaveRuntimeOptions): WeaveRuntime {
   const activeAgent = getAgent(options.app, options.agentName as never);
-  const runner = new MailboxRunner(
+  const runner = new ThreadRunner(
     options.engine,
     options.engine,
     activeAgent.planner,

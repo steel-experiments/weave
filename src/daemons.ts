@@ -1,10 +1,10 @@
-import type { PostgresMailboxEngine } from "./postgres-engine.js";
-import { MailboxRunner } from "./runner.js";
+import type { PostgresThreadEngine } from "./postgres-engine.js";
+import { ThreadRunner } from "./runner.js";
 import { MockAsyncToolWorker } from "./mock-tool-worker.js";
 import type { InboxConsumer } from "./contracts.js";
 
 type ToolWorker = {
-  processOnce(mailboxId: string): Promise<{ acted: boolean; eventType?: string; errorCode?: string; errorMessage?: string }>;
+  processOnce(threadId: string): Promise<{ acted: boolean; eventType?: string; errorCode?: string; errorMessage?: string }>;
 };
 
 export class RunnerDaemon {
@@ -13,8 +13,8 @@ export class RunnerDaemon {
   private readonly ownerId = `runner-inbox-${process.pid}`;
 
   constructor(
-    private readonly engine: PostgresMailboxEngine,
-    private readonly runner: MailboxRunner,
+    private readonly engine: PostgresThreadEngine,
+    private readonly runner: ThreadRunner,
     private readonly intervalMs = 100,
   ) {}
 
@@ -44,12 +44,12 @@ export class RunnerDaemon {
     this.running = true;
     try {
       const items = await this.engine.claimInbox("runner", this.ownerId, 20, 10_000);
-      const byMailbox = groupByMailbox(items);
+      const byThread = groupByThread(items);
 
-      for (const [mailboxId, mailboxItems] of byMailbox) {
-        await this.runner.runOnce(mailboxId);
+      for (const [threadId, threadItems] of byThread) {
+        await this.runner.runOnce(threadId);
         await this.engine.completeInbox(
-          mailboxItems.map((item) => item.id),
+          threadItems.map((item) => item.id),
           this.ownerId,
         );
       }
@@ -65,7 +65,7 @@ export class ToolWorkerDaemon {
   private readonly ownerId = `tool-inbox-${process.pid}`;
 
   constructor(
-    private readonly engine: PostgresMailboxEngine,
+    private readonly engine: PostgresThreadEngine,
     private readonly worker: ToolWorker = new MockAsyncToolWorker(engine),
     private readonly intervalMs = 100,
     private readonly consumer: InboxConsumer = "tool-worker",
@@ -97,12 +97,12 @@ export class ToolWorkerDaemon {
     this.running = true;
     try {
       const items = await this.engine.claimInbox(this.consumer, this.ownerId, 20, 30_000);
-      const byMailbox = groupByMailbox(items);
+      const byThread = groupByThread(items);
 
-      for (const [mailboxId, mailboxItems] of byMailbox) {
+      for (const [threadId, threadItems] of byThread) {
         let lastResult: Awaited<ReturnType<ToolWorker["processOnce"]>> = { acted: false };
         while (true) {
-          const result = await this.worker.processOnce(mailboxId);
+          const result = await this.worker.processOnce(threadId);
           lastResult = result;
           if (!result.acted || result.eventType === "tool.completed" || result.eventType === "tool.failed") {
             break;
@@ -112,14 +112,14 @@ export class ToolWorkerDaemon {
 
         if (lastResult.eventType === "tool.failed") {
           await this.engine.deadLetterInbox(
-            mailboxItems.map((item) => item.id),
+            threadItems.map((item) => item.id),
             this.ownerId,
             lastResult.errorCode,
             lastResult.errorMessage,
           );
         } else {
           await this.engine.completeInbox(
-            mailboxItems.map((item) => item.id),
+            threadItems.map((item) => item.id),
             this.ownerId,
           );
         }
@@ -130,19 +130,19 @@ export class ToolWorkerDaemon {
   }
 }
 
-type MailboxWorkItem = { id: number; mailboxId: string };
+type ThreadWorkItem = { id: number; threadId: string };
 
-function groupByMailbox<T extends MailboxWorkItem>(items: T[]): Map<string, T[]> {
+function groupByThread<T extends ThreadWorkItem>(items: T[]): Map<string, T[]> {
   const grouped = new Map<string, T[]>();
 
   for (const item of items) {
-    const existing = grouped.get(item.mailboxId);
+    const existing = grouped.get(item.threadId);
     if (existing) {
       existing.push(item);
       continue;
     }
 
-    grouped.set(item.mailboxId, [item]);
+    grouped.set(item.threadId, [item]);
   }
 
   return grouped;

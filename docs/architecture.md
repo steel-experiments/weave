@@ -2,15 +2,15 @@
 
 ## System View
 
-Agent Mailbox should act as the durable control layer between agents and the outside world.
+Weave should act as the durable control layer between agents and the outside world.
 
 ```txt
 agent runtime(s)
-  <-> mailbox control layer
+  <-> thread control layer
   <-> tools / workers / humans / integrations
 ```
 
-The mailbox is where durable history, routing, policy checks, and resumability come together.
+The thread is where durable history, routing, policy checks, and resumability come together.
 
 ## Main Layers
 
@@ -28,19 +28,19 @@ Examples:
 Responsibilities:
 
 - consume allowed tools and capabilities
-- process mailbox-visible events
-- emit decisions or effect requests back into the mailbox
+- process thread-visible events
+- emit decisions or effect requests back into the thread
 
 The agent runtime should not be the durable source of truth.
 
-### 2. Mailbox Layer
+### 2. Thread Layer
 
 This is the core of the project.
 
 Responsibilities:
 
 - durable append-only event log
-- ordered mailbox-local event streams
+- ordered thread-local event streams
 - runnable inbox semantics
 - trace and correlation metadata
 - wake and resume mechanics
@@ -89,16 +89,16 @@ Examples:
 - email
 - SMS
 - browser/session providers
-- other mailboxes or agent systems
+- other threads or agent systems
 
 Responsibilities:
 
-- translate external signals into mailbox events
-- translate mailbox events into external actions
+- translate external signals into thread events
+- translate thread events into external actions
 
 ## Core Primitives
 
-### Mailbox
+### Thread
 
 A durable addressable execution boundary for one agent session, task, or logical worker identity.
 
@@ -112,11 +112,11 @@ The subset of events that should wake, resume, or notify a consumer.
 
 ### Runner
 
-An ephemeral process that acquires a mailbox, replays state, does bounded work, and emits more events.
+An ephemeral process that acquires a thread, replays state, does bounded work, and emits more events.
 
 ### Gate
 
-A mailbox-native object representing work paused on approval, human input, or another external decision.
+A thread-native object representing work paused on approval, human input, or another external decision.
 
 ### Capability
 
@@ -124,13 +124,13 @@ A scoped permission or secret reference granted to a worker or integration witho
 
 ### Stream Link
 
-A controlled way for one mailbox stream to feed another mailbox or supervisor path.
+A controlled way for one thread stream to feed another thread or supervisor path.
 
 ## Architectural Constraints
 
 ### Durable source of truth
 
-The mailbox event history is authoritative.
+The thread event history is authoritative.
 
 ### Ephemeral compute
 
@@ -140,9 +140,9 @@ Runners may stop at any time and later resume.
 
 Tool and integration activity should happen through explicit requested and completed events.
 
-### Per-mailbox coordination
+### Per-thread coordination
 
-Prefer one active runner lease per mailbox to keep ordering and state reconstruction simple.
+Prefer one active runner lease per thread to keep ordering and state reconstruction simple.
 
 ### Trace continuity
 
@@ -154,7 +154,7 @@ The initial architecture should be simple and narrow.
 
 Over time it can grow to support:
 
-- child mailboxes and subagents
+- child threads and subagents
 - filtered stream routing
 - richer policy engines
 - pluggable storage backends
@@ -162,7 +162,7 @@ Over time it can grow to support:
 
 But the core should remain small:
 
-- mailbox
+- thread
 - event
 - inbox
 - runner

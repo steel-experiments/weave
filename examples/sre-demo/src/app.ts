@@ -1,4 +1,4 @@
-import { StaticCredentialProvider, defineAgent, defineMailboxApp } from "@agent-mailbox/core";
+import { StaticCredentialProvider, defineAgent, defineWeaveApp } from "weave";
 import { DeterministicSreAgent } from "./agent.js";
 import { sreTools } from "./tools.js";
 
@@ -9,7 +9,7 @@ export const sreAgent = defineAgent({
   tools: sreTools,
 });
 
-export const sreDemoApp = defineMailboxApp({
+export const sreDemoApp = defineWeaveApp({
   name: "sre-demo",
   agents: [sreAgent],
   credentialProvider: new StaticCredentialProvider(

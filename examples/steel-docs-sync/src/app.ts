@@ -1,4 +1,4 @@
-import { defineAgent, defineMailboxApp } from "@agent-mailbox/core";
+import { defineAgent, defineWeaveApp } from "weave";
 import { DeterministicSteelDocsAgent } from "./agent.js";
 import { steelTools } from "./tools.js";
 
@@ -9,7 +9,7 @@ export const steelDocsAgent = defineAgent({
   tools: steelTools,
 });
 
-export const steelDocsSyncApp = defineMailboxApp({
+export const steelDocsSyncApp = defineWeaveApp({
   name: "steel-docs-sync",
   agents: [steelDocsAgent],
 });

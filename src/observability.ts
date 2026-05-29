@@ -11,7 +11,7 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 export type ObservabilityContext = {
   traceId: string;
   spanId: string;
-  mailboxId?: string;
+  threadId?: string;
   eventId?: string;
   correlationId?: string;
   causationId?: string;
@@ -19,7 +19,7 @@ export type ObservabilityContext = {
   toolName?: string;
 };
 
-export type MailboxSpanRecord = ObservabilityContext & {
+export type ThreadSpanRecord = ObservabilityContext & {
   parentSpanId?: string;
   name: string;
   kind: SpanKind;
@@ -30,7 +30,7 @@ export type MailboxSpanRecord = ObservabilityContext & {
   attributes?: ObservabilityAttributes;
 };
 
-export type MailboxLogRecord = Partial<ObservabilityContext> & {
+export type ThreadLogRecord = Partial<ObservabilityContext> & {
   timestamp: string;
   level: LogLevel;
   message: string;
@@ -38,13 +38,13 @@ export type MailboxLogRecord = Partial<ObservabilityContext> & {
 };
 
 export interface ObservabilitySink {
-  emitSpan(span: MailboxSpanRecord): Promise<void>;
-  emitLog(record: MailboxLogRecord): Promise<void>;
+  emitSpan(span: ThreadSpanRecord): Promise<void>;
+  emitLog(record: ThreadLogRecord): Promise<void>;
 }
 
 export interface ObservabilityReader {
-  listSpans(mailboxId: string): Promise<MailboxSpanRecord[]>;
-  listLogs(mailboxId: string): Promise<MailboxLogRecord[]>;
+  listSpans(threadId: string): Promise<ThreadSpanRecord[]>;
+  listLogs(threadId: string): Promise<ThreadLogRecord[]>;
 }
 
 export class NoopObservabilitySink implements ObservabilitySink {
@@ -55,11 +55,11 @@ export class NoopObservabilitySink implements ObservabilitySink {
 export class CompositeObservabilitySink implements ObservabilitySink {
   constructor(private readonly sinks: readonly ObservabilitySink[]) {}
 
-  async emitSpan(span: MailboxSpanRecord): Promise<void> {
+  async emitSpan(span: ThreadSpanRecord): Promise<void> {
     await Promise.all(this.sinks.map((sink) => sink.emitSpan(span)));
   }
 
-  async emitLog(record: MailboxLogRecord): Promise<void> {
+  async emitLog(record: ThreadLogRecord): Promise<void> {
     await Promise.all(this.sinks.map((sink) => sink.emitLog(record)));
   }
 }
@@ -138,19 +138,19 @@ export function elapsedMs(startedAt: Date): number {
   return Math.max(0, Date.now() - startedAt.getTime());
 }
 
-export async function safeEmitSpan(sink: ObservabilitySink, span: MailboxSpanRecord): Promise<void> {
+export async function safeEmitSpan(sink: ObservabilitySink, span: ThreadSpanRecord): Promise<void> {
   try {
     await sink.emitSpan(span);
   } catch {
-    // Observability must not change mailbox execution semantics.
+    // Observability must not change thread execution semantics.
   }
 }
 
-export async function safeEmitLog(sink: ObservabilitySink, record: MailboxLogRecord): Promise<void> {
+export async function safeEmitLog(sink: ObservabilitySink, record: ThreadLogRecord): Promise<void> {
   try {
     await sink.emitLog(record);
   } catch {
-    // Observability must not change mailbox execution semantics.
+    // Observability must not change thread execution semantics.
   }
 }
 

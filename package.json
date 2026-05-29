@@ -1,5 +1,5 @@
 {
-  "name": "@agent-mailbox/core",
+  "name": "weave",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -23,7 +23,7 @@
     "server": "tsx src/scripts/server.ts",
     "daemon:runner": "tsx src/scripts/runner-daemon.ts",
     "daemon:tool": "tsx src/scripts/tool-daemon.ts",
-    "typecheck": "tsc --noEmit && npm --workspace @agent-mailbox/sre-demo run typecheck && npm --workspace @agent-mailbox/steel-docs-sync run typecheck"
+    "typecheck": "tsc --noEmit && npm --workspace weave-sre-demo run typecheck && npm --workspace weave-steel-docs-sync run typecheck"
   },
   "dependencies": {
     "pg": "^8.16.3",

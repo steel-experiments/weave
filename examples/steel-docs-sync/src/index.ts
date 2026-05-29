@@ -2,27 +2,27 @@ import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import {
   ContractToolWorker,
-  MailboxArtifactSchema,
-  MailboxRunner,
-  createMailboxRuntime,
-  MailboxService,
-  PostgresMailboxEngine,
+  ThreadArtifactSchema,
+  ThreadRunner,
+  createWeaveRuntime,
+  ThreadService,
+  PostgresThreadEngine,
   createApiServer,
-  PostgresMailboxArtifactStore,
+  PostgresThreadArtifactStore,
   createPool,
   getAgent,
   migrate,
-  type MailboxEvent,
-  type MailboxProjection,
-  type MailboxSummary,
-} from "@agent-mailbox/core";
+  type ThreadEvent,
+  type ThreadProjection,
+  type ThreadSummary,
+} from "weave";
 import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";
 import { startSteelFixtureServer } from "./fixtures.js";
 
 const ToolArtifactSchema = z.object({
   artifactId: z.string().uuid(),
-  mailboxId: z.string().min(1),
+  threadId: z.string().min(1),
   toolCallId: z.string().uuid().nullable(),
   kind: z.enum(["docs-page", "llms-txt", "openapi-spec"]),
   uri: z.string().min(1),
@@ -33,7 +33,7 @@ const ToolArtifactSchema = z.object({
 });
 
 const ToolArtifactListSchema = z.array(ToolArtifactSchema).length(3);
-const PersistedArtifactListSchema = z.array(MailboxArtifactSchema).length(3);
+const PersistedArtifactListSchema = z.array(ThreadArtifactSchema).length(3);
 
 const pool = createPool();
 const fixtures = await startSteelFixtureServer();
@@ -41,10 +41,10 @@ const fixtures = await startSteelFixtureServer();
 try {
   await migrate(pool, { reset: true });
 
-  const engine = new PostgresMailboxEngine(pool);
-  const artifactStore = new PostgresMailboxArtifactStore(pool);
+  const engine = new PostgresThreadEngine(pool);
+  const artifactStore = new PostgresThreadArtifactStore(pool);
   const runtimeApp = { ...steelDocsSyncApp, artifactStore };
-  const service = new MailboxService(engine);
+  const service = new ThreadService(engine);
   const server = createApiServer(engine, service, { artifactStore: runtimeApp.artifactStore });
   await listen(server);
 
@@ -52,7 +52,7 @@ try {
   assert(isAddressInfo(address));
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const activeAgent = getAgent(runtimeApp, "steel-docs");
-  const runtime = createMailboxRuntime({
+  const runtime = createWeaveRuntime({
     app: runtimeApp,
     agentName: "steel-docs",
     engine,
@@ -64,7 +64,7 @@ try {
   toolDaemon.start();
 
   try {
-    const created = await postJson<{ mailboxId: string; correlationId: string }>(`${baseUrl}/mailboxes`, {
+    const created = await postJson<{ threadId: string; correlationId: string }>(`${baseUrl}/threads`, {
       prompt: "@steel-docs audit production drift for steel-dev/docs and summarize warnings.",
       metadata: {
         repository: "steel-dev/docs",
@@ -77,14 +77,14 @@ try {
       },
     });
 
-    const finalProjection = await waitForProjection(baseUrl, created.mailboxId, (projection) => {
+    const finalProjection = await waitForProjection(baseUrl, created.threadId, (projection) => {
       return projection.status === "completed";
     });
-    const summary = await getJson<MailboxSummary>(`${baseUrl}/mailboxes/${created.mailboxId}/summary`);
+    const summary = await getJson<ThreadSummary>(`${baseUrl}/threads/${created.threadId}/summary`);
     const artifactListing = await getJson<{ artifacts: z.infer<typeof PersistedArtifactListSchema> }>(
-      `${baseUrl}/mailboxes/${created.mailboxId}/artifacts`,
+      `${baseUrl}/threads/${created.threadId}/artifacts`,
     );
-    const events = await getEvents(baseUrl, created.mailboxId);
+    const events = await getEvents(baseUrl, created.threadId);
 
     assert.deepEqual(
       events.filter((event) => event.type === "tool.requested").map((event) => event.payload.toolName),
@@ -113,7 +113,7 @@ try {
 
     console.log("Steel docs sync demo verified");
     console.log(`api=${baseUrl}`);
-    console.log(`mailboxId=${created.mailboxId}`);
+    console.log(`threadId=${created.threadId}`);
     console.log(`app=${runtimeApp.name}`);
     console.log(`agent=${activeAgent.name}`);
     console.log(`tool=${activeAgent.tools[0]?.name ?? "unknown"}`);
@@ -138,24 +138,24 @@ function listen(server: ReturnType<typeof createApiServer>): Promise<void> {
 
 async function waitForProjection(
   baseUrl: string,
-  mailboxId: string,
-  predicate: (projection: MailboxProjection) => boolean,
-): Promise<MailboxProjection> {
+  threadId: string,
+  predicate: (projection: ThreadProjection) => boolean,
+): Promise<ThreadProjection> {
   const deadline = Date.now() + 8_000;
 
   while (Date.now() < deadline) {
-    const projection = await getJson<MailboxProjection>(`${baseUrl}/mailboxes/${mailboxId}`);
+    const projection = await getJson<ThreadProjection>(`${baseUrl}/threads/${threadId}`);
     if (predicate(projection)) {
       return projection;
     }
     await sleep(25);
   }
 
-  throw new Error(`Timed out waiting for projection predicate on mailbox ${mailboxId}`);
+  throw new Error(`Timed out waiting for projection predicate on thread ${threadId}`);
 }
 
-async function getEvents(baseUrl: string, mailboxId: string): Promise<MailboxEvent[]> {
-  const body = await getJson<{ events: MailboxEvent[] }>(`${baseUrl}/mailboxes/${mailboxId}/events`);
+async function getEvents(baseUrl: string, threadId: string): Promise<ThreadEvent[]> {
+  const body = await getJson<{ events: ThreadEvent[] }>(`${baseUrl}/threads/${threadId}/events`);
   return body.events;
 }
 

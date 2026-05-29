@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { MailboxEngine } from "./contracts.js";
+import type { ThreadEngine } from "./contracts.js";
 import {
   deterministicUuid,
   newEventId,
   nowIso,
   type Actor,
-  type MailboxEvent,
+  type ThreadEvent,
   type SessionMetadata,
   type SessionSource,
 } from "./events.js";
@@ -18,36 +18,36 @@ export type StartSessionInput = {
   idempotencyKey?: string;
 };
 
-export class MailboxService {
-  constructor(private readonly engine: MailboxEngine) {}
+export class ThreadService {
+  constructor(private readonly engine: ThreadEngine) {}
 
-  async startSession(input: string | StartSessionInput): Promise<{ mailboxId: string; correlationId: string }> {
+  async startSession(input: string | StartSessionInput): Promise<{ threadId: string; correlationId: string }> {
     const normalized = normalizeStartSessionInput(input);
-    const mailboxId = normalized.idempotencyKey
-      ? deterministicUuid("session-mailbox", normalized.source, normalized.idempotencyKey)
+    const threadId = normalized.idempotencyKey
+      ? deterministicUuid("session-thread", normalized.source, normalized.idempotencyKey)
       : randomUUID();
     const correlationId = normalized.idempotencyKey
       ? deterministicUuid("session-correlation", normalized.source, normalized.idempotencyKey)
       : randomUUID();
 
-    await this.engine.createMailbox(mailboxId);
+    await this.engine.createThread(threadId);
 
-    const existingSession = await readExistingSession(this.engine, mailboxId);
+    const existingSession = await readExistingSession(this.engine, threadId);
     if (existingSession) {
       return existingSession;
     }
 
-    const events: MailboxEvent[] = [
+    const events: ThreadEvent[] = [
       {
         eventId: normalized.idempotencyKey
-          ? deterministicUuid("session-started", mailboxId, normalized.idempotencyKey)
+          ? deterministicUuid("session-started", threadId, normalized.idempotencyKey)
           : newEventId(),
-        mailboxId,
+        threadId,
         type: "session.started",
         occurredAt: nowIso(),
         correlationId,
         idempotencyKey: normalized.idempotencyKey,
-        actor: { type: "system", id: "mailbox-service" },
+        actor: { type: "system", id: "thread-service" },
         payload: {
           source: normalized.source,
           metadata: normalized.metadata,
@@ -55,9 +55,9 @@ export class MailboxService {
       },
       {
         eventId: normalized.idempotencyKey
-          ? deterministicUuid("prompt-received", mailboxId, normalized.idempotencyKey)
+          ? deterministicUuid("prompt-received", threadId, normalized.idempotencyKey)
           : newEventId(),
-        mailboxId,
+        threadId,
         type: "prompt.received",
         occurredAt: nowIso(),
         correlationId,
@@ -68,13 +68,13 @@ export class MailboxService {
 
     try {
       await this.engine.append(events);
-      return { mailboxId, correlationId };
+      return { threadId, correlationId };
     } catch (error) {
       if (!normalized.idempotencyKey) {
         throw error;
       }
 
-      const concurrentSession = await readExistingSession(this.engine, mailboxId);
+      const concurrentSession = await readExistingSession(this.engine, threadId);
       if (concurrentSession) {
         return concurrentSession;
       }
@@ -84,12 +84,12 @@ export class MailboxService {
   }
 
   async resolveGate(
-    mailboxId: string,
+    threadId: string,
     gateId: string,
     resolution: "approved" | "denied",
     comment?: string,
   ): Promise<void> {
-    const events = await this.engine.read(mailboxId);
+    const events = await this.engine.read(threadId);
     const gateCreated = events.find(
       (event) => event.type === "gate.created" && event.payload.gateId === gateId,
     );
@@ -109,7 +109,7 @@ export class MailboxService {
     await this.engine.append([
       {
         eventId: newEventId(),
-        mailboxId,
+        threadId,
         type: "gate.resolved",
         occurredAt: nowIso(),
         correlationId: gateCreated.correlationId,
@@ -143,10 +143,10 @@ function normalizeStartSessionInput(input: string | StartSessionInput): Required
 }
 
 async function readExistingSession(
-  engine: MailboxEngine,
-  mailboxId: string,
-): Promise<{ mailboxId: string; correlationId: string } | null> {
-  const events = await engine.read(mailboxId, { limit: 2 });
+  engine: ThreadEngine,
+  threadId: string,
+): Promise<{ threadId: string; correlationId: string } | null> {
+  const events = await engine.read(threadId, { limit: 2 });
   if (events.length === 0) {
     return null;
   }
@@ -157,7 +157,7 @@ async function readExistingSession(
   }
 
   return {
-    mailboxId,
+    threadId,
     correlationId,
   };
 }

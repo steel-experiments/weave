@@ -1,8 +1,8 @@
-# Mailbox Interface
+# Thread Interface
 
 ## Purpose
 
-This document describes the practical interface of Agent Mailbox.
+This document describes the practical interface of Weave.
 
 The goal is to keep the interface small enough to adapt many existing agents, while still supporting:
 
@@ -15,24 +15,24 @@ The goal is to keep the interface small enough to adapt many existing agents, wh
 
 ## Design Approach
 
-The mailbox interface should be split into two layers:
+The thread interface should be split into two layers:
 
 - a low-level engine interface for durable stream operations
-- a higher-level mailbox interface for agent control-plane operations
+- a higher-level thread interface for agent control-plane operations
 
 This separation lets us:
 
 - swap storage engines
-- keep mailbox semantics stable
+- keep thread semantics stable
 - adapt multiple runtimes without exposing storage details directly
 
 ## Layer 1: Engine Interface
 
-This is the minimum durable stream interface needed under the mailbox.
+This is the minimum durable stream interface needed under the thread.
 
 ### Append
 
-Append one or more events durably to a mailbox stream.
+Append one or more events durably to a thread stream.
 
 ```ts
 type AppendOptions = {
@@ -45,8 +45,8 @@ type AppendResult = {
   lastSeq: number
 }
 
-interface MailboxEngine {
-  append(mailboxId: string, events: MailboxEvent[], options?: AppendOptions): Promise<AppendResult>
+interface ThreadEngine {
+  append(threadId: string, events: ThreadEvent[], options?: AppendOptions): Promise<AppendResult>
 }
 ```
 
@@ -54,7 +54,7 @@ Requirements:
 
 - atomic for a batch
 - durable before acknowledgment
-- ordered within a mailbox
+- ordered within a thread
 - supports optimistic concurrency or fencing semantics
 - supports idempotent retries
 
@@ -63,8 +63,8 @@ Requirements:
 Read a durable range of events.
 
 ```ts
-interface MailboxEngine {
-  read(mailboxId: string, fromSeq?: number, limit?: number): Promise<MailboxEvent[]>
+interface ThreadEngine {
+  read(threadId: string, fromSeq?: number, limit?: number): Promise<ThreadEvent[]>
 }
 ```
 
@@ -82,8 +82,8 @@ Subscribe to newly durable events.
 ```ts
 type FollowCursor = { fromSeq?: number; tail?: boolean }
 
-interface MailboxEngine {
-  follow(mailboxId: string, cursor?: FollowCursor): AsyncIterable<MailboxEvent>
+interface ThreadEngine {
+  follow(threadId: string, cursor?: FollowCursor): AsyncIterable<ThreadEvent>
 }
 ```
 
@@ -92,52 +92,52 @@ Used for:
 - waking runners
 - supervisor subscriptions
 - integration adapters
-- child or linked mailbox flows
+- child or linked thread flows
 
 ### Tail and metadata
 
 ```ts
-type MailboxTail = {
+type ThreadTail = {
   tailSeq: number
   updatedAt: string
 }
 
-interface MailboxEngine {
-  getTail(mailboxId: string): Promise<MailboxTail>
+interface ThreadEngine {
+  getTail(threadId: string): Promise<ThreadTail>
 }
 ```
 
 ### Lease operations
 
-The engine may expose lease helpers directly, or the mailbox layer may implement them separately.
+The engine may expose lease helpers directly, or the thread layer may implement them separately.
 
 ```ts
 type Lease = {
-  mailboxId: string
+  threadId: string
   ownerId: string
   expiresAt: string
   token: string
 }
 
-interface MailboxLeaseStore {
-  acquireLease(mailboxId: string, ownerId: string, ttlMs: number): Promise<Lease | null>
-  renewLease(mailboxId: string, token: string, ttlMs: number): Promise<Lease>
-  releaseLease(mailboxId: string, token: string): Promise<void>
+interface ThreadLeaseStore {
+  acquireLease(threadId: string, ownerId: string, ttlMs: number): Promise<Lease | null>
+  renewLease(threadId: string, token: string, ttlMs: number): Promise<Lease>
+  releaseLease(threadId: string, token: string): Promise<void>
 }
 ```
 
-This is important because the mailbox should strongly prefer one active runner per mailbox.
+This is important because the thread should strongly prefer one active runner per thread.
 
-## Layer 2: Mailbox Interface
+## Layer 2: Thread Interface
 
 This is the agent-facing control-plane interface built on top of the engine.
 
-## Mailbox Event Envelope
+## Thread Event Envelope
 
 ```ts
-type MailboxEvent = {
+type ThreadEvent = {
   eventId: string
-  mailboxId: string
+  threadId: string
   seq?: number
   type: string
   occurredAt: string
@@ -159,13 +159,13 @@ Notes:
 - `correlationId` groups a logical request or session
 - `causationId` links an event to the event that caused it
 
-## Mailbox State View
+## Thread State View
 
-The mailbox product will usually maintain projections or derived state.
+The thread product will usually maintain projections or derived state.
 
 ```ts
-type MailboxState = {
-  mailboxId: string
+type ThreadState = {
+  threadId: string
   status: "idle" | "running" | "waiting" | "blocked" | "completed" | "failed"
   tailSeq: number
   pendingGateIds: string[]
@@ -177,15 +177,15 @@ type MailboxState = {
 
 This should be treated as a convenience view, not the source of truth.
 
-## Higher-Level Mailbox Operations
+## Higher-Level Thread Operations
 
-These are logical operations that become mailbox events under the hood.
+These are logical operations that become thread events under the hood.
 
-### Send input to mailbox
+### Send input to thread
 
 ```ts
-interface MailboxService {
-  sendUserMessage(mailboxId: string, message: unknown, context?: object): Promise<AppendResult>
+interface ThreadService {
+  sendUserMessage(threadId: string, message: unknown, context?: object): Promise<AppendResult>
 }
 ```
 
@@ -197,8 +197,8 @@ This typically emits:
 ### Request a tool
 
 ```ts
-interface MailboxService {
-  requestTool(mailboxId: string, toolName: string, args: unknown, metadata?: object): Promise<AppendResult>
+interface ThreadService {
+  requestTool(threadId: string, toolName: string, args: unknown, metadata?: object): Promise<AppendResult>
 }
 ```
 
@@ -216,9 +216,9 @@ Workers later emit:
 ### Create a gate
 
 ```ts
-interface MailboxService {
-  createGate(mailboxId: string, gateType: string, payload: unknown): Promise<AppendResult>
-  resolveGate(mailboxId: string, gateId: string, resolution: unknown): Promise<AppendResult>
+interface ThreadService {
+  createGate(threadId: string, gateType: string, payload: unknown): Promise<AppendResult>
+  resolveGate(threadId: string, gateId: string, resolution: unknown): Promise<AppendResult>
 }
 ```
 
@@ -232,9 +232,9 @@ This handles:
 ### Sleep or wake
 
 ```ts
-interface MailboxService {
-  sleepUntil(mailboxId: string, at: string, reason?: string): Promise<AppendResult>
-  wake(mailboxId: string, reason?: string): Promise<AppendResult>
+interface ThreadService {
+  sleepUntil(threadId: string, at: string, reason?: string): Promise<AppendResult>
+  wake(threadId: string, reason?: string): Promise<AppendResult>
 }
 ```
 
@@ -243,12 +243,12 @@ This models resumable waiting without a persistent process.
 ### Link streams
 
 ```ts
-type MailboxLinkFilter = {
+type ThreadLinkFilter = {
   eventTypes?: string[]
 }
 
-interface MailboxService {
-  linkMailbox(parentMailboxId: string, childMailboxId: string, filter?: MailboxLinkFilter): Promise<void>
+interface ThreadService {
+  linkThread(parentThreadId: string, childThreadId: string, filter?: ThreadLinkFilter): Promise<void>
 }
 ```
 
@@ -277,38 +277,38 @@ Suggested initial event set:
 - `runner.slept`
 - `runner.resumed`
 - `agent.response.produced`
-- `mailbox.link.created`
+- `thread.link.created`
 
 ## Runner Contract
 
-The mailbox should not need to know an agent's internal implementation.
+The thread should not need to know an agent's internal implementation.
 
 It only needs a runner contract.
 
 ```ts
-interface MailboxRunner {
-  wake(mailboxId: string): Promise<void>
+interface ThreadRunner {
+  wake(threadId: string): Promise<void>
 }
 ```
 
 In practice, a runner does:
 
 1. acquire lease
-2. read mailbox state and event history
+2. read thread state and event history
 3. rebuild context or apply snapshot
 4. invoke an agent adapter for a bounded step
 5. append output events
 6. release or renew lease
 
-## What The Mailbox Must Guarantee
+## What The Thread Must Guarantee
 
 - events are durable before they are treated as committed
-- event order is stable within a mailbox
+- event order is stable within a thread
 - runners can stop and resume without losing truth
 - tool calls are mediated by events, not by hidden side effects
 - humans and supervisors can intervene using the same event model
 
-## What The Mailbox Should Not Assume
+## What The Thread Should Not Assume
 
 - that the agent runtime is long-lived
 - that in-memory state is durable

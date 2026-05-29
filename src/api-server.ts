@@ -1,14 +1,14 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
-import type { MailboxArtifactStore } from "./artifacts.js";
-import type { MailboxEngine } from "./contracts.js";
+import type { ThreadArtifactStore } from "./artifacts.js";
+import type { ThreadEngine } from "./contracts.js";
 import {
   ActorSchema,
   SessionMetadataSchema,
   SessionSourceSchema,
-  type MailboxEvent,
+  type ThreadEvent,
 } from "./events.js";
-import type { MailboxService } from "./mailbox-service.js";
+import type { ThreadService } from "./thread-service.js";
 import {
   NoopObservabilitySink,
   elapsedMs,
@@ -19,9 +19,9 @@ import {
   type ObservabilityReader,
   type ObservabilitySink,
 } from "./observability.js";
-import { buildMailboxSummary } from "./summary.js";
+import { buildThreadSummary } from "./summary.js";
 
-const CreateMailboxBodySchema = z.object({
+const CreateThreadBodySchema = z.object({
   prompt: z.string().min(1),
   source: SessionSourceSchema.optional(),
   actor: ActorSchema.optional(),
@@ -40,13 +40,13 @@ export type ApiRouteHandler = (
 ) => Promise<boolean> | boolean;
 
 export type ApiServerOptions = {
-  artifactStore?: MailboxArtifactStore;
+  artifactStore?: ThreadArtifactStore;
   observability?: ObservabilitySink;
   observabilityReader?: ObservabilityReader;
   beforeRoutes?: readonly ApiRouteHandler[];
 };
 
-export function createApiServer(engine: MailboxEngine, service: MailboxService, options: ApiServerOptions = {}): Server {
+export function createApiServer(engine: ThreadEngine, service: ThreadService, options: ApiServerOptions = {}): Server {
   const observability = options.observability ?? new NoopObservabilitySink();
   return createServer(async (request, response) => {
     const span = apiSpanContext(request);
@@ -93,15 +93,15 @@ export function createApiServer(engine: MailboxEngine, service: MailboxService, 
 }
 
 async function routeRequest(
-  engine: MailboxEngine,
-  service: MailboxService,
+  engine: ThreadEngine,
+  service: ThreadService,
   request: IncomingMessage,
   response: ServerResponse,
   beforeRoutes: readonly ApiRouteHandler[] | undefined,
-  artifactStore: MailboxArtifactStore | undefined,
+  artifactStore: ThreadArtifactStore | undefined,
   observabilityReader: ObservabilityReader | undefined,
   observability: ObservabilitySink,
-  span: { traceId: string; spanId: string; mailboxId?: string },
+  span: { traceId: string; spanId: string; threadId?: string },
 ): Promise<void> {
   for (const route of beforeRoutes ?? []) {
     if (await route(request, response)) {
@@ -118,152 +118,152 @@ async function routeRequest(
     return;
   }
 
-  if (method === "POST" && path === "/mailboxes") {
-    const body = CreateMailboxBodySchema.parse(await readJson(request));
+  if (method === "POST" && path === "/threads") {
+    const body = CreateThreadBodySchema.parse(await readJson(request));
     const session = await service.startSession({
       ...body,
       source: body.source ?? "api",
       actor: body.actor ?? { type: "user", id: "api-user" },
     });
-    const projection = await engine.getProjection(session.mailboxId);
+    const projection = await engine.getProjection(session.threadId);
     await safeEmitLog(observability, {
       ...span,
-      mailboxId: session.mailboxId,
+      threadId: session.threadId,
       timestamp: nowIso(),
       level: "info",
-      message: "Mailbox session created",
+      message: "Thread session created",
       attributes: { hasProjection: projection !== null },
     });
     writeJson(response, 201, { ...session, projection });
     return;
   }
 
-  const mailboxMatch = path.match(/^\/mailboxes\/([^/]+)$/);
-  if (method === "GET" && mailboxMatch) {
-    const mailboxId = decodeURIComponent(requiredMatch(mailboxMatch, 1));
-    const projection = await engine.getProjection(mailboxId);
+  const threadMatch = path.match(/^\/threads\/([^/]+)$/);
+  if (method === "GET" && threadMatch) {
+    const threadId = decodeURIComponent(requiredMatch(threadMatch, 1));
+    const projection = await engine.getProjection(threadId);
     if (!projection) {
-      writeJson(response, 404, { error: "Mailbox not found" });
+      writeJson(response, 404, { error: "Thread not found" });
       return;
     }
     await safeEmitLog(observability, {
       ...span,
-      mailboxId,
+      threadId,
       timestamp: nowIso(),
       level: "info",
-      message: "Mailbox projection read",
+      message: "Thread projection read",
       attributes: { status: projection.status, tailSeq: projection.tailSeq },
     });
     writeJson(response, 200, projection);
     return;
   }
 
-  const eventsMatch = path.match(/^\/mailboxes\/([^/]+)\/events$/);
+  const eventsMatch = path.match(/^\/threads\/([^/]+)\/events$/);
   if (method === "GET" && eventsMatch) {
-    const mailboxId = decodeURIComponent(requiredMatch(eventsMatch, 1));
+    const threadId = decodeURIComponent(requiredMatch(eventsMatch, 1));
     const fromSeq = parseOptionalInt(url.searchParams.get("fromSeq"));
     const limit = parseOptionalInt(url.searchParams.get("limit"));
-    const events = await engine.read(mailboxId, { fromSeq, limit });
+    const events = await engine.read(threadId, { fromSeq, limit });
     await safeEmitLog(observability, {
       ...span,
-      mailboxId,
+      threadId,
       timestamp: nowIso(),
       level: "info",
-      message: "Mailbox events read",
+      message: "Thread events read",
       attributes: { count: events.length, fromSeq, limit },
     });
     writeJson(response, 200, { events });
     return;
   }
 
-  const summaryMatch = path.match(/^\/mailboxes\/([^/]+)\/summary$/);
+  const summaryMatch = path.match(/^\/threads\/([^/]+)\/summary$/);
   if (method === "GET" && summaryMatch) {
-    const mailboxId = decodeURIComponent(requiredMatch(summaryMatch, 1));
-    const projection = await engine.getProjection(mailboxId);
+    const threadId = decodeURIComponent(requiredMatch(summaryMatch, 1));
+    const projection = await engine.getProjection(threadId);
     if (!projection) {
-      writeJson(response, 404, { error: "Mailbox not found" });
+      writeJson(response, 404, { error: "Thread not found" });
       return;
     }
-    const events = await engine.read(mailboxId);
-    const summary = buildMailboxSummary(projection, events);
+    const events = await engine.read(threadId);
+    const summary = buildThreadSummary(projection, events);
     await safeEmitLog(observability, {
       ...span,
-      mailboxId,
+      threadId,
       timestamp: nowIso(),
       level: "info",
-      message: "Mailbox summary read",
+      message: "Thread summary read",
       attributes: { status: summary.status, outcome: summary.outcome, tailSeq: summary.tailSeq },
     });
     writeJson(response, 200, summary);
     return;
   }
 
-  const streamMatch = path.match(/^\/mailboxes\/([^/]+)\/stream$/);
+  const streamMatch = path.match(/^\/threads\/([^/]+)\/stream$/);
   if (method === "GET" && streamMatch) {
-    const mailboxId = decodeURIComponent(requiredMatch(streamMatch, 1));
+    const threadId = decodeURIComponent(requiredMatch(streamMatch, 1));
     const fromSeq = resolveStreamFromSeq(request, url);
-    await streamMailbox(engine, response, mailboxId, fromSeq);
+    await streamThread(engine, response, threadId, fromSeq);
     return;
   }
 
-  const artifactsMatch = path.match(/^\/mailboxes\/([^/]+)\/artifacts$/);
+  const artifactsMatch = path.match(/^\/threads\/([^/]+)\/artifacts$/);
   if (method === "GET" && artifactsMatch) {
     if (!artifactStore) {
       writeJson(response, 503, { error: "Artifact store not configured" });
       return;
     }
-    const mailboxId = decodeURIComponent(requiredMatch(artifactsMatch, 1));
-    const artifacts = await artifactStore.listArtifacts(mailboxId);
+    const threadId = decodeURIComponent(requiredMatch(artifactsMatch, 1));
+    const artifacts = await artifactStore.listArtifacts(threadId);
     writeJson(response, 200, { artifacts });
     return;
   }
 
-  const inboxDiagnosticsMatch = path.match(/^\/mailboxes\/([^/]+)\/diagnostics\/inbox$/);
+  const inboxDiagnosticsMatch = path.match(/^\/threads\/([^/]+)\/diagnostics\/inbox$/);
   if (method === "GET" && inboxDiagnosticsMatch) {
     if (!("listInbox" in engine) || typeof engine.listInbox !== "function") {
       writeJson(response, 503, { error: "Inbox diagnostics not configured" });
       return;
     }
-    const mailboxId = decodeURIComponent(requiredMatch(inboxDiagnosticsMatch, 1));
-    const items = await engine.listInbox(mailboxId);
+    const threadId = decodeURIComponent(requiredMatch(inboxDiagnosticsMatch, 1));
+    const items = await engine.listInbox(threadId);
     writeJson(response, 200, { items });
     return;
   }
 
-  const observabilitySpansMatch = path.match(/^\/mailboxes\/([^/]+)\/observability\/spans$/);
+  const observabilitySpansMatch = path.match(/^\/threads\/([^/]+)\/observability\/spans$/);
   if (method === "GET" && observabilitySpansMatch) {
     if (!observabilityReader) {
       writeJson(response, 503, { error: "Observability reader not configured" });
       return;
     }
-    const mailboxId = decodeURIComponent(requiredMatch(observabilitySpansMatch, 1));
-    const spans = await observabilityReader.listSpans(mailboxId);
+    const threadId = decodeURIComponent(requiredMatch(observabilitySpansMatch, 1));
+    const spans = await observabilityReader.listSpans(threadId);
     writeJson(response, 200, { spans });
     return;
   }
 
-  const observabilityLogsMatch = path.match(/^\/mailboxes\/([^/]+)\/observability\/logs$/);
+  const observabilityLogsMatch = path.match(/^\/threads\/([^/]+)\/observability\/logs$/);
   if (method === "GET" && observabilityLogsMatch) {
     if (!observabilityReader) {
       writeJson(response, 503, { error: "Observability reader not configured" });
       return;
     }
-    const mailboxId = decodeURIComponent(requiredMatch(observabilityLogsMatch, 1));
-    const logs = await observabilityReader.listLogs(mailboxId);
+    const threadId = decodeURIComponent(requiredMatch(observabilityLogsMatch, 1));
+    const logs = await observabilityReader.listLogs(threadId);
     writeJson(response, 200, { logs });
     return;
   }
 
-  const resolveGateMatch = path.match(/^\/mailboxes\/([^/]+)\/gates\/([^/]+)\/resolve$/);
+  const resolveGateMatch = path.match(/^\/threads\/([^/]+)\/gates\/([^/]+)\/resolve$/);
   if (method === "POST" && resolveGateMatch) {
-    const mailboxId = decodeURIComponent(requiredMatch(resolveGateMatch, 1));
+    const threadId = decodeURIComponent(requiredMatch(resolveGateMatch, 1));
     const gateId = decodeURIComponent(requiredMatch(resolveGateMatch, 2));
     const body = ResolveGateBodySchema.parse(await readJson(request));
-    await service.resolveGate(mailboxId, gateId, body.resolution, body.comment);
-    const projection = await engine.getProjection(mailboxId);
+    await service.resolveGate(threadId, gateId, body.resolution, body.comment);
+    const projection = await engine.getProjection(threadId);
     await safeEmitLog(observability, {
       ...span,
-      mailboxId,
+      threadId,
       timestamp: nowIso(),
       level: "info",
       message: "Gate resolved via API",
@@ -295,15 +295,15 @@ function writeJson(response: ServerResponse, statusCode: number, body: unknown):
   response.end(JSON.stringify(body));
 }
 
-async function streamMailbox(
-  engine: MailboxEngine,
+async function streamThread(
+  engine: ThreadEngine,
   response: ServerResponse,
-  mailboxId: string,
+  threadId: string,
   fromSeq: number,
 ): Promise<void> {
-  const projection = await engine.getProjection(mailboxId);
+  const projection = await engine.getProjection(threadId);
   if (!projection) {
-    writeJson(response, 404, { error: "Mailbox not found" });
+    writeJson(response, 404, { error: "Thread not found" });
     return;
   }
 
@@ -318,14 +318,14 @@ async function streamMailbox(
   let closed = false;
   let nextSeq = fromSeq;
   let lastKeepaliveAt = Date.now();
-  const history = await engine.read(mailboxId, { fromSeq });
+  const history = await engine.read(threadId, { fromSeq });
   nextSeq = writeEventBatch(response, history, nextSeq);
-  const initialProjection = await engine.getProjection(mailboxId);
+  const initialProjection = await engine.getProjection(threadId);
   if (!initialProjection) {
     response.end();
     return;
   }
-  const initialSummary = buildMailboxSummary(initialProjection, await engine.read(mailboxId));
+  const initialSummary = buildThreadSummary(initialProjection, await engine.read(threadId));
   writeSummaryEvents(response, initialSummary);
 
   const close = (): void => {
@@ -336,18 +336,18 @@ async function streamMailbox(
 
   try {
     while (!closed) {
-      const events = await engine.read(mailboxId, { fromSeq: nextSeq, limit: 100 });
+      const events = await engine.read(threadId, { fromSeq: nextSeq, limit: 100 });
       if (events.length > 0) {
         nextSeq = writeEventBatch(response, events, nextSeq);
-        const latestProjection = await engine.getProjection(mailboxId);
+        const latestProjection = await engine.getProjection(threadId);
         if (!latestProjection) {
           break;
         }
-        const summary = buildMailboxSummary(latestProjection, await engine.read(mailboxId));
+        const summary = buildThreadSummary(latestProjection, await engine.read(threadId));
         writeSummaryEvents(response, summary);
         lastKeepaliveAt = Date.now();
       } else if (Date.now() - lastKeepaliveAt >= 5_000) {
-        writeSseEvent(response, "mailbox.keepalive", { mailboxId, timestamp: nowIso() });
+        writeSseEvent(response, "thread.keepalive", { threadId, timestamp: nowIso() });
         lastKeepaliveAt = Date.now();
       }
 
@@ -362,10 +362,10 @@ async function streamMailbox(
   }
 }
 
-function writeEventBatch(response: ServerResponse, events: MailboxEvent[], nextSeq: number): number {
+function writeEventBatch(response: ServerResponse, events: ThreadEvent[], nextSeq: number): number {
   let updatedNextSeq = nextSeq;
   for (const event of events) {
-    writeSseEvent(response, "mailbox.event", event, event.seq?.toString());
+    writeSseEvent(response, "thread.event", event, event.seq?.toString());
     updatedNextSeq = (event.seq ?? updatedNextSeq) + 1;
   }
   return updatedNextSeq;
@@ -383,26 +383,26 @@ function writeSseEvent(response: ServerResponse, eventName: string, data: unknow
   response.write("\n");
 }
 
-function writeSummaryEvents(response: ServerResponse, summary: ReturnType<typeof buildMailboxSummary>): void {
-  writeSseEvent(response, "mailbox.summary", summary);
+function writeSummaryEvents(response: ServerResponse, summary: ReturnType<typeof buildThreadSummary>): void {
+  writeSseEvent(response, "thread.summary", summary);
   if (summary.status === "completed" || summary.status === "failed") {
-    writeSseEvent(response, "mailbox.completed", summary);
+    writeSseEvent(response, "thread.completed", summary);
   }
 }
 
-function apiSpanContext(request: IncomingMessage): { traceId: string; spanId: string; mailboxId?: string } {
+function apiSpanContext(request: IncomingMessage): { traceId: string; spanId: string; threadId?: string } {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
-  const mailboxMatch = path.match(/^\/mailboxes\/([^/]+)/);
+  const threadMatch = path.match(/^\/threads\/([^/]+)/);
   return {
     traceId: newTraceId(),
     spanId: newSpanId(),
-    mailboxId: mailboxMatch?.[1] ? decodeURIComponent(mailboxMatch[1]) : undefined,
+    threadId: threadMatch?.[1] ? decodeURIComponent(threadMatch[1]) : undefined,
   };
 }
 
 async function emitApiSpan(
   observability: ObservabilitySink,
-  span: { traceId: string; spanId: string; mailboxId?: string },
+  span: { traceId: string; spanId: string; threadId?: string },
   startedAt: Date,
   status: "ok" | "error",
   attributes: Record<string, unknown>,

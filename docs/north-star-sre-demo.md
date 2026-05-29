@@ -2,15 +2,15 @@
 
 ## Purpose
 
-This is the first north-star demo for Agent Mailbox.
+This is the first north-star demo for Weave.
 
-It is not the whole product vision, but it is a concrete target that proves why the mailbox primitive matters.
+It is not the whole product vision, but it is a concrete target that proves why the thread primitive matters.
 
 If we can build this well, the project becomes obviously useful.
 
 ## Demo Summary
 
-Build an SRE agent harness powered by Agent Mailbox.
+Build an SRE agent harness powered by Weave.
 
 The entry point is Slack.
 
@@ -22,9 +22,9 @@ Example:
 @sre can you look into the API error spike in production?
 ```
 
-That message creates one mailbox session.
+That message creates one thread session.
 
-The SRE agent receives a scoped set of tools based on its mailbox capabilities.
+The SRE agent receives a scoped set of tools based on its thread capabilities.
 
 It can inspect mocked or real observability systems, reason about what it sees, call the correct tools, emit progress, and request gates before performing risky actions.
 
@@ -33,7 +33,7 @@ It can inspect mocked or real observability systems, reason about what it sees, 
 This demo exercises the most important parts of the product:
 
 - Slack ingress
-- one mailbox per agent session
+- one thread per agent session
 - runtime-neutral agent execution
 - custom tools instead of ad hoc skills
 - capability-scoped credentials
@@ -43,7 +43,7 @@ This demo exercises the most important parts of the product:
 - audit trail of every decision and action
 - resumable investigation flow
 
-It turns Agent Mailbox from an abstract control plane into an obviously valuable operational workflow.
+It turns Weave from an abstract control plane into an obviously valuable operational workflow.
 
 ## Core Claim
 
@@ -53,10 +53,10 @@ Instead:
 
 ```txt
 Slack request
-  -> mailbox session
+  -> thread session
   -> SRE agent runtime
   -> capability-scoped tools
-  -> mailbox events
+  -> thread events
   -> policy gates where needed
   -> human-visible timeline
 ```
@@ -69,7 +69,7 @@ As an engineer on-call, I want to tag an SRE agent in Slack and ask it to invest
 
 ```txt
 Slack mention received
-  -> mailbox created
+  -> thread created
   -> prompt recorded
   -> runner wakes SRE agent
   -> agent decides what context it needs
@@ -110,7 +110,7 @@ The agent should:
 
 The demo should avoid relying on agent skills as the primary execution mechanism.
 
-Skills can inspire behavior, but the mailbox should expose explicit custom tools.
+Skills can inspire behavior, but the thread should expose explicit custom tools.
 
 Why custom tools:
 
@@ -246,11 +246,11 @@ Gate requirement:
 
 This demo should test the credential boundary early.
 
-The mailbox should not simply hand raw API keys to the agent.
+The thread should not simply hand raw API keys to the agent.
 
 Instead:
 
-- mailbox capabilities define what tools are available
+- thread capabilities define what tools are available
 - policy decides which environments are allowed
 - workers receive scoped credentials when executing approved tool calls
 - events record credential/capability use without exposing secret values
@@ -268,7 +268,7 @@ Examples:
 - `infra.rebuildNode:staging`
 - `infra.rebuildNode:production`
 
-This lets the demo show that the same agent can have different permissions depending on mailbox policy.
+This lets the demo show that the same agent can have different permissions depending on thread policy.
 
 ## Gates
 
@@ -328,7 +328,7 @@ Examples:
 - pause before escalating
 - schedule a follow-up check
 
-This exercises the mailbox wake/resume model.
+This exercises the thread wake/resume model.
 
 ## Mock Systems For The First Version
 
@@ -344,7 +344,7 @@ Mock services should provide:
 - deterministic incident data
 - deterministic remediation behavior
 
-This keeps the demo safe and reproducible while still proving the mailbox architecture.
+This keeps the demo safe and reproducible while still proving the thread architecture.
 
 ## Mock Incident Dataset
 
@@ -394,8 +394,8 @@ Suggested additions:
 Responsibilities:
 
 - receive Slack mention event
-- create mailbox session
-- map Slack user/channel/thread into mailbox metadata
+- create thread session
+- map Slack user/channel/thread into thread metadata
 - append Slack ingress event
 
 PoC version:
@@ -406,7 +406,7 @@ PoC version:
 
 Responsibilities:
 
-- inspect mailbox history
+- inspect thread history
 - choose observability tools
 - synthesize findings
 - propose remediation
@@ -421,7 +421,7 @@ PoC version:
 
 Responsibilities:
 
-- define available tools for the mailbox
+- define available tools for the thread
 - enforce environment scope
 - require gates for risky tools
 - route credential access to workers
@@ -487,7 +487,7 @@ Build:
 
 Success criteria:
 
-- mailbox contains complete investigation timeline
+- thread contains complete investigation timeline
 - agent calls multiple tools based on available capabilities
 - final report explains evidence and likely cause
 
@@ -495,7 +495,7 @@ Success criteria:
 
 Goal:
 
-- prove that tool availability and credentials are mailbox-scoped
+- prove that tool availability and credentials are thread-scoped
 
 Build:
 
@@ -507,7 +507,7 @@ Build:
 Success criteria:
 
 - production tools only run when production capability exists
-- credential values are never written into mailbox event payloads
+- credential values are never written into thread event payloads
 - tool credential use is audited
 
 ## Phase 3: Manual Gate For Risky Action
@@ -545,7 +545,7 @@ Build:
 Success criteria:
 
 - user can start and resolve an investigation from Slack
-- mailbox remains source of truth
+- thread remains source of truth
 
 ## Phase 5: Real Tool Adapter Trial
 
@@ -561,28 +561,28 @@ Candidate first real tool:
 
 Success criteria:
 
-- real credential is scoped through mailbox policy
+- real credential is scoped through thread policy
 - real response is converted into typed tool result events
-- no raw secrets enter mailbox history
+- no raw secrets enter thread history
 
 ## Acceptance Criteria For The North Star Demo
 
 The demo is compelling when:
 
-- Slack can start a mailbox-backed investigation
+- Slack can start a thread-backed investigation
 - the agent uses multiple SRE tools through custom tool contracts
 - each tool call is visible as events with progress and results
 - capabilities restrict what tools and environments the agent can access
 - credentials are consumed by workers, not exposed to the agent as raw values
 - risky remediation requires a gate
-- the final incident report is traceable to evidence in the mailbox timeline
+- the final incident report is traceable to evidence in the thread timeline
 - the full flow can be replayed or inspected after completion
 
 ## What Makes This Ground Breaking
 
 The important part is not that an LLM can read logs.
 
-The important part is that the LLM operates inside a durable, inspectable, permissioned mailbox boundary.
+The important part is that the LLM operates inside a durable, inspectable, permissioned thread boundary.
 
 That means every operational action has:
 
@@ -599,7 +599,7 @@ That is the product.
 
 The current PoC already proves the primitive pieces:
 
-- mailbox session
+- thread session
 - typed events
 - runnable inbox
 - runner daemon
@@ -617,7 +617,7 @@ The next implementation step should be:
 - add a mock SRE scenario dataset
 - add three typed mock tools: Axiom, Grafana, Sentry
 - add an SRE-specific deterministic agent adapter
-- drive it through the existing mailbox service and runnable inbox
+- drive it through the existing thread service and runnable inbox
 
 Do not start with real Slack or real credentials.
 
@@ -629,7 +629,7 @@ The first runnable version of this north-star path exists as `npm run sre:demo`.
 
 It currently includes:
 
-- API-driven mailbox session creation
+- API-driven thread session creation
 - deterministic SRE agent adapter
 - mock Axiom log search tool
 - mock Grafana metrics query tool

@@ -2,20 +2,20 @@
 
 ## Purpose
 
-This document describes how Agent Mailbox should treat other systems:
+This document describes how Weave should treat other systems:
 
-- as engines behind the mailbox
-- as adapters into the mailbox
-- as companion services alongside the mailbox
+- as engines behind the thread
+- as adapters into the thread
+- as companion services alongside the thread
 
 This helps keep the architecture modular and the product story clear.
 
 ## Core Model
 
-Agent Mailbox should define one stable control-plane model above a set of pluggable components.
+Weave should define one stable control-plane model above a set of pluggable components.
 
 ```txt
-Agent Mailbox Core
+Weave Core
   -> execution engines
   -> stream/storage engines
   -> coordination engines
@@ -25,7 +25,7 @@ Agent Mailbox Core
 
 ## 1. Execution Engines
 
-Execution engines run agent logic or long-running work on behalf of a mailbox.
+Execution engines run agent logic or long-running work on behalf of a thread.
 
 Examples:
 
@@ -41,21 +41,21 @@ Examples:
 
 ### Responsibilities
 
-- consume mailbox context
+- consume thread context
 - run a bounded step or turn
 - request tools or side effects
-- produce mailbox events
+- produce thread events
 - pause or return control at durable boundaries
 
-### Mailbox relationship
+### Thread relationship
 
 Execution engines should not own the source of truth.
 
-They should execute against the mailbox and emit results back into it.
+They should execute against the thread and emit results back into it.
 
-### Runtime harnesses versus mailbox core
+### Runtime harnesses versus thread core
 
-Some systems are better understood as agent harnesses rather than mailbox infrastructure.
+Some systems are better understood as agent harnesses rather than thread infrastructure.
 
 Examples:
 
@@ -77,16 +77,16 @@ That makes them execution-side integrations.
 They are usually not responsible for:
 
 - durable cross-runtime event history
-- mailbox-native gates
+- thread-native gates
 - shared trace boundaries across humans, tools, and agents
 - delegated identity and policy mediation
 - runtime-neutral resumability
 
-So in Agent Mailbox terms, they belong on the runtime side of the architecture, not in the mailbox core.
+So in Weave terms, they belong on the runtime side of the architecture, not in the thread core.
 
 ## 2. Stream and Storage Engines
 
-These engines durably store mailbox events and may support replay or follow semantics.
+These engines durably store thread events and may support replay or follow semantics.
 
 Examples:
 
@@ -99,19 +99,19 @@ Examples:
 ### Responsibilities
 
 - append events durably
-- preserve mailbox-local ordering
+- preserve thread-local ordering
 - support replay
 - support subscriptions or follow behavior where possible
 
-### Mailbox relationship
+### Thread relationship
 
-The storage engine is an implementation detail behind the mailbox event log.
+The storage engine is an implementation detail behind the thread event log.
 
-The mailbox API should stay stable even if the engine changes.
+The thread API should stay stable even if the engine changes.
 
 ## 3. Coordination Engines
 
-These engines can host mailbox-local coordination or stable logical identities.
+These engines can host thread-local coordination or stable logical identities.
 
 Examples:
 
@@ -122,13 +122,13 @@ Examples:
 ### Responsibilities
 
 - stable logical identity
-- serialized handling per mailbox entity
+- serialized handling per thread entity
 - timers or reminders
 - durable wake and activation behavior
 
-### Mailbox relationship
+### Thread relationship
 
-These may host mailbox coordination behavior, but they should still operate under mailbox semantics rather than replacing them.
+These may host thread coordination behavior, but they should still operate under thread semantics rather than replacing them.
 
 ## 4. Policy and Identity Companions
 
@@ -149,15 +149,15 @@ Examples:
 - capability issuance
 - secret or token mediation
 
-### Mailbox relationship
+### Thread relationship
 
-Mailbox events should record that a policy decision happened.
+Thread events should record that a policy decision happened.
 
-The policy engine itself does not need to be embedded inside the mailbox event store.
+The policy engine itself does not need to be embedded inside the thread event store.
 
 ## 5. External Integrations
 
-These integrations connect outside systems to mailbox events.
+These integrations connect outside systems to thread events.
 
 Examples:
 
@@ -171,12 +171,12 @@ Examples:
 
 ### Responsibilities
 
-- turn external signals into mailbox events
-- react to mailbox events by calling outside systems
+- turn external signals into thread events
+- react to thread events by calling outside systems
 
-### Mailbox relationship
+### Thread relationship
 
-Integrations should always cross the mailbox boundary through explicit events, not hidden side effects.
+Integrations should always cross the thread boundary through explicit events, not hidden side effects.
 
 ## Recommended Interface Boundaries
 
@@ -184,7 +184,7 @@ Integrations should always cross the mailbox boundary through explicit events, n
 
 ```ts
 interface ExecutionEngine {
-  runStep(mailboxId: string): Promise<void>
+  runStep(threadId: string): Promise<void>
 }
 ```
 
@@ -192,9 +192,9 @@ interface ExecutionEngine {
 
 ```ts
 interface StorageEngine {
-  append(mailboxId: string, events: MailboxEvent[], options?: object): Promise<object>
-  read(mailboxId: string, fromSeq?: number, limit?: number): Promise<MailboxEvent[]>
-  follow(mailboxId: string, cursor?: object): AsyncIterable<MailboxEvent>
+  append(threadId: string, events: ThreadEvent[], options?: object): Promise<object>
+  read(threadId: string, fromSeq?: number, limit?: number): Promise<ThreadEvent[]>
+  follow(threadId: string, cursor?: object): AsyncIterable<ThreadEvent>
 }
 ```
 
@@ -210,13 +210,13 @@ interface PolicyEngine {
 
 ```ts
 interface IntegrationAdapter {
-  handleEvent(event: MailboxEvent): Promise<void>
+  handleEvent(event: ThreadEvent): Promise<void>
 }
 ```
 
 ## Why This Matters
 
-This separation gives Agent Mailbox a better long-term architecture.
+This separation gives Weave a better long-term architecture.
 
 It allows:
 
@@ -231,7 +231,7 @@ It allows:
 
 ### Build in core
 
-- mailbox event model
+- thread event model
 - trace and causation conventions
 - gate semantics
 - lease semantics
@@ -255,7 +255,7 @@ It allows:
 
 ## Bottom Line
 
-Agent Mailbox should treat adjacent systems as pluggable infrastructure around a stable control-plane core.
+Weave should treat adjacent systems as pluggable infrastructure around a stable control-plane core.
 
 That is how the project stays:
 

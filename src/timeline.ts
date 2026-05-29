@@ -1,10 +1,10 @@
-import type { MailboxEvent } from "./events.js";
+import type { ThreadEvent } from "./events.js";
 
-export function toTextTimeline(events: MailboxEvent[]): string {
+export function toTextTimeline(events: ThreadEvent[]): string {
   return events.map((event) => `${String(event.seq).padStart(2, "0")} ${event.type}`).join("\n");
 }
 
-export function toMermaidTimeline(events: MailboxEvent[]): string {
+export function toMermaidTimeline(events: ThreadEvent[]): string {
   const lines = ["flowchart TD"];
 
   for (const event of events) {

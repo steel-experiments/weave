@@ -4,20 +4,20 @@ import { createApiServer } from "../api-server.js";
 import { RunnerDaemon, ToolWorkerDaemon } from "../daemons.js";
 import { createPool } from "../db.js";
 import { migrate } from "../migrate.js";
-import { MailboxService } from "../mailbox-service.js";
+import { ThreadService } from "../thread-service.js";
 import { MockAsyncToolWorker } from "../mock-tool-worker.js";
-import { PostgresMailboxEngine } from "../postgres-engine.js";
-import { MailboxRunner } from "../runner.js";
+import { PostgresThreadEngine } from "../postgres-engine.js";
+import { ThreadRunner } from "../runner.js";
 import { toMermaidTimeline, toTextTimeline } from "../timeline.js";
-import type { MailboxEvent, MailboxProjection } from "../events.js";
+import type { ThreadEvent, ThreadProjection } from "../events.js";
 
 const pool = createPool();
 
 try {
   await migrate(pool, { reset: true });
 
-  const engine = new PostgresMailboxEngine(pool);
-  const service = new MailboxService(engine);
+  const engine = new PostgresThreadEngine(pool);
+  const service = new ThreadService(engine);
   const server = createApiServer(engine, service);
   await listen(server);
 
@@ -25,33 +25,33 @@ try {
   assert(isAddressInfo(address));
   const baseUrl = `http://127.0.0.1:${address.port}`;
 
-  const runnerDaemon = new RunnerDaemon(engine, new MailboxRunner(engine, engine), 25);
+  const runnerDaemon = new RunnerDaemon(engine, new ThreadRunner(engine, engine), 25);
   const toolDaemon = new ToolWorkerDaemon(engine, new MockAsyncToolWorker(engine), 25);
   runnerDaemon.start();
   toolDaemon.start();
 
   try {
-    const created = await postJson<{ mailboxId: string; correlationId: string }>(`${baseUrl}/mailboxes`, {
+    const created = await postJson<{ threadId: string; correlationId: string }>(`${baseUrl}/threads`, {
       prompt: "Run the mock async job through the API-driven system and wait for approval.",
     });
 
-    const blockedProjection = await waitForProjection(baseUrl, created.mailboxId, (projection) => {
+    const blockedProjection = await waitForProjection(baseUrl, created.threadId, (projection) => {
       return projection.status === "blocked" && projection.pendingGateIds.length === 1;
     });
 
     const gateId = blockedProjection.pendingGateIds[0];
     assert(gateId);
 
-    await postJson(`${baseUrl}/mailboxes/${created.mailboxId}/gates/${gateId}/resolve`, {
+    await postJson(`${baseUrl}/threads/${created.threadId}/gates/${gateId}/resolve`, {
       resolution: "approved",
       comment: "API-driven approval granted",
     });
 
-    const finalProjection = await waitForProjection(baseUrl, created.mailboxId, (projection) => {
+    const finalProjection = await waitForProjection(baseUrl, created.threadId, (projection) => {
       return projection.status === "completed";
     });
 
-    const events = await getEvents(baseUrl, created.mailboxId);
+    const events = await getEvents(baseUrl, created.threadId);
     const eventTypes = events.map((event) => event.type);
 
     assert.deepEqual(eventTypes, [
@@ -83,7 +83,7 @@ try {
 
     console.log("API-driven system PoC verified");
     console.log(`api=${baseUrl}`);
-    console.log(`mailboxId=${created.mailboxId}`);
+    console.log(`threadId=${created.threadId}`);
     console.log("timeline:");
     console.log(toTextTimeline(events));
     console.log("mermaid:");
@@ -107,24 +107,24 @@ function listen(server: ReturnType<typeof createApiServer>): Promise<void> {
 
 async function waitForProjection(
   baseUrl: string,
-  mailboxId: string,
-  predicate: (projection: MailboxProjection) => boolean,
-): Promise<MailboxProjection> {
+  threadId: string,
+  predicate: (projection: ThreadProjection) => boolean,
+): Promise<ThreadProjection> {
   const deadline = Date.now() + 5_000;
 
   while (Date.now() < deadline) {
-    const projection = await getJson<MailboxProjection>(`${baseUrl}/mailboxes/${mailboxId}`);
+    const projection = await getJson<ThreadProjection>(`${baseUrl}/threads/${threadId}`);
     if (predicate(projection)) {
       return projection;
     }
     await sleep(25);
   }
 
-  throw new Error(`Timed out waiting for projection predicate on mailbox ${mailboxId}`);
+  throw new Error(`Timed out waiting for projection predicate on thread ${threadId}`);
 }
 
-async function getEvents(baseUrl: string, mailboxId: string): Promise<MailboxEvent[]> {
-  const body = await getJson<{ events: MailboxEvent[] }>(`${baseUrl}/mailboxes/${mailboxId}/events`);
+async function getEvents(baseUrl: string, threadId: string): Promise<ThreadEvent[]> {
+  const body = await getJson<{ events: ThreadEvent[] }>(`${baseUrl}/threads/${threadId}/events`);
   return body.events;
 }
 

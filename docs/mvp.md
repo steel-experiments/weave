@@ -2,7 +2,7 @@
 
 ## Goal
 
-The MVP should prove that Agent Mailbox is a real primitive, not just an idea.
+The MVP should prove that Weave is a real primitive, not just an idea.
 
 That means proving resumability, structured tool execution, and interrupt handling through one durable event boundary.
 
@@ -11,24 +11,24 @@ That means proving resumability, structured tool execution, and interrupt handli
 The MVP should answer:
 
 - can an agent session be durably recorded as events?
-- can a runner stop and later resume from mailbox state?
+- can a runner stop and later resume from thread state?
 - can tool execution be modeled better than raw shell polling?
 - can a human or supervisor interrupt the flow and let it continue later?
 - can we trace what happened from start to finish?
 
 ## In Scope
 
-### Mailbox core
+### Thread core
 
-- create mailbox
+- create thread
 - append ordered events
-- read or replay mailbox history
+- read or replay thread history
 - basic correlation and trace metadata
 
 ### Runner
 
-- acquire mailbox lease
-- reconstruct state from mailbox history or snapshot
+- acquire thread lease
+- reconstruct state from thread history or snapshot
 - process visible inbox items
 - emit new events
 
@@ -44,7 +44,7 @@ The MVP should answer:
 
 - gate created
 - gate resolved
-- mailbox resumed
+- thread resumed
 
 ### One linked coordination path
 
@@ -66,7 +66,7 @@ user starts agent session
 agent requests a tool action
 tool emits progress
 tool or worker requires approval or human input
-mailbox creates gate
+thread creates gate
 human resolves gate
 runner resumes
 tool completes

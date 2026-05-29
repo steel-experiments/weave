@@ -1,4 +1,4 @@
-# Agent Mailbox Docs
+# Weave Docs
 
 This directory is the working source of truth for the project direction, architecture, and phased execution plan.
 
@@ -7,25 +7,25 @@ This directory is the working source of truth for the project direction, archite
 - `overview.md`: project overview, thesis, stretch goal, and guiding principles
 - `north-star-sre-demo.md`: first product-shaped demo target for an SRE agent harness
 - `steel-docs-sync-example.md`: webhook-triggered docs drift audit example for `steel-dev/docs`
-- `steel-docs-sync-missing-work.md`: mailbox/core slices needed for the Steel docs sync example
+- `steel-docs-sync-missing-work.md`: thread/core slices needed for the Steel docs sync example
 - `roadmap.md`: phased research, planning, and development roadmap
 - `architecture.md`: system shape, boundaries, and core components
 - `mvp.md`: smallest useful end-to-end slice to build first
 - `glossary.md`: shared language for future sessions
-- `interface.md`: low-level engine and higher-level mailbox interfaces
-- `agent-adapters.md`: how OpenCode-style and other agents can adapt to the mailbox model
-- `similar-systems.md`: comparison of adjacent systems and how Agent Mailbox differs
-- `positioning.md`: product framing for Agent Mailbox as a control plane above engines
+- `interface.md`: low-level engine and higher-level thread interfaces
+- `agent-adapters.md`: how OpenCode-style and other agents can adapt to the thread model
+- `similar-systems.md`: comparison of adjacent systems and how Weave differs
+- `positioning.md`: product framing for Weave as a control plane above engines
 - `engines-and-integrations.md`: classification of execution engines, storage engines, companions, and adapters
-- `declarative-api.md`: current `defineTool`, `defineAgent`, and `defineMailboxApp` authoring API, plus deferred `defineMailbox` note
+- `declarative-api.md`: current `defineTool`, `defineAgent`, and `defineWeaveApp` authoring API, plus deferred `defineThread` note
 - `poc-scope.md`: fixed decisions and success criteria for the first proof of concept
 - `engine-contracts.md`: typed engine contracts for the first Postgres-backed implementation
 - `event-taxonomy.md`: strongly typed PoC event set using Zod-style schemas
 - `poc-components-and-flow.md`: detailed component plan and end-to-end demo flow
 - `runnable-inbox.md`: explicit inbox routing and claim model for daemon work
-- `agent-mailbox-research.md`: longer-form technical research and reference notes
+- `weave-research.md`: longer-form technical research and reference notes
 - `ecc-analysis.md`: analysis of ECC as an adjacent runtime/operator system and what to adapt from it
-- `ecc-features-for-mailbox.md`: focused ECC feature analysis for security, skills, instincts, and memory
+- `ecc-features-for-thread.md`: focused ECC feature analysis for security, skills, instincts, and memory
 - `s2-engine-research.md`: evaluation of S2 and s2-lite as a possible first engine
 
 ## Intent
@@ -58,7 +58,7 @@ These docs are meant to:
 17. `runnable-inbox.md`
 18. `mvp.md`
 19. `roadmap.md`
-20. `agent-mailbox-research.md`
+20. `weave-research.md`
 21. `ecc-analysis.md`
-22. `ecc-features-for-mailbox.md`
+22. `ecc-features-for-thread.md`
 23. `s2-engine-research.md`
