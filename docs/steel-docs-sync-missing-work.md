@@ -12,6 +12,22 @@ Each slice should preserve the core invariant that mailbox events are the durabl
 
 External systems may trigger work and read results, but they should not become hidden state machines outside the mailbox.
 
+## Progress Status
+
+Status as of 2026-05-27.
+
+- [x] Slice 1: App-aware runtime wiring
+- [x] Slice 2: Webhook ingress
+- [x] Slice 3: Session metadata and idempotency
+- [ ] Slice 4: Artifact and snapshot handling
+Artifact persistence is in place: persisted artifact metadata, file-backed raw bodies, source snapshots, and `GET /mailboxes/:id/artifacts` are implemented. Broader history/baseline APIs and policies are still open.
+- [x] Slice 5: Structured audit results
+- [ ] Slice 6: Model-backed review boundary
+The async review boundary is in place as a tool and its output is schema-validated before findings are appended, but it still uses a deterministic stub reviewer rather than a real model provider.
+- [ ] Slice 7: External result publishing
+- [ ] Slice 8: Worker reliability and diagnostics
+Bounded retries, dead-letter inbox state, inbox diagnostics, fetch timeouts, and content-size limits are implemented. Policy tuning and broader operator surfaces are still open.
+
 ## Slice 1: App-aware Runtime Wiring
 
 ### Problem
@@ -349,12 +365,19 @@ The fastest credible version does not need every slice.
 
 Build in this order:
 
-1. app-aware example wiring by copying the SRE demo pattern
-2. deterministic `examples/steel-docs-sync` with one audit tool
-3. example-owned webhook server with HMAC verification
-4. session metadata support in `MailboxService`
-5. GitHub Action polling in `steel-dev/docs`
-6. real source collection and OpenAPI lookup
-7. structured summary endpoint or stable event parsing
+- [x] app-aware example wiring by copying the SRE demo pattern
+- [x] deterministic `examples/steel-docs-sync` with one audit tool
+- [x] example-owned webhook server with HMAC verification
+- [x] session metadata support in `MailboxService`
+- [ ] GitHub Action polling in `steel-dev/docs`
+- [x] real source collection and OpenAPI lookup
+- [x] structured summary endpoint or stable event parsing
+
+Additional progress beyond the original tracer bullet:
+
+- [x] SSE streaming with resume support and terminal `mailbox.completed` events
+- [x] persisted artifact metadata, file-backed artifact bodies, and snapshot baselines
+- [x] bounded retry and dead-letter diagnostics for webhook-triggered tool work
+- [x] async model-review tool boundary with schema-validated output
 
 Artifact storage, model-backed review, GitHub check publishing, and retry/dead-letter behavior can follow once the tracer bullet proves useful.
