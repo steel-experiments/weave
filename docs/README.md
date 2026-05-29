@@ -4,7 +4,9 @@ This directory is the working source of truth for the project direction, archite
 
 ## Start Here
 
+- `what-is-weave.md`: one-page product narrative for the vision, goals, and why Weave matters
 - `overview.md`: project overview, thesis, stretch goal, and guiding principles
+- `blade/overview.md`: Blade product overview and initial spec direction
 - `north-star-sre-demo.md`: first product-shaped demo target for an SRE agent harness
 - `steel-docs-sync-example.md`: webhook-triggered docs drift audit example for `steel-dev/docs`
 - `steel-docs-sync-missing-work.md`: thread/core slices needed for the Steel docs sync example
@@ -39,26 +41,28 @@ These docs are meant to:
 
 ## Suggested Reading Order
 
-1. `overview.md`
-2. `north-star-sre-demo.md`
-3. `glossary.md`
-4. `architecture.md`
-5. `interface.md`
-6. `agent-adapters.md`
-7. `steel-docs-sync-example.md`
-8. `steel-docs-sync-missing-work.md`
-9. `similar-systems.md`
-10. `positioning.md`
-11. `engines-and-integrations.md`
-12. `declarative-api.md`
-13. `poc-scope.md`
-14. `engine-contracts.md`
-15. `event-taxonomy.md`
-16. `poc-components-and-flow.md`
-17. `runnable-inbox.md`
-18. `mvp.md`
-19. `roadmap.md`
-20. `weave-research.md`
-21. `ecc-analysis.md`
-22. `ecc-features-for-thread.md`
-23. `s2-engine-research.md`
+1. `what-is-weave.md`
+2. `overview.md`
+3. `blade/overview.md`
+4. `north-star-sre-demo.md`
+5. `glossary.md`
+6. `architecture.md`
+7. `interface.md`
+8. `agent-adapters.md`
+9. `steel-docs-sync-example.md`
+10. `steel-docs-sync-missing-work.md`
+11. `similar-systems.md`
+12. `positioning.md`
+13. `engines-and-integrations.md`
+14. `declarative-api.md`
+15. `poc-scope.md`
+16. `engine-contracts.md`
+17. `event-taxonomy.md`
+18. `poc-components-and-flow.md`
+19. `runnable-inbox.md`
+20. `mvp.md`
+21. `roadmap.md`
+22. `weave-research.md`
+23. `ecc-analysis.md`
+24. `ecc-features-for-thread.md`
+25. `s2-engine-research.md`
