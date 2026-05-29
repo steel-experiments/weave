@@ -1,6 +1,6 @@
 # What Is Weave?
 
-![Product hero image: luminous woven event streams connecting agents, tools, humans, policies, and integrations around a calm central control plane](./images/weave-control-plane-hero.png)
+![Product hero image: luminous woven event streams connecting agents, tools, humans, policies, and integrations around a calm central control plane](https://github.com/user-attachments/assets/6c43e596-8650-4d52-a569-de036ae50f23)
 
 Weave is the durable control plane for agents.
 
