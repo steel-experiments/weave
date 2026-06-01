@@ -2,20 +2,14 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { AddressInfo } from "node:net";
 import {
-  ContractToolWorker,
   ThreadArtifactSchema,
-  ThreadRunner,
-  createWeaveRuntime,
-  ThreadService,
-  PostgresThreadArtifactStore,
-  PostgresThreadEngine,
-  createPool,
   getAgent,
-  migrate,
   type ThreadEvent,
   type ThreadProjection,
   type ThreadSummary,
 } from "weave";
+import { ContractToolWorker, ThreadRunner, ThreadService, createWeaveRuntime } from "weave/runtime";
+import { PostgresThreadArtifactStore, PostgresThreadEngine, createPool, migrate } from "weave/postgres";
 import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";
 import { startSteelFixtureServer } from "./fixtures.js";

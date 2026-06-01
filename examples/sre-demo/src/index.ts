@@ -1,23 +1,27 @@
 import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import {
-  CompositeObservabilitySink,
-  ContractToolWorker,
-  ThreadRunner,
-  createWeaveRuntime,
-  ThreadService,
-  PostgresObservabilitySink,
-  PostgresThreadEngine,
-  createApiServer,
-  createPool,
   getAgent,
-  migrate,
-  otlpFromEnv,
   toMermaidTimeline,
   toTextTimeline,
   type ThreadEvent,
   type ThreadProjection,
 } from "weave";
+import {
+  CompositeObservabilitySink,
+  ContractToolWorker,
+  ThreadRunner,
+  createWeaveRuntime,
+  ThreadService,
+  otlpFromEnv,
+} from "weave/runtime";
+import {
+  PostgresObservabilitySink,
+  PostgresThreadEngine,
+  createPool,
+  migrate,
+} from "weave/postgres";
+import { createApiServer } from "weave/server";
 import { sreDemoApp } from "./app.js";
 
 const pool = createPool();

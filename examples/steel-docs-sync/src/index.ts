@@ -1,21 +1,15 @@
 import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import {
-  ContractToolWorker,
   ThreadArtifactSchema,
-  ThreadRunner,
-  createWeaveRuntime,
-  ThreadService,
-  PostgresThreadEngine,
-  createApiServer,
-  PostgresThreadArtifactStore,
-  createPool,
   getAgent,
-  migrate,
   type ThreadEvent,
   type ThreadProjection,
   type ThreadSummary,
 } from "weave";
+import { ContractToolWorker, ThreadRunner, ThreadService, createWeaveRuntime } from "weave/runtime";
+import { PostgresThreadArtifactStore, PostgresThreadEngine, createPool, migrate } from "weave/postgres";
+import { createApiServer } from "weave/server";
 import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";
 import { startSteelFixtureServer } from "./fixtures.js";

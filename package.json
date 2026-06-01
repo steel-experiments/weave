@@ -7,6 +7,22 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./runtime": {
+      "types": "./src/runtime-entry.ts",
+      "import": "./src/runtime-entry.ts"
+    },
+    "./postgres": {
+      "types": "./src/postgres-entry.ts",
+      "import": "./src/postgres-entry.ts"
+    },
+    "./server": {
+      "types": "./src/server-entry.ts",
+      "import": "./src/server-entry.ts"
+    },
+    "./testing": {
+      "types": "./src/testing-entry.ts",
+      "import": "./src/testing-entry.ts"
     }
   },
   "workspaces": [

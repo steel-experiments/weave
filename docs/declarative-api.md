@@ -32,7 +32,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.spawn` / `ctx.join` | Planned |
 | policies | Planned |
 | capabilities | Planned |
-| package subpaths | Planned |
+| package subpaths | Current runtime boundary |
 
 ## Authoring Primitives
 
@@ -60,6 +60,14 @@ const app = weave({
 Runtime binding stays explicit:
 
 ```ts
+import { createWeaveRuntime, ThreadService } from "weave/runtime";
+import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
+
+const pool = createPool();
+await migrate(pool);
+
+const engine = new PostgresThreadEngine(pool);
+const service = new ThreadService(engine);
 const runtime = createWeaveRuntime({
   app,
   agentName: "coding.fixBug",
@@ -514,6 +522,16 @@ const runtime = createWeaveRuntime({
 
 The runtime owns runners, workers, leases, inbox claiming, credentials, artifacts, and observability wiring.
 
+Package subpaths separate authoring from runtime binding:
+
+- `weave`: authoring primitives, app registry, event schemas, summaries, timelines, and shared types.
+- `weave/runtime`: runtime orchestration, daemons, runners, workers, thread service, credentials, and observability helpers.
+- `weave/postgres`: Postgres engine, pool, migrations, artifact store, and observability store.
+- `weave/server`: HTTP API server helpers and server-facing types.
+- `weave/testing`: mock agent and mock tool worker utilities.
+
+The root export remains backward-compatible for now, but examples should use subpaths for runtime, storage, and server concerns.
+
 ## Migration Notes
 
 Existing planner agents usually construct events manually.
@@ -545,7 +563,7 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - `ctx.emit` and `ctx.uuid` are provisional replay helpers.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
 - `ctx.spawn`, `ctx.join`, policies, capabilities, typed event factories, and projections are planned but not implemented in this slice.
-- Package subpaths are not split yet; root exports still include runtime internals.
+- Package subpaths are available, but root exports still include runtime internals for compatibility.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.
 - Parallel durable effects are not documented as supported yet.
