@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { z } from "zod";
 import { agent } from "../agent-contract.js";
 import { createAgentPlanner } from "../agent-runner.js";
-import type { AppendOptions, AppendResult, FollowCursor, ReadOptions, ThreadEngine } from "../contracts.js";
+import type { AppendOptions, AppendResult, FollowCursor, Lease, ReadOptions, ThreadEngine, ThreadLeaseStore } from "../contracts.js";
 import { ReplayMismatchError } from "../errors.js";
 import {
   deterministicUuid,
@@ -12,6 +12,7 @@ import {
   type ThreadEvent,
 } from "../events.js";
 import { approvalPolicy } from "../policy-contract.js";
+import { ThreadRunner } from "../runner.js";
 import { tool, type AnyToolContract } from "../tool-contract.js";
 import { ContractToolWorker } from "../tool-worker.js";
 
@@ -474,6 +475,30 @@ async function testApprovalPolicyEvaluation(): Promise<void> {
   });
 }
 
+async function testAgentFailureEvent(): Promise<void> {
+  const threadId = "agent-failure-event";
+  const engine = new MemoryThreadEngine(initialHistory(threadId));
+  const runner = new ThreadRunner(
+    engine,
+    engine,
+    {
+      plan() {
+        throw new Error("planner exploded");
+      },
+    },
+    "test-runner",
+  );
+
+  const result = await runner.runOnce(threadId);
+  assert.deepEqual(result, { acted: true, appendedEvents: 1, reason: "agent-failed" });
+  const failed = engine.events.find((event): event is Extract<ThreadEvent, { type: "agent.failed" }> => {
+    return event.type === "agent.failed";
+  });
+  assert(failed);
+  assert.equal(failed.payload.errorCode, "AGENT_FAILED");
+  assert.equal(failed.payload.message, "planner exploded");
+}
+
 function initialHistory(threadId: string): ThreadEvent[] {
   const correlationId = deterministicUuid("correlation", threadId);
   const sessionStarted: Extract<ThreadEvent, { type: "session.started" }> = {
@@ -563,7 +588,7 @@ function requestedEventForTool(threadId: string, toolName: string): Extract<Thre
   };
 }
 
-class MemoryThreadEngine implements ThreadEngine {
+class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
   constructor(readonly events: ThreadEvent[] = []) {}
 
   async createThread(): Promise<void> {}
@@ -591,6 +616,26 @@ class MemoryThreadEngine implements ThreadEngine {
   async getProjection(): Promise<ThreadProjection | null> {
     return null;
   }
+
+  async acquireLease(threadId: string, ownerId: string, ttlMs: number): Promise<Lease> {
+    return {
+      threadId,
+      ownerId,
+      token: `lease:${threadId}:${ownerId}`,
+      expiresAt: new Date(Date.now() + ttlMs).toISOString(),
+    };
+  }
+
+  async renewLease(threadId: string, token: string, ttlMs: number): Promise<Lease> {
+    return {
+      threadId,
+      ownerId: "renewed",
+      token,
+      expiresAt: new Date(Date.now() + ttlMs).toISOString(),
+    };
+  }
+
+  async releaseLease(): Promise<void> {}
 }
 
 await testDuplicatePrevention();
@@ -605,5 +650,6 @@ await testToolWorkerOutputSummaries();
 await testGateReplay();
 await testGatePayloadMismatch();
 await testApprovalPolicyEvaluation();
+await testAgentFailureEvent();
 
 console.log("Replay authoring tests passed");

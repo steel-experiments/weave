@@ -48,6 +48,6 @@ Changed modules:
 
 Known follow-ups:
 
-- Add first-class `agent.failed` or `thread.failed` events if agent-level failures need durable structured error records.
+- First-class `agent.failed` was added by `09-agent-failure-events.md`; `thread.failed` remains a possible future aggregate event.
 - Decide whether future agents can opt into catching tool failures and producing recovery plans.
 - Split worker retry policy and dead-letter policy into configurable runtime options.

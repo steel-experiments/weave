@@ -49,6 +49,7 @@ The PoC uses this event set.
 - `prompt.received`
 - `agent.step.started`
 - `agent.step.completed`
+- `agent.failed`
 - `tool.requested`
 - `tool.started`
 - `tool.progress`
@@ -104,6 +105,15 @@ const ToolRequestedPayload = z.object({
   args: z.unknown(),
   scopeKey: z.string().min(1).optional(),
   stepKey: z.string().min(1).optional(),
+})
+```
+
+### Agent failed
+
+```ts
+const AgentFailedPayload = z.object({
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
 })
 ```
 
@@ -208,6 +218,11 @@ const AgentStepCompletedEvent = EventEnvelopeBase.extend({
   payload: AgentStepCompletedPayload,
 })
 
+const AgentFailedEvent = EventEnvelopeBase.extend({
+  type: z.literal("agent.failed"),
+  payload: AgentFailedPayload,
+})
+
 const ToolRequestedEvent = EventEnvelopeBase.extend({
   type: z.literal("tool.requested"),
   payload: ToolRequestedPayload,
@@ -258,6 +273,7 @@ export const ThreadEvent = z.discriminatedUnion("type", [
   PromptReceivedEvent,
   AgentStepStartedEvent,
   AgentStepCompletedEvent,
+  AgentFailedEvent,
   ToolRequestedEvent,
   ToolStartedEvent,
   ToolProgressEvent,
@@ -285,6 +301,7 @@ Not every durable event needs to wake the runner.
 - `session.started`
 - `agent.step.started`
 - `agent.step.completed`
+- `agent.failed`
 - `tool.started`
 - `tool.progress`
 - `tool.failed`
@@ -292,7 +309,7 @@ Not every durable event needs to wake the runner.
 - `runner.resumed`
 - `agent.response.produced`
 
-This separation keeps the durable history rich while the runner wake logic stays simple. In V1, `tool.failed` marks the thread failed immediately; it is terminal rather than a runner wake.
+This separation keeps the durable history rich while the runner wake logic stays simple. In V1, `tool.failed` and `agent.failed` mark the thread failed immediately; they are terminal rather than runner wakes.
 
 ## Deterministic Mock Agent Rules
 

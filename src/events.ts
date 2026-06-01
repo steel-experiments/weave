@@ -52,6 +52,11 @@ export const AgentStepCompletedPayloadSchema = z.object({
   ]),
 });
 
+export const AgentFailedPayloadSchema = z.object({
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
+});
+
 export const EnvironmentSchema = z.enum(["staging", "production"]);
 
 export const ToolNameSchema = z.string().min(1);
@@ -192,6 +197,11 @@ const AgentStepCompletedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: AgentStepCompletedPayloadSchema,
 });
 
+const AgentFailedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("agent.failed"),
+  payload: AgentFailedPayloadSchema,
+});
+
 const ToolRequestedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("tool.requested"),
   payload: ToolRequestedPayloadSchema,
@@ -277,6 +287,7 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   PromptReceivedEventSchema,
   AgentStepStartedEventSchema,
   AgentStepCompletedEventSchema,
+  AgentFailedEventSchema,
   ToolRequestedEventSchema,
   ToolStartedEventSchema,
   ToolProgressEventSchema,
