@@ -21,3 +21,4 @@ The slice document should stay alive after implementation. It becomes the compac
 ## Current Weave Core Slices
 
 - `01-replay-authoring-api.md`: planned first slice for replay-based `agent.run` and `ctx.tool`.
+- `02-tool-output-migration.md`: shipped slice for domain-shaped tool outputs with legacy compatibility.

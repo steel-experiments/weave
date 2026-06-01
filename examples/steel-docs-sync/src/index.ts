@@ -110,7 +110,7 @@ try {
     const finalResponse = events.find((event) => event.type === "agent.response.produced");
     assert(toolCompleted);
     assert(finalResponse);
-    const artifacts = readArtifacts(toolCompleted.payload.output.data);
+    const artifacts = readArtifacts(toolCompleted.payload.output);
     assert.equal(artifacts.length, 3);
     assert.deepEqual(artifacts.map((artifact) => artifact.kind), ["docs-page", "llms-txt", "openapi-spec"]);
     assert.deepEqual(
@@ -127,7 +127,7 @@ try {
     console.log(`outcome=${summary.outcome}`);
     console.log(`execution=${summary.execution.status}`);
     console.log(`artifacts=${artifacts.length}`);
-    console.log(`auditSummary=${toolCompleted.payload.output.summary}`);
+    console.log(`auditSummary=${toolCompleted.payload.summary ?? "unknown"}`);
     console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
   } finally {
     await runnerDaemon.stop();

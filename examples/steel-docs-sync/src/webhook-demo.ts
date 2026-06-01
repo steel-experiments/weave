@@ -174,14 +174,14 @@ try {
       ["steel.auditDocsSync", "steel.modelReview"],
     );
     assert(toolCompleted?.type === "tool.completed");
-    const artifacts = readArtifacts(toolCompleted.payload.output.data);
+    const artifacts = readArtifacts(toolCompleted.payload.output);
     assert.equal(artifacts.length, 3);
     assert.deepEqual(artifacts.map((artifact) => artifact.sourceUrl), [payload.docsBaseUrl, payload.llmsTxtUrl, payload.openApiSpecUrl]);
     assert.deepEqual(
       artifactListing.artifacts.map((artifact) => artifact.artifactId),
       artifacts.map((artifact) => artifact.artifactId),
     );
-    const baselines = readBaselines(toolCompleted.payload.output.data);
+    const baselines = readBaselines(toolCompleted.payload.output);
     assert(baselines.every((baseline) => baseline.previousArtifactId === null));
     assert(finalResponse?.type === "agent.response.produced");
 
@@ -214,7 +214,7 @@ try {
     const baselineEvents = await getEvents(baseUrl, baselineSuccessCreated.body.threadId);
     const baselineToolCompleted = baselineEvents.find((event) => event.type === "tool.completed");
     assert(baselineToolCompleted?.type === "tool.completed");
-    const baselineComparisons = readBaselines(baselineToolCompleted.payload.output.data);
+    const baselineComparisons = readBaselines(baselineToolCompleted.payload.output);
     assert(baselineComparisons.every((baseline) => baseline.previousArtifactId !== null));
     assert(baselineComparisons.every((baseline) => baseline.changed === false));
 

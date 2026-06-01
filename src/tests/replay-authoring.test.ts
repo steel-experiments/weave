@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import { z } from "zod";
 import { agent } from "../agent-contract.js";
 import { createAgentPlanner } from "../agent-runner.js";
+import type { AppendOptions, AppendResult, FollowCursor, ReadOptions, ThreadEngine } from "../contracts.js";
 import { ReplayMismatchError } from "../errors.js";
 import {
   deterministicUuid,
   eventKey,
   nowIso,
+  type ThreadProjection,
   type ThreadEvent,
 } from "../events.js";
-import { tool } from "../tool-contract.js";
+import { tool, type AnyToolContract } from "../tool-contract.js";
+import { ContractToolWorker } from "../tool-worker.js";
 
 const inputSchema = z.object({ query: z.string().min(1) });
 const outputSchema = z.object({
@@ -41,15 +44,6 @@ const lookupAgent = agent({
     return result.data.result;
   },
 });
-
-await testDuplicatePrevention();
-await testDecodeFailure();
-await testReplayMismatch();
-await testEmitPayloadMismatch();
-await testCheckpointReplay();
-await testCheckpointMismatch();
-
-console.log("Replay authoring tests passed");
 
 async function testDuplicatePrevention(): Promise<void> {
   const planner = createAgentPlanner(lookupAgent);
@@ -233,6 +227,110 @@ async function testCheckpointMismatch(): Promise<void> {
   );
 }
 
+async function testDomainToolOutputReplay(): Promise<void> {
+  const domainOutput = z.object({ result: z.string().min(1), count: z.number().int() });
+  const domainTool = tool({
+    name: "test.domainLookup",
+    description: "Test domain output tool.",
+    input: inputSchema,
+    output: domainOutput,
+    summarize(output) {
+      return `domain ${output.result}`;
+    },
+    run() {
+      return { result: "ok", count: 1 };
+    },
+  });
+  const domainAgent = agent({
+    name: "domain-agent",
+    input: inputSchema,
+    tools: [domainTool],
+    async run(ctx, input) {
+      const result = await ctx.tool("domain-lookup", domainTool, input);
+      return `${result.result}:${result.count}`;
+    },
+  });
+  const planner = createAgentPlanner(domainAgent);
+  const history = initialHistory("domain-output-replay");
+  const firstPlan = await planner.plan("domain-output-replay", history);
+  assert(firstPlan);
+  const request = firstPlan.events[0];
+  assert.equal(request?.type, "tool.requested");
+  const completion: Extract<ThreadEvent, { type: "tool.completed" }> = {
+    eventId: eventKey("domain-output-replay", "tool.completed", "domain-lookup"),
+    threadId: "domain-output-replay",
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    causationId: request.eventId,
+    scopeKey: "agent:domain-agent",
+    stepKey: "domain-lookup",
+    actor: { type: "worker", id: "test-worker" },
+    payload: {
+      toolCallId: request.payload.toolCallId,
+      output: { result: "ok", count: 1 },
+      summary: "domain ok",
+    },
+  };
+
+  const secondPlan = await planner.plan("domain-output-replay", [...history, request, completion]);
+  assert(secondPlan);
+  assert.equal(secondPlan.events[0]?.type, "agent.response.produced");
+  assert.deepEqual(secondPlan.events[0]?.payload, { message: "ok:1" });
+}
+
+async function testToolWorkerOutputSummaries(): Promise<void> {
+  const domainTool = tool({
+    name: "test.workerDomain",
+    description: "Worker domain output tool.",
+    input: inputSchema,
+    output: z.object({ total: z.number().int() }),
+    summarize(output) {
+      return `total ${output.total}`;
+    },
+    run() {
+      return { total: 2 };
+    },
+  });
+  const domainCompletion = await runToolToCompletion(domainTool.name, domainTool);
+  assert.deepEqual(domainCompletion.payload.output, { total: 2 });
+  assert.equal(domainCompletion.payload.summary, "total 2");
+
+  const unsummarizedTool = tool({
+    name: "test.workerUnsummarized",
+    description: "Worker unsummarized output tool.",
+    input: inputSchema,
+    output: z.object({ value: z.string().min(1) }),
+    run() {
+      return { value: "raw" };
+    },
+  });
+  const unsummarizedCompletion = await runToolToCompletion(unsummarizedTool.name, unsummarizedTool);
+  assert.deepEqual(unsummarizedCompletion.payload.output, { value: "raw" });
+  assert.equal(unsummarizedCompletion.payload.summary, undefined);
+
+  const legacyTool = tool({
+    name: "test.workerLegacy",
+    description: "Worker legacy output tool.",
+    input: inputSchema,
+    output: outputSchema,
+    run() {
+      return {
+        summary: "legacy summary",
+        requiresManualApproval: false,
+        data: { result: "legacy" },
+      };
+    },
+  });
+  const legacyCompletion = await runToolToCompletion(legacyTool.name, legacyTool);
+  assert.deepEqual(legacyCompletion.payload.output, {
+    summary: "legacy summary",
+    requiresManualApproval: false,
+    data: { result: "legacy" },
+  });
+  assert.equal(legacyCompletion.payload.summary, "legacy summary");
+}
+
 function initialHistory(threadId: string): ThreadEvent[] {
   const correlationId = deterministicUuid("correlation", threadId);
   const sessionStarted: Extract<ThreadEvent, { type: "session.started" }> = {
@@ -281,3 +379,84 @@ function requestedEvent(threadId: string): Extract<ThreadEvent, { type: "tool.re
     },
   };
 }
+
+async function runToolToCompletion(
+  toolName: string,
+  toolContract: AnyToolContract,
+): Promise<Extract<ThreadEvent, { type: "tool.completed" }>> {
+  const threadId = `worker-${toolName}`;
+  const request = requestedEventForTool(threadId, toolName);
+  const engine = new MemoryThreadEngine([request]);
+  const worker = new ContractToolWorker(engine, [toolContract]);
+
+  assert.equal((await worker.processOnce(threadId)).eventType, "tool.started");
+  assert.equal((await worker.processOnce(threadId)).eventType, "tool.completed");
+
+  const completion = engine.events.find((event): event is Extract<ThreadEvent, { type: "tool.completed" }> => {
+    return event.type === "tool.completed";
+  });
+  assert(completion);
+  return completion;
+}
+
+function requestedEventForTool(threadId: string, toolName: string): Extract<ThreadEvent, { type: "tool.requested" }> {
+  return {
+    eventId: eventKey(threadId, "tool.requested", `agent:test-agent:worker:${toolName}`),
+    threadId,
+    type: "tool.requested",
+    occurredAt: nowIso(),
+    correlationId: deterministicUuid("correlation", threadId),
+    causationId: eventKey(threadId, "prompt.received", "initial"),
+    scopeKey: "agent:test-agent",
+    stepKey: "worker",
+    actor: { type: "agent", id: "test-agent" },
+    payload: {
+      toolCallId: deterministicUuid("tool-call", threadId, "agent:test-agent", "worker", toolName),
+      toolName,
+      args: { query: "hello" },
+      scopeKey: "agent:test-agent",
+      stepKey: "worker",
+    },
+  };
+}
+
+class MemoryThreadEngine implements ThreadEngine {
+  constructor(readonly events: ThreadEvent[] = []) {}
+
+  async createThread(): Promise<void> {}
+
+  async append(events: ThreadEvent[], _options: AppendOptions = {}): Promise<AppendResult> {
+    const firstSeq = this.events.length;
+    for (const event of events) {
+      this.events.push({ ...event, seq: this.events.length } as ThreadEvent);
+    }
+    return { firstSeq, lastSeq: this.events.length - 1 };
+  }
+
+  async read(threadId: string, options: ReadOptions = {}): Promise<ThreadEvent[]> {
+    const fromSeq = options.fromSeq ?? 0;
+    const events = this.events.filter((event) => event.threadId === threadId && (event.seq ?? 0) >= fromSeq);
+    return options.limit === undefined ? events : events.slice(0, options.limit);
+  }
+
+  async *follow(_threadId: string, _cursor: FollowCursor = {}): AsyncIterable<ThreadEvent> {}
+
+  async getTail(): Promise<{ tailSeq: number; updatedAt: string }> {
+    return { tailSeq: Math.max(0, this.events.length - 1), updatedAt: nowIso() };
+  }
+
+  async getProjection(): Promise<ThreadProjection | null> {
+    return null;
+  }
+}
+
+await testDuplicatePrevention();
+await testDecodeFailure();
+await testReplayMismatch();
+await testEmitPayloadMismatch();
+await testCheckpointReplay();
+await testCheckpointMismatch();
+await testDomainToolOutputReplay();
+await testToolWorkerOutputSummaries();
+
+console.log("Replay authoring tests passed");

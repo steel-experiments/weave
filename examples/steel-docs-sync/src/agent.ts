@@ -1,8 +1,6 @@
 import { agent } from "weave";
 import { z } from "zod";
 import {
-  SteelDocsAuditDataSchema,
-  SteelDocsModelReviewDataSchema,
   steelAuditTool,
   steelModelReviewTool,
 } from "./tools.js";
@@ -24,9 +22,7 @@ export const steelDocsAgent = agent({
   tools: [steelAuditTool, steelModelReviewTool],
   async run(ctx, input) {
     const audit = await ctx.tool("audit-docs", steelAuditTool, input);
-    const auditData = SteelDocsAuditDataSchema.parse(audit.data);
-    const review = await ctx.tool("model-review", steelModelReviewTool, auditData);
-    const reviewData = SteelDocsModelReviewDataSchema.parse(review.data);
+    const reviewData = await ctx.tool("model-review", steelModelReviewTool, audit);
 
     for (const [index, finding] of reviewData.findings.entries()) {
       await ctx.emit(`model-review-finding:${index}`, {

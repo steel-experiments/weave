@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { Actor, ThreadEvent } from "./events.js";
 import type { AgentPlanner } from "./runner.js";
-import type { AnyToolContract, ToolCompletionOutput, ToolContract } from "./tool-contract.js";
+import type { AnyToolContract, ToolContract } from "./tool-contract.js";
 import type { MaybePromise } from "./types.js";
 
 export type ToolCallOptions = Record<string, unknown>;
@@ -20,7 +20,7 @@ export type AgentContext<
   readonly threadId: string;
   readonly actor: Actor;
   readonly signal: AbortSignal;
-  tool<Input, Output extends ToolCompletionOutput>(
+  tool<Input, Output>(
     key: string,
     tool: ToolContract<string, Input, Output>,
     input: Input,

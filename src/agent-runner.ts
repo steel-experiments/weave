@@ -8,7 +8,7 @@ import {
   type ThreadEvent,
 } from "./events.js";
 import type { AgentPlan, AgentPlanner } from "./runner.js";
-import type { ToolCompletionOutput, ToolContract } from "./tool-contract.js";
+import type { ToolContract } from "./tool-contract.js";
 
 type SuspensionReason = "tool-requested" | "tool-pending";
 
@@ -68,6 +68,9 @@ class RunAgentPlanner implements AgentPlanner {
       if (error instanceof AgentSuspended) {
         return toPlan(events, [...context.drainEvents(), ...error.events]);
       }
+      if (error instanceof ToolFailedError) {
+        return null;
+      }
       throw error;
     }
   }
@@ -97,7 +100,7 @@ class ReplayAgentContext implements AgentContext {
     return this.options.threadId;
   }
 
-  async tool<Input, Output extends ToolCompletionOutput>(
+  async tool<Input, Output>(
     key: string,
     tool: ToolContract<string, Input, Output>,
     input: Input,

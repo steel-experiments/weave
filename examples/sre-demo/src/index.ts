@@ -220,7 +220,7 @@ async function logConversation(events: ThreadEvent[], finalProjection: ThreadPro
 
       case "tool.completed": {
         const toolName = toolNamesByCallId.get(event.payload.toolCallId) ?? "tool";
-        await say("system", `${friendlyToolName(toolName)} complete - ${event.payload.output.summary}`);
+        await say("system", `${friendlyToolName(toolName)} complete - ${toolSummary(event.payload)}`);
         break;
       }
 
@@ -304,6 +304,22 @@ function friendlyToolAction(toolName: string): string {
 
 function friendlyToolName(toolName: string): string {
   return toolName;
+}
+
+function toolSummary(payload: Extract<ThreadEvent, { type: "tool.completed" }>["payload"]): string {
+  if (payload.summary) {
+    return payload.summary;
+  }
+
+  const output = payload.output;
+  if (output && typeof output === "object") {
+    const summary = Reflect.get(output, "summary");
+    if (typeof summary === "string") {
+      return summary;
+    }
+  }
+
+  return "completed";
 }
 
 function listen(server: ReturnType<typeof createApiServer>): Promise<void> {

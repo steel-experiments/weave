@@ -329,12 +329,12 @@ Validation rule: an agent must provide either `run` or `planner`. If both are pr
 
 ### Tool Output Migration
 
-After `ctx.tool` exists:
+Implemented after `ctx.tool`:
 
-1. Relax `ToolContract` output from `Output extends ToolCompletionOutput` to arbitrary `Output`.
-2. Update `tool.completed` to support raw output plus optional summary.
-3. Keep legacy output compatibility.
-4. Move examples to domain outputs.
+1. `ToolContract` output is arbitrary `Output`.
+2. `tool.completed` stores raw output plus optional summary.
+3. Legacy output compatibility remains.
+4. Steel docs sync uses domain outputs.
 
 ### Checkpoints
 

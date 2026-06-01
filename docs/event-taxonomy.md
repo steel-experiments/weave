@@ -33,9 +33,13 @@ const EventEnvelopeBase = z.object({
   correlationId: z.string().uuid().optional(),
   causationId: z.string().uuid().optional(),
   idempotencyKey: z.string().min(1).optional(),
+  scopeKey: z.string().min(1).optional(),
+  stepKey: z.string().min(1).optional(),
   actor: Actor,
 })
 ```
+
+`scopeKey` and `stepKey` identify durable effects for replay. For `ctx.tool`, the default scope is `agent:<agentName>` and the agent author supplies the stable step key.
 
 ## Event Set
 
@@ -96,10 +100,10 @@ const AgentStepCompletedPayload = z.object({
 ```ts
 const ToolRequestedPayload = z.object({
   toolCallId: z.string().uuid(),
-  toolName: z.literal("mock.async-progress"),
-  args: z.object({
-    jobLabel: z.string().min(1),
-  }),
+  toolName: z.string().min(1),
+  args: z.unknown(),
+  scopeKey: z.string().min(1).optional(),
+  stepKey: z.string().min(1).optional(),
 })
 ```
 
@@ -127,12 +131,12 @@ const ToolProgressPayload = z.object({
 ```ts
 const ToolCompletedPayload = z.object({
   toolCallId: z.string().uuid(),
-  output: z.object({
-    summary: z.string().min(1),
-    requiresManualApproval: z.boolean(),
-  }),
+  output: z.unknown(),
+  summary: z.string().min(1).optional(),
 })
 ```
+
+`output` is the canonical raw tool result used for replay. `summary` is optional display metadata. Legacy `ToolCompletionOutput` envelopes may still carry `requiresManualApproval`, but that is compatibility-only and not the future approval model.
 
 ### Tool failed
 
@@ -300,7 +304,7 @@ If the thread has a prompt but no `tool.requested`, emit a tool request.
 
 ### Rule 2
 
-If the thread has a `tool.completed` event whose output has `requiresManualApproval = true` and no open gate exists, create a gate.
+If the thread has a legacy `tool.completed` event whose output has `requiresManualApproval = true` and no open gate exists, create a gate.
 
 ### Rule 3
 

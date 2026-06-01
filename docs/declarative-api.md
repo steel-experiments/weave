@@ -80,14 +80,13 @@ const inspectIssue = tool({
     issueNumber: z.number(),
   }),
   output: z.object({
-    summary: z.string(),
-    requiresManualApproval: z.literal(false),
-    data: z.object({
-      title: z.string(),
-      body: z.string(),
-      labels: z.array(z.string()),
-    }),
+    title: z.string(),
+    body: z.string(),
+    labels: z.array(z.string()),
   }),
+  summarize(output) {
+    return output.title;
+  },
   async run(ctx) {
     const github = ctx.credentials.value("github.read");
     return inspectIssueWithGitHub(github, ctx.input);
@@ -95,7 +94,9 @@ const inspectIssue = tool({
 });
 ```
 
-Current limitation: tool outputs still use the `ToolCompletionOutput` envelope with `summary`, `requiresManualApproval`, and optional `data`. This will be relaxed later so tools can return domain-shaped outputs directly.
+Tool outputs are domain-shaped. Weave stores the raw output as canonical replay data in `tool.completed.payload.output`. `summary` is optional display metadata produced by `tool.summarize(output)`.
+
+Legacy tools may still return the old `ToolCompletionOutput` envelope with `summary`, `requiresManualApproval`, and optional `data`. For those legacy outputs only, Weave falls back to `output.summary` as display metadata. `requiresManualApproval` is legacy compatibility, not the future approval model.
 
 ## Agent Authoring With run(ctx, input)
 
@@ -115,9 +116,9 @@ const fixBug = agent({
     const tests = await ctx.tool("run-tests", runTests, {
       owner: input.owner,
       repo: input.repo,
-      issue: issue.data,
+      issue,
     });
-    return tests.data;
+    return tests;
   },
 });
 ```
@@ -484,7 +485,7 @@ async run(ctx, input) {
   const result = await ctx.tool("stable-key", tool, input);
   await ctx.emit("final-response", {
     type: "agent.response.produced",
-    payload: { message: result.summary },
+    payload: { message: summarizeResult(result) },
   });
   return result;
 }
@@ -496,7 +497,7 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 
 - `ctx.tool` is the only first-class durable effect implemented in this slice.
 - `ctx.emit` and `ctx.uuid` are provisional replay helpers.
-- Tool outputs still use the current `ToolCompletionOutput` envelope.
+- Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
 - `ctx.gate`, `ctx.spawn`, `ctx.join`, policies, capabilities, typed event factories, and projections are planned but not implemented in this slice.
 - Package subpaths are not split yet; root exports still include runtime internals.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.

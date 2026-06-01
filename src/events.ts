@@ -77,11 +77,8 @@ export const ToolProgressPayloadSchema = z.object({
 
 export const ToolCompletedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),
-  output: z.object({
-    summary: z.string().min(1),
-    requiresManualApproval: z.boolean(),
-    data: z.unknown().optional(),
-  }),
+  output: z.unknown(),
+  summary: z.string().min(1).optional(),
 });
 
 export const ToolFailedPayloadSchema = z.object({
