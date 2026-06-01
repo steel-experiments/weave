@@ -80,6 +80,26 @@ A controlled connection where one thread or event stream can feed another thread
 
 A child agent or delegated execution path that may have its own thread while still being trace-linked to a parent session.
 
+## Subthread
+
+A child thread spawned or attached under a parent thread. A subthread owns its own durable event stream, projection, leases, inbox work, tools, gates, artifacts, observability, and credentials.
+
+## Thread Lineage
+
+The parent-child metadata that connects a child thread to its parent and root thread, including `parentThreadId`, `rootThreadId`, `parentScopeKey`, and `parentStepKey`.
+
+## Thread Ref
+
+A durable reference to another thread, usually a child thread, containing at least `threadId` and optionally agent name, lineage fields, and output typing.
+
+## Attached Child Thread
+
+A child thread that the parent knows about, can list, inspect, and join. Attached is the default mode for `ctx.spawn`.
+
+## Detached Child Thread
+
+A child thread with lineage metadata that can outlive the parent and does not require the parent to wait for it.
+
 ## Durable Execution
 
 The ability to stop and later resume work based on persisted events and state rather than live process memory.
