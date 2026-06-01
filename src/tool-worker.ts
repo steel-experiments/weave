@@ -362,6 +362,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: { toolCallId: request.payload.toolCallId, toolName: request.payload.toolName },
     };
@@ -380,6 +382,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
@@ -401,6 +405,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
@@ -421,6 +427,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
@@ -446,6 +454,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
@@ -472,6 +482,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
@@ -496,6 +508,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,

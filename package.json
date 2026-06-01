@@ -23,7 +23,8 @@
     "server": "tsx src/scripts/server.ts",
     "daemon:runner": "tsx src/scripts/runner-daemon.ts",
     "daemon:tool": "tsx src/scripts/tool-daemon.ts",
-    "typecheck": "tsc --noEmit && npm --workspace weave-sre-demo run typecheck && npm --workspace weave-steel-docs-sync run typecheck"
+    "typecheck": "tsc --noEmit && npm --workspace weave-sre-demo run typecheck && npm --workspace weave-steel-docs-sync run typecheck",
+    "test": "tsx src/tests/replay-authoring.test.ts"
   },
   "dependencies": {
     "pg": "^8.16.3",

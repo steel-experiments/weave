@@ -67,11 +67,11 @@ As a Weave app author, I can write an agent as ordinary async TypeScript and req
 - [x] One example uses `agent({ async run(ctx, input) { ... } })`.
 - [x] The migrated example does not manually import `ThreadEvent`, `AgentPlan`, `eventKey`, `deterministicUuid`, or tool request event constructors.
 - [x] `ctx.tool("some-key", tool, input)` appends exactly one `tool.requested` event when missing.
-- [ ] Re-running the runner before tool completion appends no duplicate `tool.requested` event.
+- [x] Re-running the runner before tool completion appends no duplicate `tool.requested` event.
 - [x] A pending tool request exits the runner pass and does not hold a Promise open waiting for the worker.
 - [x] After `tool.completed`, the same `ctx.tool()` returns decoded output.
-- [ ] If stored output fails the tool output schema, the runner records or throws a structured replay/decode error.
-- [ ] Changing a durable effect kind while reusing the same key throws `ReplayMismatchError`.
+- [x] If stored output fails the tool output schema, the runner records or throws a structured replay/decode error.
+- [x] Changing a durable effect kind while reusing the same key throws `ReplayMismatchError`.
 
 ## Progress
 
@@ -82,7 +82,7 @@ As a Weave app author, I can write an agent as ordinary async TypeScript and req
 - [x] Implement replay-based `ctx.tool`.
 - [x] Verify tool waits are durable thread suspension, not in-memory waiting.
 - [x] Migrate Steel docs sync agent.
-- [ ] Add replay and compatibility tests.
+- [x] Add replay and compatibility tests.
 - [x] Run typecheck and relevant demos/tests.
 
 ## Completion Notes
@@ -94,6 +94,10 @@ Changed modules:
 - `src/agent-contract.ts`: adds run-first `AgentContract`, `AgentContext`, aliases, and validation.
 - `src/agent-runner.ts`: adds replay-based run-to-planner adapter, `ctx.tool`, `ctx.emit`, and deterministic `ctx.uuid` helper.
 - `src/events.ts`: adds optional `scopeKey` and `stepKey` event fields and tool request payload fields.
+- `src/migrate.ts`: adds nullable `scope_key` and `step_key` columns plus a durable step lookup index.
+- `src/postgres-engine.ts`: persists and reads top-level `scopeKey` and `stepKey` fields.
+- `src/tool-worker.ts`: propagates durable step identity from `tool.requested` to worker lifecycle events.
+- `src/tests/replay-authoring.test.ts`: covers duplicate prevention, decode failure, and replay mismatch.
 - `src/runner.ts`: supports async planners.
 - `src/runtime.ts`: wraps run-first agents with the adapter and keeps planner-first agents compatible.
 - `examples/steel-docs-sync/src/agent.ts`: migrates Steel docs sync to `agent({ async run(ctx, input) { ... } })`.
@@ -101,13 +105,12 @@ Changed modules:
 Commands run:
 
 - `npm run typecheck`
+- `npm test`
 - `npm run steel:demo`
 - `npm run sre:demo`
 
 Known gaps:
 
-- Dedicated unit tests for duplicate-prevention, decode failure, and replay mismatch are still needed.
-- `scopeKey` and `stepKey` are persisted in the `tool.requested` payload for now; real nullable event columns remain a later storage migration.
 - `ctx.emit` and `ctx.uuid` were added to keep the migrated example event-producing without importing low-level event helpers. These should be folded into the public authoring docs before marking the slice shipped.
 
 ## Docs To Update On Completion

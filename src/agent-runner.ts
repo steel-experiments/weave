@@ -1,4 +1,4 @@
-import type { AgentContract, AgentContext, AgentEventInput } from "./agent-contract.js";
+import type { AgentContract, AgentContext, AgentEventInput, AnyAgentContract } from "./agent-contract.js";
 import { ReplayMismatchError, ToolFailedError, WeaveError } from "./errors.js";
 import {
   deterministicUuid,
@@ -22,7 +22,7 @@ class AgentSuspended extends Error {
   }
 }
 
-export function createAgentPlanner(agent: AgentContract, agentName = agent.name): AgentPlanner {
+export function createAgentPlanner(agent: AnyAgentContract, agentName = agent.name): AgentPlanner {
   if (agent.run) {
     return new RunAgentPlanner(agent, agentName);
   }
@@ -167,6 +167,13 @@ class ReplayAgentContext implements AgentContext {
           stepKey: key,
           existingType: matchingEvent.type,
           requestedType: event.type,
+        });
+      }
+      if (canonicalJson(matchingEvent.payload) !== canonicalJson(event.payload)) {
+        throw new ReplayMismatchError("Durable event key was previously used with a different payload", {
+          scopeKey: this.scopeKey,
+          stepKey: key,
+          eventType: event.type,
         });
       }
       return;
@@ -328,4 +335,24 @@ function formatAgentOutput(output: unknown): string {
   }
 
   return JSON.stringify(output);
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(sortForCanonicalJson(value));
+}
+
+function sortForCanonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortForCanonicalJson);
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, sortForCanonicalJson(nested)]),
+  );
 }

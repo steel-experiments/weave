@@ -21,6 +21,8 @@ create table if not exists weave.thread_event (
   correlation_id uuid,
   causation_id uuid,
   idempotency_key text,
+  scope_key text,
+  step_key text,
   actor_type text not null,
   actor_id text not null,
   payload_json jsonb not null,
@@ -28,12 +30,22 @@ create table if not exists weave.thread_event (
   unique (event_id)
 );
 
+alter table weave.thread_event
+  add column if not exists scope_key text;
+
+alter table weave.thread_event
+  add column if not exists step_key text;
+
 create unique index if not exists thread_event_idempotency_key_unique
   on weave.thread_event(thread_id, idempotency_key)
   where idempotency_key is not null;
 
 create index if not exists thread_event_type_idx
   on weave.thread_event(thread_id, type, seq);
+
+create index if not exists thread_event_step_idx
+  on weave.thread_event(thread_id, scope_key, step_key, seq)
+  where scope_key is not null and step_key is not null;
 
 create table if not exists weave.thread_lease (
   thread_id text primary key references weave.thread(id) on delete cascade,

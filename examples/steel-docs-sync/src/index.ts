@@ -90,6 +90,13 @@ try {
       events.filter((event) => event.type === "tool.requested").map((event) => event.payload.toolName),
       ["steel.auditDocsSync", "steel.modelReview"],
     );
+    assert.deepEqual(
+      events.filter((event) => event.type === "tool.requested").map((event) => [event.scopeKey, event.stepKey]),
+      [
+        ["agent:steel-docs", "audit-docs"],
+        ["agent:steel-docs", "model-review"],
+      ],
+    );
     assert.equal(finalProjection.status, "completed");
     assert.equal(summary.outcome, "warning");
     assert.equal(summary.execution.status, "succeeded");
