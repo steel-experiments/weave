@@ -94,8 +94,8 @@ Commands run:
 
 Known gaps:
 
-- SRE tools still use the legacy output envelope and can be migrated later.
-- First-class gates and policies are still needed before removing approval semantics from legacy tool outputs.
+- Resolved later by `04-sre-run-first-domain-outputs.md`: SRE tools now use domain-shaped outputs.
+- First-class gates were added by `03-gates-and-approval-policies.md`.
 
 ## Docs To Update On Completion
 

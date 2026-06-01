@@ -67,4 +67,4 @@ Known follow-ups:
 
 - Central policy helpers for reusable approval rules.
 - Gate schemas beyond manual approval.
-- Full SRE migration from legacy tool output envelopes to domain-shaped outputs.
+- SRE migration from legacy tool output envelopes to domain-shaped outputs was completed by `04-sre-run-first-domain-outputs.md`.

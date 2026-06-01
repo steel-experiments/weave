@@ -13,15 +13,14 @@ export const axiomSearchLogs = defineTool({
     limit: z.number().int().positive().max(1000),
   }),
   output: z.object({
-    summary: z.string().min(1),
-    requiresManualApproval: z.boolean(),
-    data: z.object({
-      errorPattern: z.string().min(1),
-      service: z.string().min(1),
-      count: z.number().int().nonnegative(),
-      sample: z.string().min(1),
-    }),
+    errorPattern: z.string().min(1),
+    service: z.string().min(1),
+    count: z.number().int().nonnegative(),
+    sample: z.string().min(1),
   }),
+  summarize(output) {
+    return `Axiom found ${output.count} ${output.errorPattern} logs from ${output.service}.`;
+  },
   credentials: ({ input }) => ({
     name: "axiom.production",
     kind: "secret",
@@ -34,14 +33,10 @@ export const axiomSearchLogs = defineTool({
     credentials.value("axiom.production");
     await progress({ percent: 50, message: "querying axiom.searchLogs" });
     return {
-      summary: "Axiom found 184 DatabaseTimeoutError logs from checkout-api in production after the latest deploy.",
-      requiresManualApproval: false,
-      data: {
-        errorPattern: "DatabaseTimeoutError",
-        service: "checkout-api",
-        count: 184,
-        sample: "DatabaseTimeoutError: checkout write timed out after 3000ms",
-      },
+      errorPattern: "DatabaseTimeoutError",
+      service: "checkout-api",
+      count: 184,
+      sample: "DatabaseTimeoutError: checkout write timed out after 3000ms",
     };
   },
 });
@@ -56,14 +51,13 @@ export const grafanaQueryMetrics = defineTool({
     timeRangeMinutes: z.number().int().positive(),
   }),
   output: z.object({
-    summary: z.string().min(1),
-    requiresManualApproval: z.boolean(),
-    data: z.object({
-      fiveXxRate: z.string().min(1),
-      latencyP95: z.string().min(1),
-      dbPoolWaitMs: z.number().int().nonnegative(),
-    }),
+    fiveXxRate: z.string().min(1),
+    latencyP95: z.string().min(1),
+    dbPoolWaitMs: z.number().int().nonnegative(),
   }),
+  summarize(output) {
+    return `Grafana shows 5xx rate ${output.fiveXxRate}, p95 ${output.latencyP95}, DB wait ${output.dbPoolWaitMs}ms.`;
+  },
   credentials: ({ input }) => ({
     name: "grafana.production",
     kind: "secret",
@@ -76,13 +70,9 @@ export const grafanaQueryMetrics = defineTool({
     credentials.value("grafana.production");
     await progress({ percent: 50, message: "querying grafana.queryMetrics" });
     return {
-      summary: "Grafana shows checkout-api 5xx rate peaked at 12%, p95 latency hit 3.4s, and DB pool wait rose sharply.",
-      requiresManualApproval: false,
-      data: {
-        fiveXxRate: "12%",
-        latencyP95: "3.4s",
-        dbPoolWaitMs: 920,
-      },
+      fiveXxRate: "12%",
+      latencyP95: "3.4s",
+      dbPoolWaitMs: 920,
     };
   },
 });
@@ -97,14 +87,13 @@ export const sentryFindIssues = defineTool({
     timeRangeMinutes: z.number().int().positive(),
   }),
   output: z.object({
-    summary: z.string().min(1),
-    requiresManualApproval: z.boolean(),
-    data: z.object({
-      issue: z.string().min(1),
-      release: z.string().min(1),
-      stackTop: z.string().min(1),
-    }),
+    issue: z.string().min(1),
+    release: z.string().min(1),
+    stackTop: z.string().min(1),
   }),
+  summarize(output) {
+    return `Sentry issue ${output.issue} started in release ${output.release}.`;
+  },
   credentials: ({ input }) => ({
     name: "sentry.production",
     kind: "secret",
@@ -117,13 +106,9 @@ export const sentryFindIssues = defineTool({
     credentials.value("sentry.production");
     await progress({ percent: 50, message: "querying sentry.findIssues" });
     return {
-      summary: "Sentry issue CHECKOUT-DB-TIMEOUT started in release checkout-api@2026.05.20.1.",
-      requiresManualApproval: false,
-      data: {
-        issue: "CHECKOUT-DB-TIMEOUT",
-        release: "checkout-api@2026.05.20.1",
-        stackTop: "CheckoutRepository.createOrder -> DatabaseClient.transaction",
-      },
+      issue: "CHECKOUT-DB-TIMEOUT",
+      release: "checkout-api@2026.05.20.1",
+      stackTop: "CheckoutRepository.createOrder -> DatabaseClient.transaction",
     };
   },
 });
@@ -137,15 +122,14 @@ export const deployInspectRecentChanges = defineTool({
     timeRangeMinutes: z.number().int().positive(),
   }),
   output: z.object({
-    summary: z.string().min(1),
-    requiresManualApproval: z.boolean(),
-    data: z.object({
-      service: z.string().min(1),
-      release: z.string().min(1),
-      deployedMinutesBeforeSpike: z.number().int().nonnegative(),
-      author: z.string().min(1),
-    }),
+    service: z.string().min(1),
+    release: z.string().min(1),
+    deployedMinutesBeforeSpike: z.number().int().nonnegative(),
+    author: z.string().min(1),
   }),
+  summarize(output) {
+    return `${output.service}@${output.release} shipped ${output.deployedMinutesBeforeSpike} minutes before the spike.`;
+  },
   credentials: ({ input }) => ({
     name: "deploy.production",
     kind: "scoped-token",
@@ -158,14 +142,10 @@ export const deployInspectRecentChanges = defineTool({
     credentials.value("deploy.production");
     await progress({ percent: 50, message: "querying deploy.inspectRecentChanges" });
     return {
-      summary: "Deploy metadata shows checkout-api@2026.05.20.1 shipped 14 minutes before the error spike.",
-      requiresManualApproval: false,
-      data: {
-        service: "checkout-api",
-        release: "2026.05.20.1",
-        deployedMinutesBeforeSpike: 14,
-        author: "demo-release-bot",
-      },
+      service: "checkout-api",
+      release: "2026.05.20.1",
+      deployedMinutesBeforeSpike: 14,
+      author: "demo-release-bot",
     };
   },
 });
@@ -179,14 +159,13 @@ export const infraRebuildNode = defineTool({
     reason: z.string().min(1),
   }),
   output: z.object({
-    summary: z.string().min(1),
-    requiresManualApproval: z.boolean(),
-    data: z.object({
-      nodeId: z.string().min(1),
-      action: z.literal("rebuild"),
-      status: z.literal("completed"),
-    }),
+    nodeId: z.string().min(1),
+    action: z.literal("rebuild"),
+    status: z.literal("completed"),
   }),
+  summarize(output) {
+    return `Mock remediation completed: ${output.nodeId} was ${output.action}ed and returned to service.`;
+  },
   credentials: ({ input }) => ({
     name: "infra.production",
     kind: "delegated-identity",
@@ -199,13 +178,9 @@ export const infraRebuildNode = defineTool({
     credentials.value("infra.production");
     await progress({ percent: 50, message: "querying infra.rebuildNode" });
     return {
-      summary: "Mock remediation completed: nats-prod-1 was drained, rebuilt, and returned to service.",
-      requiresManualApproval: false,
-      data: {
-        nodeId: "nats-prod-1",
-        action: "rebuild" as const,
-        status: "completed" as const,
-      },
+      nodeId: "nats-prod-1",
+      action: "rebuild" as const,
+      status: "completed" as const,
     };
   },
 });

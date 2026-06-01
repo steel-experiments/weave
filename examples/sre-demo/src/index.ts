@@ -109,6 +109,7 @@ try {
       "deploy.inspectRecentChanges",
       "infra.rebuildNode",
     ]);
+    assertDomainToolOutputs(events);
 
     const report = events.find((event) => event.type === "agent.incident_report.produced");
     const finalResponse = events.find((event) => event.type === "agent.response.produced");
@@ -181,6 +182,20 @@ try {
 function assertToolSequence(events: ThreadEvent[], expected: string[]): void {
   const actual = events.filter((event) => event.type === "tool.requested").map((event) => event.payload.toolName);
   assert.deepEqual(actual, expected);
+}
+
+function assertDomainToolOutputs(events: ThreadEvent[]): void {
+  const completed = events.filter((event) => event.type === "tool.completed");
+  assert(completed.length > 0);
+  for (const event of completed) {
+    assert.equal(hasObjectKey(event.payload.output, "summary"), false);
+    assert.equal(hasObjectKey(event.payload.output, "requiresManualApproval"), false);
+    assert.equal(typeof event.payload.summary, "string");
+  }
+}
+
+function hasObjectKey(value: unknown, key: string): boolean {
+  return Boolean(value && typeof value === "object" && key in value);
 }
 
 async function logConversation(events: ThreadEvent[], finalProjection: ThreadProjection): Promise<void> {
