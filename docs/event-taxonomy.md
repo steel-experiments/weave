@@ -278,7 +278,6 @@ Not every durable event needs to wake the runner.
 
 - `prompt.received`
 - `tool.completed`
-- `tool.failed`
 - `gate.resolved`
 
 ### History-only events for the PoC
@@ -288,11 +287,12 @@ Not every durable event needs to wake the runner.
 - `agent.step.completed`
 - `tool.started`
 - `tool.progress`
+- `tool.failed`
 - `gate.created`
 - `runner.resumed`
 - `agent.response.produced`
 
-This separation keeps the durable history rich while the runner wake logic stays simple.
+This separation keeps the durable history rich while the runner wake logic stays simple. In V1, `tool.failed` marks the thread failed immediately; it is terminal rather than a runner wake.
 
 ## Deterministic Mock Agent Rules
 

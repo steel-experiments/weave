@@ -549,7 +549,6 @@ function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
   switch (event.type) {
     case "prompt.received":
     case "tool.completed":
-    case "tool.failed":
     case "gate.resolved":
       return ["runner"];
     case "tool.requested":
@@ -564,6 +563,7 @@ function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
     case "credential.requested":
     case "credential.resolved":
     case "credential.failed":
+    case "tool.failed":
     case "gate.created":
     case "agent.response.produced":
     case "agent.finding.produced":

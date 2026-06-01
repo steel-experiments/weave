@@ -165,7 +165,7 @@ Pass 3:
   -> append final agent events
 ```
 
-A pending durable effect should not cause the runner to poll. The runner wakes when a relevant event is appended, such as `tool.completed`, `tool.failed`, or `gate.resolved`.
+A pending durable effect should not cause the runner to poll. The runner wakes when a relevant event is appended, such as `tool.completed` or `gate.resolved`. In V1, `tool.failed` is terminal for the thread and does not wake the runner.
 
 ## Durable Step Keys
 
@@ -223,6 +223,7 @@ Completed:
 Failed:
 
 - throw `ToolFailedError`
+- the run-first adapter treats replayed `ToolFailedError` as no new plan because the thread is already failed
 
 Mismatch:
 

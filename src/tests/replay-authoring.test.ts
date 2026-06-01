@@ -92,6 +92,31 @@ async function testDecodeFailure(): Promise<void> {
   );
 }
 
+async function testToolFailedReplayNoPlan(): Promise<void> {
+  const planner = createAgentPlanner(lookupAgent);
+  const history = initialHistory("tool-failed-replay");
+  const request = requestedEvent("tool-failed-replay");
+  const failed: Extract<ThreadEvent, { type: "tool.failed" }> = {
+    eventId: eventKey("tool-failed-replay", "tool.failed", "lookup"),
+    threadId: "tool-failed-replay",
+    type: "tool.failed",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    causationId: request.eventId,
+    scopeKey: "agent:test-agent",
+    stepKey: "lookup",
+    actor: { type: "worker", id: "test-worker" },
+    payload: {
+      toolCallId: request.payload.toolCallId,
+      errorCode: "execution_failed",
+      message: "lookup failed",
+    },
+  };
+
+  const plan = await planner.plan("tool-failed-replay", [...history, request, failed]);
+  assert.equal(plan, null);
+}
+
 async function testReplayMismatch(): Promise<void> {
   const planner = createAgentPlanner(lookupAgent);
   const history = initialHistory("replay-mismatch");
@@ -548,6 +573,7 @@ class MemoryThreadEngine implements ThreadEngine {
 
 await testDuplicatePrevention();
 await testDecodeFailure();
+await testToolFailedReplayNoPlan();
 await testReplayMismatch();
 await testEmitPayloadMismatch();
 await testCheckpointReplay();

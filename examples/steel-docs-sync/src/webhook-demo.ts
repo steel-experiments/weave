@@ -249,6 +249,11 @@ try {
         (item) => item.state === "dead-letter" && item.lastErrorCode === "execution_failed",
       ),
     );
+    assert(failedInboxDiagnostics.items.every((item) => item.state !== "claimed"));
+    const failedToolInbox = failedInboxDiagnostics.items.find(
+      (item) => item.state === "dead-letter" && item.lastErrorCode === "execution_failed",
+    );
+    assert(failedToolInbox);
 
     console.log("Steel webhook demo verified");
     console.log(`api=${baseUrl}`);
@@ -266,7 +271,7 @@ try {
     console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
     console.log(`failedThreadId=${executionFailureCreated.body.threadId}`);
     console.log(`failedExecution=${failedSummary.execution.status}`);
-    console.log(`failedInboxState=${failedInboxDiagnostics.items.at(-1)?.state ?? "unknown"}`);
+    console.log(`failedInboxState=${failedToolInbox.state}`);
   } finally {
     await runnerDaemon.stop();
     await toolDaemon.stop();

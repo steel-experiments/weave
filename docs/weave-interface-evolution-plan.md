@@ -87,7 +87,7 @@ This gives the public semantic model of suspension without requiring continuatio
 
 The runner should not poll waiting threads. Waiting threads should wake from relevant events:
 
-- tool wait wakes on `tool.completed` or `tool.failed`
+- tool wait wakes on `tool.completed`; `tool.failed` is terminal for the thread in V1
 - gate wait wakes on `gate.resolved`
 - timer wait wakes on `timer.fired`
 - event wait wakes on a matching appended event
