@@ -183,19 +183,21 @@ Existing `ToolCompletionOutput` remains a compatibility shape during migration.
 Public authoring:
 
 ```ts
-await ctx.gate("approve-plan", approvePlan, { issueTitle, plan });
+const decision = await ctx.gate("approve-plan", {
+  reason: "risky-remediation",
+  proposedAction: "Approve the proposed production remediation.",
+});
 ```
 
 Runtime payload:
 
 ```ts
-export interface GateCreatedPayload<Input = unknown> {
+export interface GateCreatedPayload {
   gateId: string;
-  gateName: string;
-  scopeKey: string;
-  stepKey: string;
-  input: Input;
-  status: "pending";
+  gateType: "manual-approval";
+  reason: "tool-result-requires-approval" | "risky-remediation";
+  relatedToolCallId?: string;
+  proposedAction?: string;
 }
 ```
 

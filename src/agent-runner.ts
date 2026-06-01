@@ -1,4 +1,11 @@
-import type { AgentContract, AgentContext, AgentEventInput, AnyAgentContract } from "./agent-contract.js";
+import type {
+  AgentContract,
+  AgentContext,
+  AgentEventInput,
+  AnyAgentContract,
+  GateRequest,
+  GateResolution,
+} from "./agent-contract.js";
 import { ReplayMismatchError, ToolFailedError, WeaveError } from "./errors.js";
 import {
   deterministicUuid,
@@ -10,7 +17,7 @@ import {
 import type { AgentPlan, AgentPlanner } from "./runner.js";
 import type { ToolContract } from "./tool-contract.js";
 
-type SuspensionReason = "tool-requested" | "tool-pending";
+type SuspensionReason = "tool-requested" | "tool-pending" | "gate-created" | "gate-pending";
 
 class AgentSuspended extends Error {
   constructor(
@@ -198,6 +205,39 @@ class ReplayAgentContext implements AgentContext {
     } as ThreadEvent);
   }
 
+  async gate(key: string, request: GateRequest): Promise<GateResolution> {
+    const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
+    if (matchingEvent && matchingEvent.type !== "gate.created") {
+      throw new ReplayMismatchError("Durable step key was previously used for a different effect kind", {
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        existingType: matchingEvent.type,
+        requestedType: "gate.created",
+      });
+    }
+
+    const expectedPayload = this.gateCreatedPayload(key, request);
+    const gateCreated = matchingEvent?.type === "gate.created" ? matchingEvent : undefined;
+    if (gateCreated) {
+      if (canonicalJson(gateCreated.payload) !== canonicalJson(expectedPayload)) {
+        throw new ReplayMismatchError("Durable gate key was previously used with a different payload", {
+          scopeKey: this.scopeKey,
+          stepKey: key,
+          eventType: "gate.created",
+        });
+      }
+
+      const resolved = findGateResolvedEvent(this.options.events, gateCreated.payload.gateId);
+      if (resolved) {
+        return resolved.payload;
+      }
+
+      throw new AgentSuspended("gate-pending", []);
+    }
+
+    throw new AgentSuspended("gate-created", [this.gateCreatedEvent(key, request)]);
+  }
+
   async checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value> {
     const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
     if (matchingEvent) {
@@ -281,6 +321,35 @@ class ReplayAgentContext implements AgentContext {
       },
     };
   }
+
+  private gateCreatedEvent(key: string, request: GateRequest): ThreadEvent {
+    const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
+    return {
+      eventId: eventKey(this.threadId, "gate.created", `${this.scopeKey}:${key}`),
+      threadId: this.threadId,
+      type: "gate.created",
+      occurredAt: nowIso(),
+      correlationId: cause?.correlationId,
+      causationId: cause?.eventId,
+      scopeKey: this.scopeKey,
+      stepKey: key,
+      actor: this.actor,
+      payload: this.gateCreatedPayload(key, request),
+    };
+  }
+
+  private gateCreatedPayload(
+    key: string,
+    request: GateRequest,
+  ): Extract<ThreadEvent, { type: "gate.created" }>["payload"] {
+    return {
+      gateId: deterministicUuid("gate", this.threadId, this.scopeKey, key),
+      gateType: request.gateType ?? "manual-approval",
+      reason: request.reason,
+      relatedToolCallId: request.relatedToolCallId,
+      proposedAction: request.proposedAction,
+    };
+  }
 }
 
 function toPlan(history: readonly ThreadEvent[], events: ThreadEvent[]): AgentPlan | null {
@@ -337,6 +406,16 @@ function findToolTerminalEvent(
   return events.find(
     (event): event is Extract<ThreadEvent, { type: "tool.completed" | "tool.failed" }> =>
       (event.type === "tool.completed" || event.type === "tool.failed") && event.payload.toolCallId === toolCallId,
+  );
+}
+
+function findGateResolvedEvent(
+  events: readonly ThreadEvent[],
+  gateId: string,
+): Extract<ThreadEvent, { type: "gate.resolved" }> | undefined {
+  return events.find(
+    (event): event is Extract<ThreadEvent, { type: "gate.resolved" }> =>
+      event.type === "gate.resolved" && event.payload.gateId === gateId,
   );
 }
 

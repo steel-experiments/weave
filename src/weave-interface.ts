@@ -1,5 +1,5 @@
 export interface WeaveModuleBoundary {
-  defineTool<const Name extends string, Input, Output extends ToolOutput>(
+  defineTool<const Name extends string, Input, Output>(
     contract: ToolContract<Name, Input, Output>,
   ): ToolContract<Name, Input, Output>;
   createToolRegistry(tools: readonly AnyToolContract[]): ToolRegistry;
@@ -81,18 +81,19 @@ interface IntegrationContract<
 interface ToolContract<
   Name extends string = string,
   Input = unknown,
-  Output extends ToolOutput = ToolOutput,
+  Output = unknown,
 > {
   name: Name;
   description: string;
   input: Schema<Input>;
   output: Schema<Output>;
+  summarize?(output: Output): string;
   gate?(context: { input: Input }): ManualToolGate | undefined;
   credentials?(context: { input: Input }): CredentialRequest | readonly CredentialRequest[] | undefined;
   run(context: ToolRunContext<Input>): Promise<Output> | Output;
 }
 
-type AnyToolContract = ToolContract<string, unknown, ToolOutput>;
+type AnyToolContract = ToolContract<string, unknown, unknown>;
 
 interface ThreadEngine {
   createThread(threadId: string): Promise<void>;
@@ -160,6 +161,8 @@ interface ThreadEvent {
   correlationId?: string;
   causationId?: string;
   idempotencyKey?: string;
+  scopeKey?: string;
+  stepKey?: string;
 }
 
 interface ThreadProjection {
@@ -185,7 +188,7 @@ interface ToolRunContext<Input> {
   progress(update: ToolProgressUpdate): Promise<void>;
 }
 
-interface ToolOutput {
+interface LegacyToolOutput {
   summary: string;
   requiresManualApproval: boolean;
   data?: unknown;

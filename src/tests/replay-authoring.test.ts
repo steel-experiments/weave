@@ -331,6 +331,102 @@ async function testToolWorkerOutputSummaries(): Promise<void> {
   assert.equal(legacyCompletion.payload.summary, "legacy summary");
 }
 
+async function testGateReplay(): Promise<void> {
+  const gateAgent = agent({
+    name: "gate-agent",
+    input: inputSchema,
+    async run(ctx) {
+      const resolution = await ctx.gate("approve-remediation", {
+        reason: "risky-remediation",
+        proposedAction: "Approve rebuilding nats-prod-1 in production.",
+      });
+      return resolution.resolution;
+    },
+  });
+  const planner = createAgentPlanner(gateAgent);
+  const history = initialHistory("gate-replay");
+
+  const firstPlan = await planner.plan("gate-replay", history);
+  assert(firstPlan);
+  assert.equal(firstPlan.events.length, 1);
+  const gateCreated = firstPlan.events[0];
+  assert.equal(gateCreated?.type, "gate.created");
+  assert.equal(gateCreated.scopeKey, "agent:gate-agent");
+  assert.equal(gateCreated.stepKey, "approve-remediation");
+  assert.deepEqual(gateCreated.payload, {
+    gateId: deterministicUuid("gate", "gate-replay", "agent:gate-agent", "approve-remediation"),
+    gateType: "manual-approval",
+    reason: "risky-remediation",
+    relatedToolCallId: undefined,
+    proposedAction: "Approve rebuilding nats-prod-1 in production.",
+  });
+
+  const pendingPlan = await planner.plan("gate-replay", [...history, gateCreated]);
+  assert.equal(pendingPlan, null);
+
+  const gateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+    eventId: eventKey("gate-replay", "gate.resolved", "approve-remediation"),
+    threadId: "gate-replay",
+    type: "gate.resolved",
+    occurredAt: nowIso(),
+    correlationId: gateCreated.correlationId,
+    causationId: gateCreated.eventId,
+    scopeKey: gateCreated.scopeKey,
+    stepKey: gateCreated.stepKey,
+    actor: { type: "human", id: "approver" },
+    payload: {
+      gateId: gateCreated.payload.gateId,
+      resolution: "approved",
+      comment: "ship it",
+    },
+  };
+
+  const resolvedPlan = await planner.plan("gate-replay", [...history, gateCreated, gateResolved]);
+  assert(resolvedPlan);
+  assert.equal(resolvedPlan.resumeReason, "gate-resolved");
+  assert.equal(resolvedPlan.events[0]?.type, "agent.response.produced");
+  assert.deepEqual(resolvedPlan.events[0]?.payload, { message: "approved" });
+}
+
+async function testGatePayloadMismatch(): Promise<void> {
+  const gateAgent = agent({
+    name: "gate-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.gate("approve-remediation", {
+        reason: "risky-remediation",
+        proposedAction: "New approval text.",
+      });
+    },
+  });
+  const planner = createAgentPlanner(gateAgent);
+  const history = initialHistory("gate-mismatch");
+  const existingGate: Extract<ThreadEvent, { type: "gate.created" }> = {
+    eventId: eventKey("gate-mismatch", "gate.created", "agent:gate-agent:approve-remediation"),
+    threadId: "gate-mismatch",
+    type: "gate.created",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    causationId: history.at(-1)?.eventId,
+    scopeKey: "agent:gate-agent",
+    stepKey: "approve-remediation",
+    actor: { type: "agent", id: "gate-agent" },
+    payload: {
+      gateId: deterministicUuid("gate", "gate-mismatch", "agent:gate-agent", "approve-remediation"),
+      gateType: "manual-approval",
+      reason: "risky-remediation",
+      proposedAction: "Old approval text.",
+    },
+  };
+
+  await assert.rejects(
+    async () => {
+      await planner.plan("gate-mismatch", [...history, existingGate]);
+    },
+    ReplayMismatchError,
+  );
+}
+
 function initialHistory(threadId: string): ThreadEvent[] {
   const correlationId = deterministicUuid("correlation", threadId);
   const sessionStarted: Extract<ThreadEvent, { type: "session.started" }> = {
@@ -458,5 +554,7 @@ await testCheckpointReplay();
 await testCheckpointMismatch();
 await testDomainToolOutputReplay();
 await testToolWorkerOutputSummaries();
+await testGateReplay();
+await testGatePayloadMismatch();
 
 console.log("Replay authoring tests passed");

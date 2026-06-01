@@ -114,6 +114,8 @@ export class ThreadService {
         occurredAt: nowIso(),
         correlationId: gateCreated.correlationId,
         causationId: gateCreated.eventId,
+        scopeKey: gateCreated.scopeKey,
+        stepKey: gateCreated.stepKey,
         actor: { type: "human", id: "demo-approver" },
         payload: { gateId, resolution, comment },
       },

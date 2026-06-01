@@ -6,6 +6,18 @@ import type { MaybePromise } from "./types.js";
 
 export type ToolCallOptions = Record<string, unknown>;
 
+type GateCreatedPayload = Extract<ThreadEvent, { type: "gate.created" }>["payload"];
+type GateResolvedPayload = Extract<ThreadEvent, { type: "gate.resolved" }>["payload"];
+
+export type GateRequest = {
+  gateType?: GateCreatedPayload["gateType"];
+  reason: GateCreatedPayload["reason"];
+  relatedToolCallId?: string;
+  proposedAction?: string;
+};
+
+export type GateResolution = GateResolvedPayload;
+
 export type AgentEventInput = {
   type: ThreadEvent["type"];
   payload: ThreadEvent["payload"];
@@ -26,6 +38,7 @@ export type AgentContext<
     input: Input,
     options?: ToolCallOptions,
   ): Promise<Output>;
+  gate(key: string, request: GateRequest): Promise<GateResolution>;
   checkpoint<Value>(key: string, compute: () => MaybePromise<Value>): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
   uuid(key: string): string;

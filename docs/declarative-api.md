@@ -25,7 +25,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.tool` | First durable effect |
 | `ctx.emit` | Provisional replay-safe event helper |
 | `ctx.uuid` | Provisional deterministic ID helper |
-| `ctx.gate` | Planned |
+| `ctx.gate` | Current approval effect |
 | `ctx.checkpoint` | Current local durable effect |
 | `ctx.spawn` / `ctx.join` | Planned |
 | policies | Planned |
@@ -34,12 +34,12 @@ The runtime turns durable operations into thread events, worker work, resumable 
 
 ## Authoring Primitives
 
-- `tool` / `defineTool`: declares a typed side-effect contract with input, output, progress, optional gate metadata, credentials, and `run`.
+- `tool` / `defineTool`: declares a typed side-effect contract with input, output, progress, credentials, and `run`.
 - `agent` / `defineAgent`: declares an agent using the new `run(ctx, input)` authoring model or the lower-level planner model.
 - `weave` / `defineWeaveApp`: composes agents, tools, integrations, and runtime dependencies into an application registry.
 - `integration` / `defineIntegration`: declares external route and event handling adapters.
 
-Gates, policies, capabilities, typed events, projections, checkpoints, and subthreads are planned public primitives. They are not part of the first V1 authoring slice unless explicitly documented below.
+Policies, capabilities, typed events, projections, and subthreads are planned public primitives. They are not part of the first V1 authoring slice unless explicitly documented below.
 
 ## App Definition
 
@@ -161,7 +161,7 @@ Pass 3:
   -> append final agent events
 ```
 
-A pending durable effect should not cause the runner to poll. The runner wakes when a relevant event is appended, such as `tool.completed`, `tool.failed`, or later `gate.resolved`.
+A pending durable effect should not cause the runner to poll. The runner wakes when a relevant event is appended, such as `tool.completed`, `tool.failed`, or `gate.resolved`.
 
 ## Durable Step Keys
 
@@ -236,7 +236,8 @@ Safe:
 - `ctx.tool`
 - `ctx.emit`
 - `ctx.checkpoint`
-- later `ctx.gate` and `ctx.spawn`
+- `ctx.gate`
+- later `ctx.spawn`
 
 Unsafe:
 
@@ -316,6 +317,46 @@ Use checkpoints for:
 - compact model-prep objects
 
 Checkpoint values are stored in thread events, so keep them small and JSON-shaped. Large outputs should become artifacts later.
+
+## ctx.gate Semantics
+
+`ctx.gate(key, request)` creates a first-class approval gate and returns the recorded resolution after a human or external system resolves it.
+
+```ts
+const approval = await ctx.gate("approve-rebuild", {
+  reason: "risky-remediation",
+  proposedAction: "Drain and rebuild nats-prod-1 in production.",
+});
+
+if (approval.resolution === "approved") {
+  await ctx.tool("rebuild-node", rebuildNode, input);
+}
+```
+
+Missing:
+
+- append `gate.created`
+- set thread projection to blocked
+- suspend the runner pass
+
+Pending:
+
+- append nothing
+- suspend the runner pass
+
+Resolved:
+
+- return `gate.resolved.payload`
+- let agent logic branch on `approved` or `denied`
+
+Mismatch:
+
+- throw `ReplayMismatchError` if the same key was already used for another durable effect kind
+- throw `ReplayMismatchError` if the gate payload changes on replay
+
+`gateId` is deterministic from `threadId + scopeKey + stepKey`. The public code identity is still the stable step key. External resolvers use `ThreadService.resolveGate(threadId, gateId, resolution, comment)`.
+
+Approval policy remains explicit agent logic in this slice. Future policy helpers may centralize rules for which actions require approval, but approval intent should not be encoded inside tool output.
 
 ## Provisional Replay Helpers
 
@@ -495,10 +536,10 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 
 ## Current Limitations
 
-- `ctx.tool` is the only first-class durable effect implemented in this slice.
+- `ctx.tool`, `ctx.gate`, and `ctx.checkpoint` are implemented durable effects.
 - `ctx.emit` and `ctx.uuid` are provisional replay helpers.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
-- `ctx.gate`, `ctx.spawn`, `ctx.join`, policies, capabilities, typed event factories, and projections are planned but not implemented in this slice.
+- `ctx.spawn`, `ctx.join`, policies, capabilities, typed event factories, and projections are planned but not implemented in this slice.
 - Package subpaths are not split yet; root exports still include runtime internals.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.
@@ -506,7 +547,6 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 
 ## Planned Next Primitives
 
-- `ctx.gate` for first-class human approval and external decision points.
 - `ctx.spawn` and `ctx.join` for child threads and sub-agent work.
 - policies and capabilities for centralized governance and scoped grants.
 - typed event factories for safer `ctx.emit` calls.

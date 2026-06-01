@@ -22,3 +22,4 @@ The slice document should stay alive after implementation. It becomes the compac
 
 - `01-replay-authoring-api.md`: planned first slice for replay-based `agent.run` and `ctx.tool`.
 - `02-tool-output-migration.md`: shipped slice for domain-shaped tool outputs with legacy compatibility.
+- `03-gates-and-approval-policies.md`: shipped slice for replay-safe `ctx.gate` and explicit approval gates.

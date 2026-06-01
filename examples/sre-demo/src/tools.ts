@@ -187,12 +187,6 @@ export const infraRebuildNode = defineTool({
       status: z.literal("completed"),
     }),
   }),
-  gate: ({ input }) => ({
-    type: "manual-approval",
-    reason: "risky-remediation",
-    message: `Approve rebuilding ${input.nodeId} in production?`,
-    proposedAction: `Drain and rebuild ${input.nodeId} in production.`,
-  }),
   credentials: ({ input }) => ({
     name: "infra.production",
     kind: "delegated-identity",

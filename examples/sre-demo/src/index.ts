@@ -81,14 +81,9 @@ try {
     ]);
     assert(beforeApprovalEvents.some((event) => event.type === "agent.finding.produced"));
     assert(beforeApprovalEvents.some((event) => event.type === "agent.remediation.proposed"));
-    const rebuildNode = activeAgent.tools?.find((tool) => tool.name === "infra.rebuildNode");
-    assert(rebuildNode?.gate?.({
-      input: {
-        environment: "production",
-        nodeId: "nats-prod-1",
-        reason: "demo",
-      },
-    }));
+    const approvalGate = beforeApprovalEvents.find((event) => event.type === "gate.created");
+    assert.equal(approvalGate?.payload.reason, "risky-remediation");
+    assert.equal(approvalGate?.payload.proposedAction, "Approve rebuilding nats-prod-1 in production.");
 
     const gateId = blockedProjection.pendingGateIds[0];
     assert(gateId);
@@ -140,8 +135,7 @@ try {
       console.log(`agent=${activeAgent.name}`);
       console.log("registeredTools:");
       for (const tool of activeAgent.tools ?? []) {
-        const gate = tool.gate ? " gate=manual-approval" : "";
-        console.log(`- ${tool.name}${gate}`);
+        console.log(`- ${tool.name}`);
       }
       console.log("credentialEvents:");
       for (const event of events) {
