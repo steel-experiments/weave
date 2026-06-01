@@ -30,7 +30,7 @@ The docs are moving toward this information architecture:
 - `docs/docs-sync/slices/`: one progress-tracked markdown document per docs sync slice
 - `docs/slices/`: shared slice template and rules used by all verticals
 - future `docs/weave/`: stable Weave core architecture, contracts, event model, and implementation notes
-- future `docs/research/`: comparisons and research notes that inform but do not directly drive current implementation
+- `docs/research/`: comparisons and research notes that inform but do not directly drive current implementation
 
 This structure is intentionally incremental. Existing root-level docs are not moved yet so references remain stable while the new working model is adopted.
 
@@ -49,8 +49,10 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 - `architecture.md`: system shape, boundaries, and core components
 - `glossary.md`: shared Weave vocabulary
 - `interface.md`: low-level engine and higher-level thread interfaces
+- `weave-interface-evolution-plan.md`: accepted direction for the public authoring API and replay-based first slice
 - `agent-adapters.md`: how OpenCode-style and other agents can adapt to the thread model
 - `declarative-api.md`: current `defineTool`, `defineAgent`, and `defineWeaveApp` authoring API
+- `integrations.md`: adapter contract for Slack-style external integrations
 - `engine-contracts.md`: typed engine contracts for the first Postgres-backed implementation
 - `event-taxonomy.md`: strongly typed PoC event set using Zod-style schemas
 - `runnable-inbox.md`: explicit inbox routing and claim model for daemon work
@@ -63,18 +65,20 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 - `mvp.md`: smallest useful end-to-end Weave primitive definition
 - `poc-scope.md`: fixed decisions and success criteria for the first proof of concept
 - `poc-components-and-flow.md`: detailed component plan and end-to-end demo flow
+- `slices/01-replay-authoring-api.md`: planned first slice for `agent.run` and replay-based `ctx.tool`
 - `roadmap.md`: original phase roadmap; should be reconciled with the slice model over time
 
 ## Existing Research And Positioning Docs
 
 - `positioning.md`: product framing for Weave as a control plane above engines
 - `engines-and-integrations.md`: classification of execution engines, storage engines, companions, and adapters
-- `similar-systems.md`: comparison of adjacent systems and how Weave differs
-- `dbos-comparison.md`: focused DBOS comparison and integration strategy
-- `weave-research.md`: longer-form technical research and reference notes
-- `ecc-analysis.md`: analysis of ECC as an adjacent runtime/operator system
-- `ecc-features-for-weave.md`: focused ECC feature analysis for security, skills, instincts, and memory
-- `s2-engine-research.md`: evaluation of S2 and s2-lite as a possible event stream engine
+- `research/README.md`: grouped research index
+- `research/similar-systems.md`: comparison of adjacent systems and how Weave differs
+- `research/dbos-comparison.md`: focused DBOS comparison and integration strategy
+- `research/weave-primitive-research.md`: longer-form technical research and reference notes
+- `research/ecc-analysis.md`: analysis of ECC as an adjacent runtime/operator system
+- `research/ecc-features-for-weave.md`: focused ECC feature analysis for security, skills, instincts, and memory
+- `research/s2-engine-research.md`: evaluation of S2 and s2-lite as a possible event stream engine
 
 ## Working Rule
 

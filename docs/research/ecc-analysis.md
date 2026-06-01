@@ -191,7 +191,7 @@ Relevant ECC files:
 
 ## Where ECC Fits Relative To Weave
 
-Using this repo's vocabulary from `positioning.md`, `architecture.md`, and `engines-and-integrations.md`:
+Using this repo's vocabulary from `../positioning.md`, `../architecture.md`, and `../engines-and-integrations.md`:
 
 - ECC is mostly an execution-side and integration-side system
 - Weave is the durable boundary above those systems
@@ -322,7 +322,7 @@ We should adapt that principle for:
 - install-time validation for adapters and integrations
 - health checks for external workers or MCP-style integrations before work dispatch
 
-This maps directly to `weave-research.md` and its capability-based secret model.
+This maps directly to `weave-primitive-research.md` and its capability-based secret model.
 
 ## What We Should Not Adapt Directly
 
@@ -339,7 +339,7 @@ The durable truth should remain the thread event log.
 
 ECC 2.0 uses SQLite for local state.
 
-That is a fine operator-shell choice, but it does not change the conclusion in `weave-research.md`:
+That is a fine operator-shell choice, but it does not change the conclusion in `weave-primitive-research.md`:
 
 - Postgres should still be the default first production engine for thread durability, leases, and transactional append behavior
 

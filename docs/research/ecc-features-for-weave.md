@@ -9,7 +9,7 @@ This document looks specifically at ECC features that overlap with Weave goals:
 - instincts and continuous learning
 - memory and persistence
 
-It is narrower than `ecc-analysis.md`.
+It is narrower than `./ecc-analysis.md`.
 
 The main question here is not just "what does ECC do?"
 

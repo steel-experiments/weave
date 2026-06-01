@@ -84,6 +84,26 @@ A child agent or delegated execution path that may have its own thread while sti
 
 The ability to stop and later resume work based on persisted events and state rather than live process memory.
 
+## Durable Thread Suspension
+
+A waiting state recorded in the thread, such as waiting on a tool, gate, timer, or external event. The runner exits, no process is held open, and a later relevant event wakes the thread.
+
+## Continuation Suspension
+
+Persisting the exact JavaScript execution continuation so a function resumes at the same `await` point without re-executing earlier code. Weave V1 does not implement this.
+
+## Durable Effect
+
+A resumable operation inside an agent run that is reconciled against thread events, such as a tool call, gate, model decision, wait, sleep, checkpoint, or spawned thread.
+
+## Step Key
+
+A stable author-provided key that identifies one durable effect within the current scope. During replay, Weave uses the step key to decide whether to request work, wait for pending work, return a completed result, or fail on mismatch.
+
+## Scope Key
+
+A runtime-assigned namespace for step keys within a thread. The first authoring adapter uses `agent:<agentName>` as the default scope key so different agents or nested scopes can reuse local step names safely.
+
 ## Ephemeral Compute
 
 The assumption that runtimes and runners may stop at any time without losing the durable source of truth.

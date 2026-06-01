@@ -17,3 +17,7 @@ It should define:
 - what docs must be updated when it ships
 
 The slice document should stay alive after implementation. It becomes the compact record of what was planned, what actually shipped, and what follow-up remains.
+
+## Current Weave Core Slices
+
+- `01-replay-authoring-api.md`: planned first slice for replay-based `agent.run` and `ctx.tool`.

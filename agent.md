@@ -21,9 +21,23 @@ It contains:
 - a deterministic mock agent and mock tool worker
 - daemonized runner and tool-worker loops with explicit inbox claims
 - a mocked SRE north-star demo
+- Blade product planning as the current north-star direction
+- per-slice planning docs for Blade, docs sync, and future verticals
 - typed authoring primitives like `defineTool`, `defineAgent`, and `defineWeaveApp`
 
 The docs are still the working source of truth for direction and scope.
+
+## Current North Star
+
+Blade is the product north star for this repository.
+
+Weave is the durable control layer. Blade is the production operator we expect to run on top of it. The Steel docs sync app is still important, but it is a focused Weave app and recurring audit workflow rather than the full Blade product surface.
+
+Use this split when making decisions:
+
+- Weave owns threads, events, inboxes, runners, workers, typed tools, credentials, gates, artifacts, and resumability.
+- Blade owns product workflows, specialist roles, prompts, integration UX, runtime choices, and Steel-specific operating taste.
+- Docs sync owns docs/API drift audits, source collection, findings, CI outcomes, and optional GitHub publishing.
 
 ## Who Is Who
 
@@ -76,16 +90,57 @@ Default to these choices unless there is a concrete reason not to:
 - use deterministic mocks to prove semantics before introducing real integrations
 - keep engine boundaries explicit so Postgres is not the permanent assumption
 
+## Slice Methodology
+
+Plan meaningful feature work as vertical slices.
+
+A slice is one independently reviewable markdown document that tracks:
+
+- the user-visible outcome
+- non-goals
+- architecture impact
+- tool, event, artifact, credential, and gate changes
+- implementation steps
+- acceptance criteria
+- test plan
+- progress
+- completion notes
+
+Use `docs/slices/template.md` for new slices.
+
+Current slice areas:
+
+- `docs/blade/slices/`: Blade product slices
+- `docs/docs-sync/slices/`: Steel docs sync app slices
+- future verticals should follow the same pattern
+
+A slice is not complete when code merges. It is complete only when:
+
+- the behavior exists in code
+- meaningful tests pass
+- the slice doc records actual behavior and test evidence
+- the owning vertical doc is updated
+- changed Weave primitives are reflected in core architecture docs
+- new terms are reflected in `docs/glossary.md` or `docs/blade/domain-model.md`
+- follow-up work is captured as new slices or explicit open questions
+
+Test plans must prove the real module or vertical works. Mock external networks, model providers, GitHub, Slack, Sentry, Axiom, and sandbox providers at their boundaries, but do not mock the planner, service, engine, projection, worker, or tool module that the slice exists to build.
+
 ## Current Implementation Landmarks
 
 Read these files before making significant architectural changes:
 
 - `docs/overview.md`: thesis, principles, and north-star framing
+- `docs/docs-operating-model.md`: slice methodology, completion rules, and testing expectations
 - `docs/glossary.md`: canonical terminology
 - `docs/architecture.md`: system boundaries and primitives
 - `docs/interface.md`: engine and thread interfaces
+- `docs/blade/overview.md`: Blade product north star
+- `docs/blade/domain-model.md`: Blade vocabulary mapped to Weave primitives
+- `docs/blade/slices/README.md`: current Blade slice index
 - `docs/poc-scope.md`: fixed PoC decisions and non-goals
 - `docs/declarative-api.md`: current authoring API and why `defineThread` does not exist yet
+- `docs/research/README.md`: grouped comparison and research index
 - `README.md`: local setup, commands, and current implementation summary
 
 Code landmarks:
@@ -107,13 +162,15 @@ Code landmarks:
 If you are adding or changing behavior, use this decision order:
 
 1. Preserve thread semantics.
-2. Keep the event model clearer, not broader.
-3. Prefer a small explicit seam over a generic framework.
-4. Keep hidden runtime state out of correctness-critical paths.
-5. Update docs when the change affects terminology, invariants, or intended scope.
+2. Check whether the work belongs to an existing slice or needs a new slice doc.
+3. Keep the event model clearer, not broader.
+4. Prefer a small explicit seam over a generic framework.
+5. Keep hidden runtime state out of correctness-critical paths.
+6. Update docs when the change affects terminology, invariants, intended scope, or architecture.
 
 Good changes usually look like this:
 
+- a slice doc updated with actual progress and test evidence
 - a new event type with a clear durable fact
 - a narrower runner or worker responsibility
 - a typed tool contract instead of ad hoc execution
@@ -122,6 +179,9 @@ Good changes usually look like this:
 
 Risky changes usually look like this:
 
+- implementing broad feature work without a slice doc
+- marking a slice done without tests or architecture updates
+- tests that only validate mocks and never exercise the module being built
 - bypassing the event log because it feels faster
 - storing correctness-critical state only in memory
 - letting tools perform opaque work without lifecycle events
@@ -196,12 +256,16 @@ If you are new to the repo, start here:
 
 1. `docs/README.md`
 2. `docs/overview.md`
-3. `docs/glossary.md`
-4. `docs/architecture.md`
-5. `docs/interface.md`
-6. `docs/poc-scope.md`
-7. `docs/declarative-api.md`
-8. `README.md`
+3. `docs/docs-operating-model.md`
+4. `docs/blade/overview.md`
+5. `docs/blade/domain-model.md`
+6. `docs/blade/slices/README.md`
+7. `docs/glossary.md`
+8. `docs/architecture.md`
+9. `docs/interface.md`
+10. `docs/poc-scope.md`
+11. `docs/declarative-api.md`
+12. `README.md`
 
 ## Bottom Line
 

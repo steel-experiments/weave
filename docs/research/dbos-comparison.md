@@ -342,7 +342,7 @@ Weave repository:
 - `docs/what-is-weave.md`
 - `docs/architecture.md`
 - `docs/positioning.md`
-- `docs/similar-systems.md`
+- `docs/research/similar-systems.md`
 - `docs/engines-and-integrations.md`
 - `docs/declarative-api.md`
 - `docs/runnable-inbox.md`

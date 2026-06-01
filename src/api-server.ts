@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 import type { ThreadArtifactStore } from "./artifacts.js";
+import type { WeaveAppDefinition } from "./app-contract.js";
 import type { ThreadEngine } from "./contracts.js";
 import {
   ActorSchema,
@@ -20,6 +21,7 @@ import {
   type ObservabilitySink,
 } from "./observability.js";
 import { buildThreadSummary } from "./summary.js";
+import { createIntegrationRoutes } from "./integration-contract.js";
 
 const CreateThreadBodySchema = z.object({
   prompt: z.string().min(1),
@@ -40,6 +42,7 @@ export type ApiRouteHandler = (
 ) => Promise<boolean> | boolean;
 
 export type ApiServerOptions = {
+  app?: WeaveAppDefinition;
   artifactStore?: ThreadArtifactStore;
   observability?: ObservabilitySink;
   observabilityReader?: ObservabilityReader;
@@ -48,6 +51,10 @@ export type ApiServerOptions = {
 
 export function createApiServer(engine: ThreadEngine, service: ThreadService, options: ApiServerOptions = {}): Server {
   const observability = options.observability ?? new NoopObservabilitySink();
+  const beforeRoutes = [
+    ...(options.beforeRoutes ?? []),
+    ...createIntegrationRoutes(options.app?.integrations, { engine, service }),
+  ];
   return createServer(async (request, response) => {
     const span = apiSpanContext(request);
     const startedAt = new Date();
@@ -58,7 +65,7 @@ export function createApiServer(engine: ThreadEngine, service: ThreadService, op
         service,
         request,
         response,
-        options.beforeRoutes,
+        beforeRoutes,
         options.artifactStore,
         options.observabilityReader,
         observability,

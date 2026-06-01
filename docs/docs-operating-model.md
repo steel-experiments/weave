@@ -91,14 +91,14 @@ Research docs inform decisions, but they should not be treated as current plans 
 
 Current examples:
 
-- `similar-systems.md`
-- `dbos-comparison.md`
-- `s2-engine-research.md`
-- `ecc-analysis.md`
-- `ecc-features-for-weave.md`
-- `weave-research.md`
+- `research/similar-systems.md`
+- `research/dbos-comparison.md`
+- `research/s2-engine-research.md`
+- `research/ecc-analysis.md`
+- `research/ecc-features-for-weave.md`
+- `research/weave-primitive-research.md`
 
-Research docs should be moved to a future `docs/research/` directory after active planning docs stop linking to root-level paths directly.
+Research docs live under `docs/research/` so root docs can stay focused on active product, architecture, and slice planning.
 
 ## Slice Lifecycle
 
@@ -200,5 +200,4 @@ Use this order to restructure without breaking references:
 2. Point `docs/README.md` at the new docs.
 3. Keep old root docs as historical rollups until their content is either migrated or intentionally archived.
 4. Move stable core docs into a future `docs/weave/` directory in one dedicated cleanup slice.
-5. Move research docs into a future `docs/research/` directory in one dedicated cleanup slice.
-6. Delete or archive superseded rollups only after inbound links are updated.
+5. Delete or archive superseded rollups only after inbound links are updated.

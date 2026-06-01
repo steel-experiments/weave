@@ -1,19 +1,25 @@
 import type { AgentContract } from "./agent-contract.js";
 import type { ThreadArtifactStore } from "./artifacts.js";
 import type { CredentialProvider } from "./credentials.js";
+import type { AnyIntegrationContract } from "./integration-contract.js";
 import type { ObservabilitySink } from "./observability.js";
 
-export type WeaveAppDefinition<Agents extends readonly AgentContract[] = readonly AgentContract[]> = {
+export type WeaveAppDefinition<
+  Agents extends readonly AgentContract[] = readonly AgentContract[],
+  Integrations extends readonly AnyIntegrationContract[] = readonly AnyIntegrationContract[],
+> = {
   name?: string;
   agents: Agents;
+  integrations?: Integrations;
   credentialProvider?: CredentialProvider;
   artifactStore?: ThreadArtifactStore;
   observability?: ObservabilitySink;
 };
 
-export function defineWeaveApp<const Agents extends readonly AgentContract[]>(
-  definition: WeaveAppDefinition<Agents>,
-): WeaveAppDefinition<Agents> {
+export function defineWeaveApp<
+  const Agents extends readonly AgentContract[],
+  const Integrations extends readonly AnyIntegrationContract[] = readonly AnyIntegrationContract[],
+>(definition: WeaveAppDefinition<Agents, Integrations>): WeaveAppDefinition<Agents, Integrations> {
   return definition;
 }
 

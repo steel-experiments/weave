@@ -5,6 +5,7 @@ import type { ThreadService } from "./thread-service.js";
 import type { PostgresThreadEngine } from "./postgres-engine.js";
 import { ThreadRunner } from "./runner.js";
 import { ContractToolWorker } from "./tool-worker.js";
+import { collectIntegrationTools } from "./integration-contract.js";
 
 export type WeaveRuntimeOptions<Agents extends readonly { name: string }[] = readonly { name: string }[]> = {
   app: WeaveAppDefinition<any>;
@@ -25,6 +26,7 @@ export type WeaveRuntime = {
 
 export function createWeaveRuntime(options: WeaveRuntimeOptions): WeaveRuntime {
   const activeAgent = getAgent(options.app, options.agentName as never);
+  const tools = [...activeAgent.tools, ...collectIntegrationTools(options.app.integrations)];
   const runner = new ThreadRunner(
     options.engine,
     options.engine,
@@ -34,7 +36,7 @@ export function createWeaveRuntime(options: WeaveRuntimeOptions): WeaveRuntime {
   );
   const toolWorker = new ContractToolWorker(
     options.engine,
-    activeAgent.tools,
+    tools,
     options.toolWorkerId,
     options.app.credentialProvider,
     options.app.observability,
