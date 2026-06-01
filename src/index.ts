@@ -21,6 +21,7 @@ export * from "./summary.js";
 export * from "./credentials.js";
 export * from "./observability.js";
 export * from "./otlp-observability.js";
+export * from "./policy-contract.js";
 export * from "./timeline.js";
 export * from "./tool-contract.js";
 export * from "./tool-worker.js";

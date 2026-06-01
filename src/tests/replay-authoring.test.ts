@@ -11,6 +11,7 @@ import {
   type ThreadProjection,
   type ThreadEvent,
 } from "../events.js";
+import { approvalPolicy } from "../policy-contract.js";
 import { tool, type AnyToolContract } from "../tool-contract.js";
 import { ContractToolWorker } from "../tool-worker.js";
 
@@ -452,6 +453,27 @@ async function testGatePayloadMismatch(): Promise<void> {
   );
 }
 
+async function testApprovalPolicyEvaluation(): Promise<void> {
+  const policy = approvalPolicy({
+    name: "production-change",
+    requiresApproval(input: { environment: "staging" | "production" }) {
+      return input.environment === "production";
+    },
+    gate() {
+      return {
+        reason: "risky-remediation",
+        proposedAction: "Approve production change.",
+      };
+    },
+  });
+
+  assert.equal(policy.evaluate({ environment: "staging" }), undefined);
+  assert.deepEqual(policy.evaluate({ environment: "production" }), {
+    reason: "risky-remediation",
+    proposedAction: "Approve production change.",
+  });
+}
+
 function initialHistory(threadId: string): ThreadEvent[] {
   const correlationId = deterministicUuid("correlation", threadId);
   const sessionStarted: Extract<ThreadEvent, { type: "session.started" }> = {
@@ -582,5 +604,6 @@ await testDomainToolOutputReplay();
 await testToolWorkerOutputSummaries();
 await testGateReplay();
 await testGatePayloadMismatch();
+await testApprovalPolicyEvaluation();
 
 console.log("Replay authoring tests passed");

@@ -65,6 +65,6 @@ Changed modules:
 
 Known follow-ups:
 
-- Central policy helpers for reusable approval rules.
+- Runtime-enforced policy decisions beyond the authoring helper added in `08-policy-helpers-for-gates.md`.
 - Gate schemas beyond manual approval.
 - SRE migration from legacy tool output envelopes to domain-shaped outputs was completed by `04-sre-run-first-domain-outputs.md`.

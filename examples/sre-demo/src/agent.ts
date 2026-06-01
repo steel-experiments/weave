@@ -1,4 +1,4 @@
-import { agent } from "weave";
+import { agent, approvalPolicy } from "weave";
 import { z } from "zod";
 import {
   axiomSearchLogs,
@@ -72,10 +72,16 @@ export const sreAgent = agent({
       },
     });
 
-    const approval = await ctx.gate("approve-rebuild-nats-prod-1", {
-      reason: "risky-remediation",
-      proposedAction: "Approve rebuilding nats-prod-1 in production.",
-    });
+    const rebuildInput = {
+      environment: "production" as const,
+      nodeId: "nats-prod-1",
+      reason: "Drain and rebuild node after correlated checkout-api database timeout incident.",
+      risk: "high" as const,
+    };
+    const approvalGate = productionRemediationPolicy.evaluate(rebuildInput);
+    const approval = approvalGate
+      ? await ctx.gate("approve-rebuild-nats-prod-1", approvalGate)
+      : { gateId: "policy-not-required", resolution: "approved" as const };
 
     if (approval.resolution === "denied") {
       const report = deniedReport();
@@ -90,11 +96,7 @@ export const sreAgent = agent({
       return report;
     }
 
-    await ctx.tool("infra-rebuild-node", infraRebuildNode, {
-      environment: "production" as const,
-      nodeId: "nats-prod-1",
-      reason: "Drain and rebuild node after correlated checkout-api database timeout incident.",
-    });
+    await ctx.tool("infra-rebuild-node", infraRebuildNode, rebuildInput);
 
     const report = finalReport({
       service: logs.service,
@@ -112,6 +114,26 @@ export const sreAgent = agent({
     return report;
   },
 });
+
+const productionRemediationPolicy = approvalPolicy({
+  name: "production-remediation",
+  description: "Require human approval before high-risk production remediation.",
+  requiresApproval(input: ProductionRemediationPolicyInput) {
+    return input.environment === "production" && input.risk === "high";
+  },
+  gate(input: ProductionRemediationPolicyInput) {
+    return {
+      reason: "risky-remediation",
+      proposedAction: `Approve rebuilding ${input.nodeId} in production.`,
+    };
+  },
+});
+
+type ProductionRemediationPolicyInput = {
+  environment: "production";
+  nodeId: string;
+  risk: "low" | "medium" | "high";
+};
 
 function finalReport(input: { service: string; release: string; errorPattern: string }) {
   return {

@@ -30,7 +30,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.gate` | Current approval effect |
 | `ctx.checkpoint` | Current local durable effect |
 | `ctx.spawn` / `ctx.join` | Planned |
-| policies | Planned |
+| `approvalPolicy` | Current authoring helper |
 | capabilities | Planned |
 | package subpaths | Current runtime boundary |
 
@@ -43,7 +43,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 
 The older `defineTool`, `defineAgent`, `defineWeaveApp`, and `defineIntegration` names remain exported for compatibility. New examples should prefer the shorter authoring names.
 
-Policies, capabilities, typed events, projections, and subthreads are planned public primitives. They are not part of the first V1 authoring slice unless explicitly documented below.
+Capabilities, typed events, projections, and subthreads are planned public primitives. They are not part of the first V1 authoring slice unless explicitly documented below.
 
 ## App Definition
 
@@ -369,7 +369,36 @@ Mismatch:
 
 `gateId` is deterministic from `threadId + scopeKey + stepKey`. The public code identity is still the stable step key. External resolvers use `ThreadService.resolveGate(threadId, gateId, resolution, comment)`.
 
-Approval policy remains explicit agent logic in this slice. Future policy helpers may centralize rules for which actions require approval, but approval intent should not be encoded inside tool output.
+Approval policy remains explicit agent logic. Approval intent should not be encoded inside tool output.
+
+## Approval Policy Helpers
+
+`approvalPolicy(...)` is a lightweight authoring helper for reusable approval decisions. It is not a runtime enforcement boundary yet.
+
+```ts
+const productionRemediation = approvalPolicy({
+  name: "production-remediation",
+  requiresApproval(input) {
+    return input.environment === "production" && input.risk === "high";
+  },
+  gate(input) {
+    return {
+      reason: "risky-remediation",
+      proposedAction: `Approve ${input.action} in ${input.environment}.`,
+    };
+  },
+});
+
+const gate = productionRemediation.evaluate(action);
+if (gate) {
+  const approval = await ctx.gate("approve-action", gate);
+  if (approval.resolution === "denied") {
+    return;
+  }
+}
+```
+
+Policy helpers are useful for naming and reusing approval rules across agents. The agent still calls `ctx.gate`; future runtime policy enforcement may add stronger guarantees.
 
 ## Provisional Replay Helpers
 

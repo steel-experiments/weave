@@ -19,6 +19,8 @@ export interface WeaveModuleBoundary {
   integration<const Name extends string, const Tools extends readonly AnyToolContract[]>(
     contract: IntegrationContract<Name, Tools>,
   ): IntegrationContract<Name, Tools>;
+  approvalPolicy<Input>(definition: ApprovalPolicyDefinition<Input>): ApprovalPolicy<Input>;
+  defineApprovalPolicy<Input>(definition: ApprovalPolicyDefinition<Input>): ApprovalPolicy<Input>;
   defineWeaveApp<
     const Agents extends readonly AgentContract[],
     const Integrations extends readonly IntegrationContract[] = readonly IntegrationContract[],
@@ -108,6 +110,21 @@ interface IntegrationContract<
   tools?: Tools;
   createRoutes?(context: IntegrationRuntimeContext): readonly ApiRouteHandler[];
   eventHandlers?: readonly IntegrationEventHandler[];
+}
+
+interface ApprovalPolicy<Input> {
+  name: string;
+  description?: string;
+  requiresApproval(input: Input): boolean;
+  gate(input: Input): GateRequest;
+  evaluate(input: Input): GateRequest | undefined;
+}
+
+interface ApprovalPolicyDefinition<Input> {
+  name: string;
+  description?: string;
+  requiresApproval(input: Input): boolean;
+  gate(input: Input): GateRequest;
 }
 
 interface ToolContract<
