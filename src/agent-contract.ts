@@ -26,6 +26,7 @@ export type AgentContext<
     input: Input,
     options?: ToolCallOptions,
   ): Promise<Output>;
+  checkpoint<Value>(key: string, compute: () => MaybePromise<Value>): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
   uuid(key: string): string;
 };

@@ -26,7 +26,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.emit` | Provisional replay-safe event helper |
 | `ctx.uuid` | Provisional deterministic ID helper |
 | `ctx.gate` | Planned |
-| `ctx.checkpoint` | Planned |
+| `ctx.checkpoint` | Current local durable effect |
 | `ctx.spawn` / `ctx.join` | Planned |
 | policies | Planned |
 | capabilities | Planned |
@@ -234,7 +234,8 @@ Safe:
 - deterministic transformations
 - `ctx.tool`
 - `ctx.emit`
-- later `ctx.gate`, `ctx.checkpoint`, and `ctx.spawn`
+- `ctx.checkpoint`
+- later `ctx.gate` and `ctx.spawn`
 
 Unsafe:
 
@@ -267,15 +268,57 @@ await ctx.emit("finding", {
 });
 ```
 
-Later, use `ctx.checkpoint` for nondeterministic values that must be persisted:
+Use `ctx.checkpoint` for nondeterministic values that must be persisted:
 
 ```ts
 const findingId = await ctx.checkpoint("finding-id", () => crypto.randomUUID());
 ```
 
+## ctx.checkpoint Semantics
+
+`ctx.checkpoint(key, compute)` stores a local durable value in the thread and returns it on replay.
+
+```ts
+const normalized = await ctx.checkpoint("normalized-input", () => {
+  return normalizeInput(input);
+});
+
+const findingId = await ctx.checkpoint("finding-id", () => {
+  return crypto.randomUUID();
+});
+```
+
+Missing:
+
+- run `compute`
+- append `checkpoint.completed`
+- return the computed value
+
+Completed:
+
+- return the stored checkpoint value
+- do not rerun `compute`
+
+Mismatch:
+
+- throw `ReplayMismatchError` if the same key was already used for another durable effect kind
+
+If `compute` throws, Weave throws the error and appends no checkpoint event.
+
+Use checkpoints for:
+
+- expensive pure work
+- normalized inputs
+- generated IDs
+- timestamps
+- nondeterministic values that must stay stable across replay
+- compact model-prep objects
+
+Checkpoint values are stored in thread events, so keep them small and JSON-shaped. Large outputs should become artifacts later.
+
 ## Provisional Replay Helpers
 
-`ctx.emit` and `ctx.uuid` are provisional V1 helpers used to keep agents from constructing raw thread events. They may be replaced or supplemented by typed `event()` factories, `ctx.checkpoint`, and durable ID helpers before the public API stabilizes.
+`ctx.emit` and `ctx.uuid` are provisional V1 helpers used to keep agents from constructing raw thread events. They may be replaced or supplemented by typed `event()` factories and durable ID helpers before the public API stabilizes.
 
 ### ctx.emit
 
@@ -454,7 +497,7 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - `ctx.tool` is the only first-class durable effect implemented in this slice.
 - `ctx.emit` and `ctx.uuid` are provisional replay helpers.
 - Tool outputs still use the current `ToolCompletionOutput` envelope.
-- `ctx.gate`, `ctx.checkpoint`, `ctx.spawn`, `ctx.join`, policies, capabilities, typed event factories, and projections are planned but not implemented in this slice.
+- `ctx.gate`, `ctx.spawn`, `ctx.join`, policies, capabilities, typed event factories, and projections are planned but not implemented in this slice.
 - Package subpaths are not split yet; root exports still include runtime internals.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.
@@ -462,7 +505,6 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 
 ## Planned Next Primitives
 
-- `ctx.checkpoint` for expensive pure work, generated IDs, timestamps, and nondeterministic values that must be persisted.
 - `ctx.gate` for first-class human approval and external decision points.
 - `ctx.spawn` and `ctx.join` for child threads and sub-agent work.
 - policies and capabilities for centralized governance and scoped grants.

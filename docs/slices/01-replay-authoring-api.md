@@ -92,12 +92,12 @@ Initial implementation landed.
 Changed modules:
 
 - `src/agent-contract.ts`: adds run-first `AgentContract`, `AgentContext`, aliases, and validation.
-- `src/agent-runner.ts`: adds replay-based run-to-planner adapter, `ctx.tool`, `ctx.emit`, and deterministic `ctx.uuid` helper.
-- `src/events.ts`: adds optional `scopeKey` and `stepKey` event fields and tool request payload fields.
+- `src/agent-runner.ts`: adds replay-based run-to-planner adapter, `ctx.tool`, `ctx.checkpoint`, `ctx.emit`, and deterministic `ctx.uuid` helper.
+- `src/events.ts`: adds optional `scopeKey` and `stepKey` event fields, tool request payload fields, and `checkpoint.completed`.
 - `src/migrate.ts`: adds nullable `scope_key` and `step_key` columns plus a durable step lookup index.
 - `src/postgres-engine.ts`: persists and reads top-level `scopeKey` and `stepKey` fields.
 - `src/tool-worker.ts`: propagates durable step identity from `tool.requested` to worker lifecycle events.
-- `src/tests/replay-authoring.test.ts`: covers duplicate prevention, decode failure, and replay mismatch.
+- `src/tests/replay-authoring.test.ts`: covers duplicate prevention, decode failure, replay mismatch, emit payload mismatch, and checkpoint replay.
 - `src/runner.ts`: supports async planners.
 - `src/runtime.ts`: wraps run-first agents with the adapter and keeps planner-first agents compatible.
 - `examples/steel-docs-sync/src/agent.ts`: migrates Steel docs sync to `agent({ async run(ctx, input) { ... } })`.
@@ -111,7 +111,7 @@ Commands run:
 
 Known gaps:
 
-- `ctx.emit` and `ctx.uuid` were added to keep the migrated example event-producing without importing low-level event helpers. These should be folded into the public authoring docs before marking the slice shipped.
+- `ctx.emit` and `ctx.uuid` are documented as provisional public helpers. A future typed events slice should decide whether they stay as-is or are replaced by `event()` factories and a renamed stable ID helper.
 
 ## Docs To Update On Completion
 

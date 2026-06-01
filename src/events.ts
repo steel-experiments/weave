@@ -169,6 +169,12 @@ export const AgentIncidentReportProducedPayloadSchema = z.object({
   evidence: z.array(z.string().min(1)),
 });
 
+export const CheckpointCompletedPayloadSchema = z.object({
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  value: z.unknown(),
+});
+
 const SessionStartedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("session.started"),
   payload: SessionStartedPayloadSchema,
@@ -264,6 +270,11 @@ const AgentIncidentReportProducedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: AgentIncidentReportProducedPayloadSchema,
 });
 
+const CheckpointCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("checkpoint.completed"),
+  payload: CheckpointCompletedPayloadSchema,
+});
+
 export const ThreadEventSchema = z.discriminatedUnion("type", [
   SessionStartedEventSchema,
   PromptReceivedEventSchema,
@@ -284,6 +295,7 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   AgentFindingProducedEventSchema,
   AgentRemediationProposedEventSchema,
   AgentIncidentReportProducedEventSchema,
+  CheckpointCompletedEventSchema,
 ]);
 
 export type ThreadEvent = z.infer<typeof ThreadEventSchema>;

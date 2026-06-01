@@ -195,6 +195,41 @@ class ReplayAgentContext implements AgentContext {
     } as ThreadEvent);
   }
 
+  async checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value> {
+    const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
+    if (matchingEvent) {
+      if (matchingEvent.type !== "checkpoint.completed") {
+        throw new ReplayMismatchError("Durable step key was previously used for a different effect kind", {
+          scopeKey: this.scopeKey,
+          stepKey: key,
+          existingType: matchingEvent.type,
+          requestedType: "checkpoint.completed",
+        });
+      }
+      return matchingEvent.payload.value as Value;
+    }
+
+    const value = await compute();
+    const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
+    this.pendingEvents.push({
+      eventId: eventKey(this.threadId, "checkpoint.completed", `${this.scopeKey}:${key}`),
+      threadId: this.threadId,
+      type: "checkpoint.completed",
+      occurredAt: nowIso(),
+      correlationId: cause?.correlationId,
+      causationId: cause?.eventId,
+      scopeKey: this.scopeKey,
+      stepKey: key,
+      actor: this.actor,
+      payload: {
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        value,
+      },
+    });
+    return value;
+  }
+
   uuid(key: string): string {
     return deterministicUuid("agent-context", this.threadId, this.scopeKey, key);
   }

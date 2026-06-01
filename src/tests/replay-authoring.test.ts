@@ -46,6 +46,8 @@ await testDuplicatePrevention();
 await testDecodeFailure();
 await testReplayMismatch();
 await testEmitPayloadMismatch();
+await testCheckpointReplay();
+await testCheckpointMismatch();
 
 console.log("Replay authoring tests passed");
 
@@ -163,6 +165,69 @@ async function testEmitPayloadMismatch(): Promise<void> {
   await assert.rejects(
     async () => {
       await planner.plan("emit-payload-mismatch", [...history, existingFinding]);
+    },
+    ReplayMismatchError,
+  );
+}
+
+async function testCheckpointReplay(): Promise<void> {
+  let computeCalls = 0;
+  const checkpointAgent = agent({
+    name: "checkpoint-agent",
+    input: inputSchema,
+    async run(ctx) {
+      const value = await ctx.checkpoint("normalize", () => {
+        computeCalls += 1;
+        return { normalized: "hello" };
+      });
+      await ctx.emit("final", {
+        type: "agent.response.produced",
+        payload: { message: value.normalized },
+      });
+    },
+  });
+  const planner = createAgentPlanner(checkpointAgent);
+  const history = initialHistory("checkpoint-replay");
+
+  const firstPlan = await planner.plan("checkpoint-replay", history);
+  assert(firstPlan);
+  assert.equal(computeCalls, 1);
+  assert.equal(firstPlan.events[0]?.type, "checkpoint.completed");
+  assert.deepEqual(firstPlan.events[0]?.payload, {
+    scopeKey: "agent:checkpoint-agent",
+    stepKey: "normalize",
+    value: { normalized: "hello" },
+  });
+
+  const secondPlan = await planner.plan("checkpoint-replay", [...history, firstPlan.events[0]]);
+  assert(secondPlan);
+  assert.equal(computeCalls, 1);
+  assert.equal(secondPlan.events.length, 1);
+  assert.equal(secondPlan.events[0]?.type, "agent.response.produced");
+}
+
+async function testCheckpointMismatch(): Promise<void> {
+  const checkpointAgent = agent({
+    name: "checkpoint-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.checkpoint("lookup", () => "value");
+    },
+  });
+  const planner = createAgentPlanner(checkpointAgent);
+  const history = initialHistory("checkpoint-mismatch");
+  const request: Extract<ThreadEvent, { type: "tool.requested" }> = {
+    ...requestedEvent("checkpoint-mismatch"),
+    scopeKey: "agent:checkpoint-agent",
+    payload: {
+      ...requestedEvent("checkpoint-mismatch").payload,
+      scopeKey: "agent:checkpoint-agent",
+    },
+  };
+
+  await assert.rejects(
+    async () => {
+      await planner.plan("checkpoint-mismatch", [...history, request]);
     },
     ReplayMismatchError,
   );
