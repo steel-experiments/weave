@@ -10,6 +10,7 @@ import {
   safeEmitSpan,
   type ObservabilitySink,
 } from "./observability.js";
+import type { MaybePromise } from "./types.js";
 
 export type RunnerStepResult = {
   acted: boolean;
@@ -23,7 +24,7 @@ export type AgentPlan = {
 };
 
 export type AgentPlanner = {
-  plan(threadId: string, events: ThreadEvent[]): AgentPlan | null;
+  plan(threadId: string, events: ThreadEvent[]): MaybePromise<AgentPlan | null>;
 };
 
 export class ThreadRunner {
@@ -56,7 +57,7 @@ export class ThreadRunner {
       const planStartedAt = new Date();
       let plan: AgentPlan | null;
       try {
-        plan = this.agent.plan(threadId, history);
+        plan = await this.agent.plan(threadId, history);
         await safeEmitSpan(this.observability, {
           ...context,
           spanId: newSpanId(),

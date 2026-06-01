@@ -1,15 +1,17 @@
-import type { AgentContract } from "./agent-contract.js";
+import type { AnyAgentContract } from "./agent-contract.js";
 import type { ThreadArtifactStore } from "./artifacts.js";
 import type { CredentialProvider } from "./credentials.js";
 import type { AnyIntegrationContract } from "./integration-contract.js";
 import type { ObservabilitySink } from "./observability.js";
+import type { AnyToolContract } from "./tool-contract.js";
 
 export type WeaveAppDefinition<
-  Agents extends readonly AgentContract[] = readonly AgentContract[],
+  Agents extends readonly AnyAgentContract[] = readonly AnyAgentContract[],
   Integrations extends readonly AnyIntegrationContract[] = readonly AnyIntegrationContract[],
 > = {
   name?: string;
   agents: Agents;
+  tools?: readonly AnyToolContract[];
   integrations?: Integrations;
   credentialProvider?: CredentialProvider;
   artifactStore?: ThreadArtifactStore;
@@ -17,13 +19,15 @@ export type WeaveAppDefinition<
 };
 
 export function defineWeaveApp<
-  const Agents extends readonly AgentContract[],
+  const Agents extends readonly AnyAgentContract[],
   const Integrations extends readonly AnyIntegrationContract[] = readonly AnyIntegrationContract[],
 >(definition: WeaveAppDefinition<Agents, Integrations>): WeaveAppDefinition<Agents, Integrations> {
   return definition;
 }
 
-export function getAgent<Agents extends readonly AgentContract[]>(
+export const weave = defineWeaveApp;
+
+export function getAgent<Agents extends readonly AnyAgentContract[]>(
   app: WeaveAppDefinition<Agents>,
   name: Agents[number]["name"],
 ): Agents[number] {

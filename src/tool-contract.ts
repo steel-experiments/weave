@@ -65,6 +65,8 @@ export function defineTool<
   return contract;
 }
 
+export const tool = defineTool;
+
 export class ToolRegistry {
   private readonly tools: Map<string, AnyToolContract>;
 

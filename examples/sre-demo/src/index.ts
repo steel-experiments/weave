@@ -81,7 +81,7 @@ try {
     ]);
     assert(beforeApprovalEvents.some((event) => event.type === "agent.finding.produced"));
     assert(beforeApprovalEvents.some((event) => event.type === "agent.remediation.proposed"));
-    const rebuildNode = activeAgent.tools.find((tool) => tool.name === "infra.rebuildNode");
+    const rebuildNode = activeAgent.tools?.find((tool) => tool.name === "infra.rebuildNode");
     assert(rebuildNode?.gate?.({
       input: {
         environment: "production",
@@ -139,7 +139,7 @@ try {
       console.log(`app=${runtimeApp.name}`);
       console.log(`agent=${activeAgent.name}`);
       console.log("registeredTools:");
-      for (const tool of activeAgent.tools) {
+      for (const tool of activeAgent.tools ?? []) {
         const gate = tool.gate ? " gate=manual-approval" : "";
         console.log(`- ${tool.name}${gate}`);
       }

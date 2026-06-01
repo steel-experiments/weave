@@ -139,7 +139,7 @@ export const steelAuditTool = defineTool({
   },
 });
 
-const steelModelReviewTool = defineTool({
+export const steelModelReviewTool = defineTool({
   name: "steel.modelReview",
   description: "Run an async model-backed review over compact Steel docs audit summaries.",
   input: SteelDocsModelReviewInputSchema,

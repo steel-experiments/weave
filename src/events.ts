@@ -21,6 +21,8 @@ export const EventEnvelopeBaseSchema = z.object({
   correlationId: z.string().uuid().optional(),
   causationId: z.string().uuid().optional(),
   idempotencyKey: z.string().min(1).optional(),
+  scopeKey: z.string().min(1).optional(),
+  stepKey: z.string().min(1).optional(),
   actor: ActorSchema,
 });
 
@@ -58,6 +60,8 @@ export const ToolRequestedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),
   toolName: ToolNameSchema,
   args: z.unknown(),
+  scopeKey: z.string().min(1).optional(),
+  stepKey: z.string().min(1).optional(),
 });
 
 export const ToolStartedPayloadSchema = z.object({

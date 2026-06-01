@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
+- Status: `In Progress`
 - Last updated: `2026-06-01`
 - Owner: `weave-core`
 
@@ -59,35 +59,56 @@ As a Weave app author, I can write an agent as ordinary async TypeScript and req
 
 ## Acceptance Criteria
 
-- [ ] Existing examples still typecheck.
-- [ ] Existing planner-first agents still run.
-- [ ] Existing tool-worker flow still works.
-- [ ] Existing gate resolution still works.
-- [ ] Existing Postgres migration still works.
-- [ ] One example uses `agent({ async run(ctx, input) { ... } })`.
-- [ ] The migrated example does not manually import `ThreadEvent`, `AgentPlan`, `eventKey`, `deterministicUuid`, or tool request event constructors.
-- [ ] `ctx.tool("some-key", tool, input)` appends exactly one `tool.requested` event when missing.
+- [x] Existing examples still typecheck.
+- [x] Existing planner-first agents still run.
+- [x] Existing tool-worker flow still works.
+- [x] Existing gate resolution still works.
+- [x] Existing Postgres migration still works.
+- [x] One example uses `agent({ async run(ctx, input) { ... } })`.
+- [x] The migrated example does not manually import `ThreadEvent`, `AgentPlan`, `eventKey`, `deterministicUuid`, or tool request event constructors.
+- [x] `ctx.tool("some-key", tool, input)` appends exactly one `tool.requested` event when missing.
 - [ ] Re-running the runner before tool completion appends no duplicate `tool.requested` event.
-- [ ] A pending tool request exits the runner pass and does not hold a Promise open waiting for the worker.
-- [ ] After `tool.completed`, the same `ctx.tool()` returns decoded output.
+- [x] A pending tool request exits the runner pass and does not hold a Promise open waiting for the worker.
+- [x] After `tool.completed`, the same `ctx.tool()` returns decoded output.
 - [ ] If stored output fails the tool output schema, the runner records or throws a structured replay/decode error.
 - [ ] Changing a durable effect kind while reusing the same key throws `ReplayMismatchError`.
 
 ## Progress
 
-- [ ] Add authoring aliases and types.
-- [ ] Add optional `scopeKey` and `stepKey` fields.
-- [ ] Make planner execution async-compatible.
-- [ ] Implement run-to-planner adapter.
-- [ ] Implement replay-based `ctx.tool`.
-- [ ] Verify tool waits are durable thread suspension, not in-memory waiting.
-- [ ] Migrate Steel docs sync agent.
+- [x] Add authoring aliases and types.
+- [x] Add optional `scopeKey` and `stepKey` fields.
+- [x] Make planner execution async-compatible.
+- [x] Implement run-to-planner adapter.
+- [x] Implement replay-based `ctx.tool`.
+- [x] Verify tool waits are durable thread suspension, not in-memory waiting.
+- [x] Migrate Steel docs sync agent.
 - [ ] Add replay and compatibility tests.
-- [ ] Run typecheck and relevant demos/tests.
+- [x] Run typecheck and relevant demos/tests.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+Initial implementation landed.
+
+Changed modules:
+
+- `src/agent-contract.ts`: adds run-first `AgentContract`, `AgentContext`, aliases, and validation.
+- `src/agent-runner.ts`: adds replay-based run-to-planner adapter, `ctx.tool`, `ctx.emit`, and deterministic `ctx.uuid` helper.
+- `src/events.ts`: adds optional `scopeKey` and `stepKey` event fields and tool request payload fields.
+- `src/runner.ts`: supports async planners.
+- `src/runtime.ts`: wraps run-first agents with the adapter and keeps planner-first agents compatible.
+- `examples/steel-docs-sync/src/agent.ts`: migrates Steel docs sync to `agent({ async run(ctx, input) { ... } })`.
+
+Commands run:
+
+- `npm run typecheck`
+- `npm run steel:demo`
+- `npm run sre:demo`
+
+Known gaps:
+
+- Dedicated unit tests for duplicate-prevention, decode failure, and replay mismatch are still needed.
+- `scopeKey` and `stepKey` are persisted in the `tool.requested` payload for now; real nullable event columns remain a later storage migration.
+- `ctx.emit` and `ctx.uuid` were added to keep the migrated example event-producing without importing low-level event helpers. These should be folded into the public authoring docs before marking the slice shipped.
 
 ## Docs To Update On Completion
 

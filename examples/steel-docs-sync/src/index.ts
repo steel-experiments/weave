@@ -116,7 +116,7 @@ try {
     console.log(`threadId=${created.threadId}`);
     console.log(`app=${runtimeApp.name}`);
     console.log(`agent=${activeAgent.name}`);
-    console.log(`tool=${activeAgent.tools[0]?.name ?? "unknown"}`);
+    console.log(`tool=${activeAgent.tools?.[0]?.name ?? "unknown"}`);
     console.log(`outcome=${summary.outcome}`);
     console.log(`execution=${summary.execution.status}`);
     console.log(`artifacts=${artifacts.length}`);
