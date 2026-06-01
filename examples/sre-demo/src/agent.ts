@@ -1,4 +1,4 @@
-import { agent, approvalPolicy } from "weave";
+import { agent, approvalPolicy, event } from "weave";
 import { z } from "zod";
 import {
   axiomSearchLogs,
@@ -46,9 +46,9 @@ export const sreAgent = agent({
       timeRangeMinutes: 60,
     });
 
-    await ctx.emit("finding:checkout-api-db-timeout", {
-      type: "agent.finding.produced",
-      payload: {
+    await ctx.emit(
+      "finding:checkout-api-db-timeout",
+      event("agent.finding.produced", {
         findingId: ctx.uuid("finding:checkout-api-db-timeout"),
         severity: "critical",
         summary: `${logs.service} production errors correlate with ${logs.errorPattern} logs, elevated latency, and the latest deploy.`,
@@ -58,19 +58,19 @@ export const sreAgent = agent({
           { source: "sentry", summary: `New issue ${issues.issue} in ${issues.release}.` },
           { source: "deploy", summary: `${deploy.service} release ${deploy.release} deployed ${deploy.deployedMinutesBeforeSpike} minutes before spike.` },
         ],
-      },
-    });
+      }),
+    );
 
-    await ctx.emit("remediation:rebuild-nats-prod-1", {
-      type: "agent.remediation.proposed",
-      payload: {
+    await ctx.emit(
+      "remediation:rebuild-nats-prod-1",
+      event("agent.remediation.proposed", {
         remediationId: ctx.uuid("remediation:rebuild-nats-prod-1"),
         actionToolName: "infra.rebuildNode",
         summary: "Rebuild nats-prod-1 after draining connections to clear suspected stale routing state.",
         risk: "high",
         requiresApproval: true,
-      },
-    });
+      }),
+    );
 
     const rebuildInput = {
       environment: "production" as const,
@@ -85,14 +85,11 @@ export const sreAgent = agent({
 
     if (approval.resolution === "denied") {
       const report = deniedReport();
-      await ctx.emit("incident-report:denied", {
-        type: "agent.incident_report.produced",
-        payload: report,
-      });
-      await ctx.emit("response:denied", {
-        type: "agent.response.produced",
-        payload: { message: "Remediation was denied. Investigation report produced without action." },
-      });
+      await ctx.emit("incident-report:denied", event("agent.incident_report.produced", report));
+      await ctx.emit(
+        "response:denied",
+        event("agent.response.produced", { message: "Remediation was denied. Investigation report produced without action." }),
+      );
       return report;
     }
 
@@ -103,14 +100,8 @@ export const sreAgent = agent({
       release: deploy.release,
       errorPattern: logs.errorPattern,
     });
-    await ctx.emit("incident-report:final", {
-      type: "agent.incident_report.produced",
-      payload: report,
-    });
-    await ctx.emit("response:final", {
-      type: "agent.response.produced",
-      payload: { message: `${report.title}: ${report.rootCause}` },
-    });
+    await ctx.emit("incident-report:final", event("agent.incident_report.produced", report));
+    await ctx.emit("response:final", event("agent.response.produced", { message: `${report.title}: ${report.rootCause}` }));
     return report;
   },
 });

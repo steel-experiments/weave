@@ -29,3 +29,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `07-package-subpaths-runtime-boundary.md`: shipped slice adding runtime, postgres, server, and testing subpaths.
 - `08-policy-helpers-for-gates.md`: shipped slice adding reusable approval policy authoring helpers.
 - `09-agent-failure-events.md`: shipped slice adding durable `agent.failed` events for non-tool agent exceptions.
+- `10-typed-event-factories.md`: shipped slice adding typed `event(type, payload)` builders for `ctx.emit`.

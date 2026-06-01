@@ -26,6 +26,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `integration` | Current integration API |
 | `ctx.tool` | First durable effect |
 | `ctx.emit` | Provisional replay-safe event helper |
+| `event` | Current typed event factory |
 | `ctx.uuid` | Provisional deterministic ID helper |
 | `ctx.gate` | Current approval effect |
 | `ctx.checkpoint` | Current local durable effect |
@@ -43,7 +44,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 
 The older `defineTool`, `defineAgent`, `defineWeaveApp`, and `defineIntegration` names remain exported for compatibility. New examples should prefer the shorter authoring names.
 
-Capabilities, typed events, projections, and subthreads are planned public primitives. They are not part of the first V1 authoring slice unless explicitly documented below.
+Capabilities, projections, and subthreads are planned public primitives. They are not part of the first V1 authoring slice unless explicitly documented below.
 
 ## App Definition
 
@@ -400,26 +401,27 @@ if (gate) {
 
 Policy helpers are useful for naming and reusing approval rules across agents. The agent still calls `ctx.gate`; future runtime policy enforcement may add stronger guarantees.
 
-## Provisional Replay Helpers
+## Event Factories And Replay Helpers
 
-`ctx.emit` and `ctx.uuid` are provisional V1 helpers used to keep agents from constructing raw thread events. They may be replaced or supplemented by typed `event()` factories and durable ID helpers before the public API stabilizes.
+`ctx.emit` records replay-safe domain facts. Prefer constructing emitted facts with `event(type, payload)` so TypeScript checks the payload against the event type.
 
 ### ctx.emit
 
 `ctx.emit` records a replay-safe domain fact in the current thread.
 
 ```ts
-await ctx.emit("final-response", {
-  type: "agent.response.produced",
-  payload: {
+await ctx.emit(
+  "final-response",
+  event("agent.response.produced", {
     message,
-  },
-});
+  }),
+);
 ```
 
 Semantics:
 
 - requires a stable key
+- accepts typed `event(type, payload)` values or compatible `{ type, payload }` objects
 - durable identity is `threadId + scopeKey + stepKey`
 - if the same key, type, and canonical payload were already emitted, it is a no-op
 - if the same key is reused with a different type or payload, Weave throws `ReplayMismatchError`
@@ -428,15 +430,15 @@ Semantics:
 Good:
 
 ```ts
-await ctx.emit("finding:auth-docs", {
-  type: "agent.finding.produced",
-  payload: {
+await ctx.emit(
+  "finding:auth-docs",
+  event("agent.finding.produced", {
     findingId: ctx.uuid("finding:auth-docs"),
     severity: "warning",
     summary,
     evidence,
-  },
-});
+  }),
+);
 ```
 
 Bad:
@@ -460,6 +462,21 @@ await ctx.tool("send-email", sendEmail, {
 ```
 
 `ctx.emit` records facts; it does not make unsafe external side effects safe.
+
+### event
+
+`event(type, payload, metadata?)` creates a typed event input for `ctx.emit`.
+
+```ts
+const finding = event("agent.finding.produced", {
+  findingId,
+  severity: "warning",
+  summary,
+  evidence,
+});
+```
+
+The factory does not append anything by itself. It is only a typed builder for `ctx.emit` inputs.
 
 ### ctx.uuid
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { agent } from "../agent-contract.js";
+import { agent, event } from "../agent-contract.js";
 import { createAgentPlanner } from "../agent-runner.js";
 import type { AppendOptions, AppendResult, FollowCursor, Lease, ReadOptions, ThreadEngine, ThreadLeaseStore } from "../contracts.js";
 import { ReplayMismatchError } from "../errors.js";
@@ -152,15 +152,15 @@ async function testEmitPayloadMismatch(): Promise<void> {
     name: "emit-agent",
     input: inputSchema,
     async run(ctx) {
-      await ctx.emit("final", {
-        type: "agent.finding.produced",
-        payload: {
+      await ctx.emit(
+        "final",
+        event("agent.finding.produced", {
           findingId: ctx.uuid("final"),
           severity: "warning",
           summary: "new message",
           evidence: [{ source: "test", summary: "evidence" }],
-        },
-      });
+        }),
+      );
     },
   });
   const planner = createAgentPlanner(emitAgent);
@@ -201,10 +201,7 @@ async function testCheckpointReplay(): Promise<void> {
         computeCalls += 1;
         return { normalized: "hello" };
       });
-      await ctx.emit("final", {
-        type: "agent.response.produced",
-        payload: { message: value.normalized },
-      });
+      await ctx.emit("final", event("agent.response.produced", { message: value.normalized }));
     },
   });
   const planner = createAgentPlanner(checkpointAgent);
@@ -475,6 +472,17 @@ async function testApprovalPolicyEvaluation(): Promise<void> {
   });
 }
 
+async function testTypedEventFactory(): Promise<void> {
+  const finding = event("agent.finding.produced", {
+    findingId: deterministicUuid("typed-event", "finding"),
+    severity: "info",
+    summary: "typed finding",
+    evidence: [{ source: "test", summary: "evidence" }],
+  });
+  assert.equal(finding.type, "agent.finding.produced");
+  assert.equal(finding.payload.summary, "typed finding");
+}
+
 async function testAgentFailureEvent(): Promise<void> {
   const threadId = "agent-failure-event";
   const engine = new MemoryThreadEngine(initialHistory(threadId));
@@ -650,6 +658,7 @@ await testToolWorkerOutputSummaries();
 await testGateReplay();
 await testGatePayloadMismatch();
 await testApprovalPolicyEvaluation();
+await testTypedEventFactory();
 await testAgentFailureEvent();
 
 console.log("Replay authoring tests passed");

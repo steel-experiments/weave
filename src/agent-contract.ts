@@ -18,13 +18,28 @@ export type GateRequest = {
 
 export type GateResolution = GateResolvedPayload;
 
-export type AgentEventInput = {
-  type: ThreadEvent["type"];
-  payload: ThreadEvent["payload"];
+export type AgentEventMetadata = {
   correlationId?: string;
   causationId?: string;
   idempotencyKey?: string;
 };
+
+export type AgentEventInput<Type extends ThreadEvent["type"] = ThreadEvent["type"]> = Type extends ThreadEvent["type"]
+  ? AgentEventMetadata & {
+      type: Type;
+      payload: Extract<ThreadEvent, { type: Type }>["payload"];
+    }
+  : never;
+
+export function defineEvent<const Type extends ThreadEvent["type"]>(
+  type: Type,
+  payload: Extract<ThreadEvent, { type: Type }>["payload"],
+  metadata: AgentEventMetadata = {},
+): AgentEventInput<Type> {
+  return { ...metadata, type, payload } as AgentEventInput<Type>;
+}
+
+export const event = defineEvent;
 
 export type AgentContext<
   Tools extends readonly AnyToolContract[] = readonly AnyToolContract[],

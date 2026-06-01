@@ -21,6 +21,16 @@ export interface WeaveModuleBoundary {
   ): IntegrationContract<Name, Tools>;
   approvalPolicy<Input>(definition: ApprovalPolicyDefinition<Input>): ApprovalPolicy<Input>;
   defineApprovalPolicy<Input>(definition: ApprovalPolicyDefinition<Input>): ApprovalPolicy<Input>;
+  event<const Type extends ThreadEvent["type"]>(
+    type: Type,
+    payload: Extract<ThreadEvent, { type: Type }>["payload"],
+    metadata?: AgentEventMetadata,
+  ): AgentEventInput<Type>;
+  defineEvent<const Type extends ThreadEvent["type"]>(
+    type: Type,
+    payload: Extract<ThreadEvent, { type: Type }>["payload"],
+    metadata?: AgentEventMetadata,
+  ): AgentEventInput<Type>;
   defineWeaveApp<
     const Agents extends readonly AgentContract[],
     const Integrations extends readonly IntegrationContract[] = readonly IntegrationContract[],
@@ -311,7 +321,10 @@ type StartSessionInput = { prompt: string; source?: string; actor?: Actor; metad
 type ToolCallOptions = Record<string, unknown>;
 type GateRequest = { gateType?: "manual-approval"; reason: "tool-result-requires-approval" | "risky-remediation"; relatedToolCallId?: string; proposedAction?: string };
 type GateResolution = { gateId: string; resolution: "approved" | "denied"; comment?: string };
-type AgentEventInput = { type: ThreadEvent["type"]; payload: ThreadEvent["payload"]; correlationId?: string; causationId?: string; idempotencyKey?: string };
+type AgentEventMetadata = { correlationId?: string; causationId?: string; idempotencyKey?: string };
+type AgentEventInput<Type extends ThreadEvent["type"] = ThreadEvent["type"]> = Type extends ThreadEvent["type"]
+  ? AgentEventMetadata & { type: Type; payload: Extract<ThreadEvent, { type: Type }>["payload"] }
+  : never;
 type AppendOptions = { expectedTailSeq?: number; idempotencyKey?: string };
 type AppendResult = { firstSeq: number; lastSeq: number };
 type ReadOptions = { fromSeq?: number; limit?: number };

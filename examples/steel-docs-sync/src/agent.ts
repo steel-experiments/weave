@@ -1,4 +1,4 @@
-import { agent } from "weave";
+import { agent, event } from "weave";
 import { z } from "zod";
 import {
   steelAuditTool,
@@ -25,9 +25,9 @@ export const steelDocsAgent = agent({
     const reviewData = await ctx.tool("model-review", steelModelReviewTool, audit);
 
     for (const [index, finding] of reviewData.findings.entries()) {
-      await ctx.emit(`model-review-finding:${index}`, {
-        type: "agent.finding.produced",
-        payload: {
+      await ctx.emit(
+        `model-review-finding:${index}`,
+        event("agent.finding.produced", {
           findingId: ctx.uuid(`model-review-finding:${index}`),
           severity: finding.severity,
           summary: finding.summary,
@@ -35,16 +35,16 @@ export const steelDocsAgent = agent({
             source: `model:${index}:${evidenceIndex}`,
             summary: evidence,
           })),
-        },
-      });
+        }),
+      );
     }
 
-    await ctx.emit("final-response", {
-      type: "agent.response.produced",
-      payload: {
+    await ctx.emit(
+      "final-response",
+      event("agent.response.produced", {
         message: reviewData.finalMessage,
-      },
-    });
+      }),
+    );
 
     return reviewData;
   },
