@@ -51,7 +51,7 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 - `interface.md`: low-level engine and higher-level thread interfaces
 - `weave-interface-evolution-plan.md`: accepted direction for the public authoring API and replay-based first slice
 - `agent-adapters.md`: how OpenCode-style and other agents can adapt to the thread model
-- `declarative-api.md`: current `defineTool`, `defineAgent`, and `defineWeaveApp` authoring API
+- `declarative-api.md`: current `tool`, `agent`, `weave`, and `integration` authoring API
 - `integrations.md`: adapter contract for Slack-style external integrations
 - `engine-contracts.md`: typed engine contracts for the first Postgres-backed implementation
 - `event-taxonomy.md`: strongly typed PoC event set using Zod-style schemas

@@ -25,7 +25,7 @@ As a Weave app author, I can read the SRE example as the reference for a gate-he
 
 - SRE tools now return domain objects directly.
 - Tool summaries are produced by `tool.summarize(output)`.
-- The SRE agent is now `defineAgent({ async run(ctx, input) { ... } })`.
+- The SRE agent is now `agent({ async run(ctx, input) { ... } })`.
 - SRE investigation tool calls use `ctx.tool` with stable step keys.
 - Findings, remediation proposals, incident reports, and final responses use `ctx.emit`.
 - Risky remediation approval uses `ctx.gate`.

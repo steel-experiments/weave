@@ -2,7 +2,7 @@
 
 Integrations are import-composed TypeScript modules that package external-system behavior for a Weave app.
 
-The goal is that a Slack, Linear, GitHub, or email module can be developed outside core. An app imports the module, passes config, and adds the returned integration to `defineWeaveApp`.
+The goal is that a Slack, Linear, GitHub, or email module can be developed outside core. An app imports the module, passes config, and adds the returned integration to `weave(...)`.
 
 ## Contract
 
@@ -13,10 +13,10 @@ An integration can contribute three things:
 - event handlers that react to thread events and call the external system
 
 ```ts
-import { defineIntegration } from "weave";
+import { integration } from "weave";
 
 export function createSlackIntegration(config: SlackIntegrationConfig) {
-  return defineIntegration({
+  return integration({
     name: "slack",
     tools: [postSlackMessageTool(config)],
     createRoutes: ({ service }) => [createSlackEventsRoute(service, config)],
@@ -28,22 +28,24 @@ export function createSlackIntegration(config: SlackIntegrationConfig) {
 ## App Usage
 
 ```ts
-import { defineAgent, defineWeaveApp } from "weave";
+import { agent, weave } from "weave";
 import { createSlackIntegration } from "@acme/weave-slack";
-import { planner } from "./agent.js";
+import { supportRun } from "./agent.js";
 
 const slack = createSlackIntegration({
   signingSecret: process.env.SLACK_SIGNING_SECRET!,
   botTokenCredentialName: "slack-bot-token",
 });
 
-export const supportAgent = defineAgent({
+export const supportAgent = agent({
   name: "support-agent",
-  planner,
+  async run(ctx, input) {
+    return supportRun(ctx, input);
+  },
   tools: [],
 });
 
-export const app = defineWeaveApp({
+export const app = weave({
   name: "support",
   agents: [supportAgent],
   integrations: [slack],
@@ -75,7 +77,7 @@ It should use Weave credentials rather than reading tokens inside the agent plan
 
 - Integrations should cross the thread boundary through explicit thread events and tools.
 - Ingress routes should validate external signatures before starting or mutating threads.
-- Tools should perform external side effects; planners should only request tools.
+- Tools should perform external side effects; agents should request them through durable `ctx.tool` calls.
 - Integration modules should keep third-party SDK dependencies outside Weave core.
 - App inclusion grants the integration's tools to the app runtime, so only include integrations that are allowed for that app's agents.
 

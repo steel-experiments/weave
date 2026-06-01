@@ -2,15 +2,30 @@ export interface WeaveModuleBoundary {
   defineTool<const Name extends string, Input, Output>(
     contract: ToolContract<Name, Input, Output>,
   ): ToolContract<Name, Input, Output>;
+  tool<const Name extends string, Input, Output>(
+    contract: ToolContract<Name, Input, Output>,
+  ): ToolContract<Name, Input, Output>;
   createToolRegistry(tools: readonly AnyToolContract[]): ToolRegistry;
 
-  defineAgent<const Name extends string, const Tools extends readonly AnyToolContract[]>(
-    contract: AgentContract<Name, Tools>,
-  ): AgentContract<Name, Tools>;
+  defineAgent<const Name extends string, Input, Output, const Tools extends readonly AnyToolContract[]>(
+    contract: AgentContract<Name, Input, Output, Tools>,
+  ): AgentContract<Name, Input, Output, Tools>;
+  agent<const Name extends string, Input, Output, const Tools extends readonly AnyToolContract[]>(
+    contract: AgentContract<Name, Input, Output, Tools>,
+  ): AgentContract<Name, Input, Output, Tools>;
   defineIntegration<const Name extends string, const Tools extends readonly AnyToolContract[]>(
     contract: IntegrationContract<Name, Tools>,
   ): IntegrationContract<Name, Tools>;
+  integration<const Name extends string, const Tools extends readonly AnyToolContract[]>(
+    contract: IntegrationContract<Name, Tools>,
+  ): IntegrationContract<Name, Tools>;
   defineWeaveApp<
+    const Agents extends readonly AgentContract[],
+    const Integrations extends readonly IntegrationContract[] = readonly IntegrationContract[],
+  >(
+    app: WeaveAppDefinition<Agents, Integrations>,
+  ): WeaveAppDefinition<Agents, Integrations>;
+  weave<
     const Agents extends readonly AgentContract[],
     const Integrations extends readonly IntegrationContract[] = readonly IntegrationContract[],
   >(
@@ -51,6 +66,7 @@ interface WeaveAppDefinition<
 > {
   name?: string;
   agents: Agents;
+  tools?: readonly AnyToolContract[];
   integrations?: Integrations;
   credentialProvider?: CredentialProvider;
   artifactStore?: ThreadArtifactStore;
@@ -59,12 +75,28 @@ interface WeaveAppDefinition<
 
 interface AgentContract<
   Name extends string = string,
+  Input = unknown,
+  Output = unknown,
   Tools extends readonly AnyToolContract[] = readonly AnyToolContract[],
 > {
   name: Name;
   description?: string;
-  planner: AgentPlanner;
-  tools: Tools;
+  input?: Schema<Input>;
+  output?: Schema<Output>;
+  tools?: Tools;
+  run?(context: AgentContext<Tools>, input: Input): Promise<Output> | Output;
+  planner?: AgentPlanner;
+}
+
+interface AgentContext<Tools extends readonly AnyToolContract[] = readonly AnyToolContract[]> {
+  readonly threadId: string;
+  readonly actor: Actor;
+  readonly signal: AbortSignal;
+  tool<Input, Output>(key: string, tool: ToolContract<string, Input, Output>, input: Input, options?: ToolCallOptions): Promise<Output>;
+  gate(key: string, request: GateRequest): Promise<GateResolution>;
+  checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value>;
+  emit(key: string, event: AgentEventInput): Promise<void>;
+  uuid(key: string): string;
 }
 
 interface IntegrationContract<
@@ -100,7 +132,7 @@ interface ThreadEngine {
   append(events: ThreadEvent[], options?: AppendOptions): Promise<AppendResult>;
   read(threadId: string, options?: ReadOptions): Promise<ThreadEvent[]>;
   follow(threadId: string, cursor?: FollowCursor): AsyncIterable<ThreadEvent>;
-  getTail(threadId: string): Promise<{ tailSeq: number; updatedAt: Date }>;
+  getTail(threadId: string): Promise<{ tailSeq: number; updatedAt: string }>;
   getProjection(threadId: string): Promise<ThreadProjection | null>;
 }
 
@@ -147,7 +179,12 @@ interface Daemon {
 }
 
 interface AgentPlanner {
-  plan(threadId: string, events: ThreadEvent[]): { resumeReason: "new-prompt" | "tool-completed" | "gate-resolved"; events: ThreadEvent[] } | null;
+  plan(threadId: string, events: ThreadEvent[]): Promise<AgentPlan | null> | AgentPlan | null;
+}
+
+interface AgentPlan {
+  resumeReason: "new-prompt" | "tool-completed" | "gate-resolved";
+  events: ThreadEvent[];
 }
 
 interface ThreadEvent {
@@ -155,7 +192,7 @@ interface ThreadEvent {
   threadId: string;
   seq?: number;
   type: string;
-  occurredAt: Date;
+  occurredAt: string;
   actor: Actor;
   payload: unknown;
   correlationId?: string;
@@ -171,7 +208,7 @@ interface ThreadProjection {
   tailSeq: number;
   activeLeaseOwnerId?: string | null;
   pendingGateIds: string[];
-  updatedAt: Date;
+  updatedAt: string;
 }
 
 interface ThreadSummary extends ThreadProjection {
@@ -182,9 +219,12 @@ interface ThreadSummary extends ThreadProjection {
 interface ToolRunContext<Input> {
   threadId: string;
   toolCallId: string;
+  toolName: string;
   input: Input;
   credentials: ResolvedCredentials;
   artifactStore: ThreadArtifactStore;
+  observe: ToolObserver;
+  request: Extract<ThreadEvent, { type: "tool.requested" }>;
   progress(update: ToolProgressUpdate): Promise<void>;
 }
 
@@ -251,6 +291,10 @@ interface InboxStore {
 
 type Actor = { type: "user" | "agent" | "worker" | "human" | "system"; id: string };
 type StartSessionInput = { prompt: string; source?: string; actor?: Actor; metadata?: Record<string, unknown>; idempotencyKey?: string };
+type ToolCallOptions = Record<string, unknown>;
+type GateRequest = { gateType?: "manual-approval"; reason: "tool-result-requires-approval" | "risky-remediation"; relatedToolCallId?: string; proposedAction?: string };
+type GateResolution = { gateId: string; resolution: "approved" | "denied"; comment?: string };
+type AgentEventInput = { type: ThreadEvent["type"]; payload: ThreadEvent["payload"]; correlationId?: string; causationId?: string; idempotencyKey?: string };
 type AppendOptions = { expectedTailSeq?: number; idempotencyKey?: string };
 type AppendResult = { firstSeq: number; lastSeq: number };
 type ReadOptions = { fromSeq?: number; limit?: number };
@@ -271,6 +315,7 @@ type InboxWorkItem = { id: number; threadId: string; eventSeq: number; attempts:
 type DatabasePool = { query(sql: string, values?: readonly unknown[]): Promise<unknown>; connect?(): Promise<unknown>; end?(): Promise<void> };
 type HttpServer = { listen(...args: unknown[]): unknown; close(callback?: (error?: Error) => void): unknown };
 type ToolRegistry = { get(name: string): AnyToolContract | undefined; list(): AnyToolContract[] };
+type ToolObserver = unknown;
 type Schema<T> = { parse(value: unknown): T; safeParse(value: unknown): { success: true; data: T } | { success: false; error: unknown } };
 
 export type Weave = WeaveModuleBoundary;

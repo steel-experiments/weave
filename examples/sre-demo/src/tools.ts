@@ -1,9 +1,9 @@
-import { defineTool } from "weave";
+import { tool } from "weave";
 import { z } from "zod";
 
 const environment = z.enum(["staging", "production"]);
 
-export const axiomSearchLogs = defineTool({
+export const axiomSearchLogs = tool({
   name: "axiom.searchLogs",
   description: "Search Axiom logs for production incident clues.",
   input: z.object({
@@ -41,7 +41,7 @@ export const axiomSearchLogs = defineTool({
   },
 });
 
-export const grafanaQueryMetrics = defineTool({
+export const grafanaQueryMetrics = tool({
   name: "grafana.queryMetrics",
   description: "Query Grafana metrics for service health signals.",
   input: z.object({
@@ -77,7 +77,7 @@ export const grafanaQueryMetrics = defineTool({
   },
 });
 
-export const sentryFindIssues = defineTool({
+export const sentryFindIssues = tool({
   name: "sentry.findIssues",
   description: "Find matching Sentry issues for the incident window.",
   input: z.object({
@@ -113,7 +113,7 @@ export const sentryFindIssues = defineTool({
   },
 });
 
-export const deployInspectRecentChanges = defineTool({
+export const deployInspectRecentChanges = tool({
   name: "deploy.inspectRecentChanges",
   description: "Inspect deploy metadata around the incident window.",
   input: z.object({
@@ -150,7 +150,7 @@ export const deployInspectRecentChanges = defineTool({
   },
 });
 
-export const infraRebuildNode = defineTool({
+export const infraRebuildNode = tool({
   name: "infra.rebuildNode",
   description: "Drain and rebuild an infrastructure node.",
   input: z.object({

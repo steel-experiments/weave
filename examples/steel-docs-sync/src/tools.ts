@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { ThreadArtifactSchema, RetryableToolError, defineTool } from "weave";
+import { ThreadArtifactSchema, RetryableToolError, tool } from "weave";
 import { z } from "zod";
 
 const SteelDocsAuditFindingSchema = z.object({
@@ -38,7 +38,7 @@ export const SteelDocsModelReviewDataSchema = z.object({
 
 export const SteelDocsModelReviewInputSchema = SteelDocsAuditDataSchema;
 
-export const steelAuditTool = defineTool({
+export const steelAuditTool = tool({
   name: "steel.auditDocsSync",
   description: "Fetch Steel docs sources and audit sync drift with bounded network reads.",
   input: z.object({
@@ -129,7 +129,7 @@ export const steelAuditTool = defineTool({
   },
 });
 
-export const steelModelReviewTool = defineTool({
+export const steelModelReviewTool = tool({
   name: "steel.modelReview",
   description: "Run an async model-backed review over compact Steel docs audit summaries.",
   input: SteelDocsModelReviewInputSchema,

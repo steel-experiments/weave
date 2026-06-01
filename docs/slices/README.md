@@ -24,3 +24,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `02-tool-output-migration.md`: shipped slice for domain-shaped tool outputs with legacy compatibility.
 - `03-gates-and-approval-policies.md`: shipped slice for replay-safe `ctx.gate` and explicit approval gates.
 - `04-sre-run-first-domain-outputs.md`: shipped slice migrating the SRE demo to `agent.run`, domain outputs, and `ctx.gate`.
+- `05-public-api-polish.md`: shipped slice making `weave`, `agent`, `tool`, and `integration` the primary authoring boundary.

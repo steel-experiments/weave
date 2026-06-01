@@ -1,7 +1,7 @@
-import { StaticCredentialProvider, defineWeaveApp } from "weave";
+import { StaticCredentialProvider, weave } from "weave";
 import { sreAgent } from "./agent.js";
 
-export const sreDemoApp = defineWeaveApp({
+export const sreDemoApp = weave({
   name: "sre-demo",
   agents: [sreAgent],
   credentialProvider: new StaticCredentialProvider(

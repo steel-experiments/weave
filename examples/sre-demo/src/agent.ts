@@ -1,4 +1,4 @@
-import { defineAgent } from "weave";
+import { agent } from "weave";
 import { z } from "zod";
 import {
   axiomSearchLogs,
@@ -13,7 +13,7 @@ export const sreAgentInput = z.object({
   prompt: z.string().min(1),
 });
 
-export const sreAgent = defineAgent({
+export const sreAgent = agent({
   name: "sre",
   description: "Run-first SRE agent for the north-star incident demo.",
   input: sreAgentInput,

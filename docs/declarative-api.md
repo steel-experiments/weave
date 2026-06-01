@@ -19,9 +19,11 @@ The runtime turns durable operations into thread events, worker work, resumable 
 
 | Primitive | Status |
 | --- | --- |
-| `tool` / `defineTool` | Current |
-| `agent` / `defineAgent` with `planner` | Current |
-| `agent` / `defineAgent` with `run(ctx, input)` | New V1 authoring API |
+| `tool` | Current primary API |
+| `agent` with `run(ctx, input)` | Current primary API |
+| `agent` with `planner` | Compatibility escape hatch |
+| `weave` | Current app registry API |
+| `integration` | Current integration API |
 | `ctx.tool` | First durable effect |
 | `ctx.emit` | Provisional replay-safe event helper |
 | `ctx.uuid` | Provisional deterministic ID helper |
@@ -34,10 +36,12 @@ The runtime turns durable operations into thread events, worker work, resumable 
 
 ## Authoring Primitives
 
-- `tool` / `defineTool`: declares a typed side-effect contract with input, output, progress, credentials, and `run`.
-- `agent` / `defineAgent`: declares an agent using the new `run(ctx, input)` authoring model or the lower-level planner model.
-- `weave` / `defineWeaveApp`: composes agents, tools, integrations, and runtime dependencies into an application registry.
-- `integration` / `defineIntegration`: declares external route and event handling adapters.
+- `tool`: declares a typed side-effect contract with input, output, progress, credentials, and `run`.
+- `agent`: declares an agent using the new `run(ctx, input)` authoring model or the lower-level planner model.
+- `weave`: composes agents, tools, integrations, and runtime dependencies into an application registry.
+- `integration`: declares external route and event handling adapters.
+
+The older `defineTool`, `defineAgent`, `defineWeaveApp`, and `defineIntegration` names remain exported for compatibility. New examples should prefer the shorter authoring names.
 
 Policies, capabilities, typed events, projections, and subthreads are planned public primitives. They are not part of the first V1 authoring slice unless explicitly documented below.
 
