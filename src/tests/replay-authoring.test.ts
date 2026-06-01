@@ -3,7 +3,7 @@ import { z } from "zod";
 import { agent, event } from "../agent-contract.js";
 import { createAgentPlanner } from "../agent-runner.js";
 import type { AppendOptions, AppendResult, FollowCursor, Lease, ReadOptions, ThreadEngine, ThreadLeaseStore } from "../contracts.js";
-import { ReplayMismatchError } from "../errors.js";
+import { ParallelDurableEffectError, ReplayMismatchError } from "../errors.js";
 import {
   deterministicUuid,
   eventKey,
@@ -117,6 +117,53 @@ async function testToolFailedReplayNoPlan(): Promise<void> {
 
   const plan = await planner.plan("tool-failed-replay", [...history, request, failed]);
   assert.equal(plan, null);
+}
+
+async function testParallelDurableEffectRejected(): Promise<void> {
+  const parallelAgent = agent({
+    name: "parallel-agent",
+    input: inputSchema,
+    tools: [lookupTool],
+    async run(ctx, input) {
+      await Promise.all([
+        ctx.tool("first-lookup", lookupTool, input),
+        ctx.tool("second-lookup", lookupTool, input),
+      ]);
+    },
+  });
+  const planner = createAgentPlanner(parallelAgent);
+
+  await assert.rejects(
+    async () => {
+      await planner.plan("parallel-durable-effect", initialHistory("parallel-durable-effect"));
+    },
+    ParallelDurableEffectError,
+  );
+}
+
+async function testMixedParallelDurableEffectRejected(): Promise<void> {
+  const parallelAgent = agent({
+    name: "parallel-mixed-agent",
+    input: inputSchema,
+    tools: [lookupTool],
+    async run(ctx, input) {
+      await Promise.all([
+        ctx.tool("lookup", lookupTool, input),
+        ctx.gate("approve", {
+          reason: "risky-remediation",
+          proposedAction: "Approve a mixed parallel durable effect test.",
+        }),
+      ]);
+    },
+  });
+  const planner = createAgentPlanner(parallelAgent);
+
+  await assert.rejects(
+    async () => {
+      await planner.plan("mixed-parallel-durable-effect", initialHistory("mixed-parallel-durable-effect"));
+    },
+    ParallelDurableEffectError,
+  );
 }
 
 async function testReplayMismatch(): Promise<void> {
@@ -649,6 +696,8 @@ class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
 await testDuplicatePrevention();
 await testDecodeFailure();
 await testToolFailedReplayNoPlan();
+await testParallelDurableEffectRejected();
+await testMixedParallelDurableEffectRejected();
 await testReplayMismatch();
 await testEmitPayloadMismatch();
 await testCheckpointReplay();

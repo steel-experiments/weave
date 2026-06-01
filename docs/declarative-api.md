@@ -519,7 +519,7 @@ For nonces, secrets, or security tokens, use a tool, capability, credential prov
 
 ## Parallel Durable Effects
 
-In the first V1 implementation, durable effects should be awaited sequentially.
+In the first V1 implementation, suspending durable effects must be awaited sequentially.
 
 Prefer:
 
@@ -528,7 +528,7 @@ const issue = await ctx.tool("inspect-issue", inspectIssue, input);
 const tests = await ctx.tool("run-tests", runTests, issue.data);
 ```
 
-Avoid until parallel semantics are documented:
+Unsupported:
 
 ```ts
 const [a, b] = await Promise.all([
@@ -536,6 +536,10 @@ const [a, b] = await Promise.all([
   ctx.tool("b", toolB, input),
 ]);
 ```
+
+If an agent starts a second suspending durable effect before the first suspension is reconciled, Weave throws `ParallelDurableEffectError` with code `PARALLEL_DURABLE_EFFECT`.
+
+This guardrail currently applies to `ctx.tool` and `ctx.gate` when they would suspend. Future parallel semantics may allow explicitly batched durable effects, but implicit `Promise.all` is not supported yet.
 
 ## Planner Compatibility
 

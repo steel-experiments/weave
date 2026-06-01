@@ -23,6 +23,13 @@ export class ReplayMismatchError extends WeaveError {
   }
 }
 
+export class ParallelDurableEffectError extends WeaveError {
+  constructor(message: string, details?: unknown) {
+    super("PARALLEL_DURABLE_EFFECT", message, details);
+    this.name = "ParallelDurableEffectError";
+  }
+}
+
 export function isWeaveError(error: unknown, code?: string): error is WeaveError {
   return error instanceof WeaveError && (code === undefined || error.code === code);
 }

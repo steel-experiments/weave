@@ -6,7 +6,7 @@ import type {
   GateRequest,
   GateResolution,
 } from "./agent-contract.js";
-import { ReplayMismatchError, ToolFailedError, WeaveError } from "./errors.js";
+import { ParallelDurableEffectError, ReplayMismatchError, ToolFailedError, WeaveError } from "./errors.js";
 import {
   deterministicUuid,
   eventKey,
@@ -73,6 +73,10 @@ class RunAgentPlanner implements AgentPlanner {
       return toPlan(events, plannedEvents);
     } catch (error) {
       if (error instanceof AgentSuspended) {
+        const parallelError = context.parallelDurableEffectError();
+        if (parallelError) {
+          throw parallelError;
+        }
         return toPlan(events, [...context.drainEvents(), ...error.events]);
       }
       if (error instanceof ToolFailedError) {
@@ -90,6 +94,8 @@ class ReplayAgentContext implements AgentContext {
 
   private readonly pendingEvents: ThreadEvent[] = [];
   private readonly controller = new AbortController();
+  private suspendedEffect: { kind: string; key: string } | undefined;
+  private parallelEffectError: ParallelDurableEffectError | undefined;
 
   constructor(
     private readonly options: {
@@ -161,11 +167,11 @@ class ReplayAgentContext implements AgentContext {
         });
       }
 
-      throw new AgentSuspended("tool-pending", []);
+      this.suspend("tool", key, "tool-pending", []);
     }
 
     const requested = this.toolRequestedEvent(key, tool.name, inputResult.data);
-    throw new AgentSuspended("tool-requested", [requested]);
+    this.suspend("tool", key, "tool-requested", [requested]);
   }
 
   async emit(key: string, event: AgentEventInput): Promise<void> {
@@ -232,10 +238,10 @@ class ReplayAgentContext implements AgentContext {
         return resolved.payload;
       }
 
-      throw new AgentSuspended("gate-pending", []);
+      this.suspend("gate", key, "gate-pending", []);
     }
 
-    throw new AgentSuspended("gate-created", [this.gateCreatedEvent(key, request)]);
+    this.suspend("gate", key, "gate-created", [this.gateCreatedEvent(key, request)]);
   }
 
   async checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value> {
@@ -283,6 +289,10 @@ class ReplayAgentContext implements AgentContext {
     return drained;
   }
 
+  parallelDurableEffectError(): ParallelDurableEffectError | undefined {
+    return this.parallelEffectError;
+  }
+
   responseEvent(key: string, message: string): ThreadEvent {
     const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
     return {
@@ -320,6 +330,32 @@ class ReplayAgentContext implements AgentContext {
         stepKey: key,
       },
     };
+  }
+
+  private suspend(
+    kind: string,
+    key: string,
+    reason: SuspensionReason,
+    events: readonly ThreadEvent[],
+  ): never {
+    this.markSuspendingEffect(kind, key);
+    throw new AgentSuspended(reason, events);
+  }
+
+  private markSuspendingEffect(kind: string, key: string): void {
+    if (!this.suspendedEffect) {
+      this.suspendedEffect = { kind, key };
+      return;
+    }
+
+    this.parallelEffectError ??= new ParallelDurableEffectError(
+      "Parallel durable effects are not supported; await ctx.* effects sequentially",
+      {
+        first: this.suspendedEffect,
+        next: { kind, key },
+      },
+    );
+    throw this.parallelEffectError;
   }
 
   private gateCreatedEvent(key: string, request: GateRequest): ThreadEvent {

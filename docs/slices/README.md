@@ -30,3 +30,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `08-policy-helpers-for-gates.md`: shipped slice adding reusable approval policy authoring helpers.
 - `09-agent-failure-events.md`: shipped slice adding durable `agent.failed` events for non-tool agent exceptions.
 - `10-typed-event-factories.md`: shipped slice adding typed `event(type, payload)` builders for `ctx.emit`.
+- `11-parallel-durable-effects-guardrails.md`: shipped slice rejecting unsupported parallel suspending effects.
