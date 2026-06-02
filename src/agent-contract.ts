@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { Actor, SessionMetadata, SessionSource, ThreadEvent, ThreadStatus } from "./events.js";
+import { WeaveError } from "./errors.js";
 import type { AgentPlanner } from "./runner.js";
 import type { AnyToolContract, ToolContract } from "./tool-contract.js";
 import type { MaybePromise } from "./types.js";
@@ -73,6 +74,8 @@ export type AgentEventMetadata = {
   idempotencyKey?: string;
 };
 
+export type EventVisibility = "public" | "internal";
+
 export type AgentEventInput<Type extends ThreadEvent["type"] = ThreadEvent["type"]> = Type extends ThreadEvent["type"]
   ? AgentEventMetadata & {
       type: Type;
@@ -80,11 +83,61 @@ export type AgentEventInput<Type extends ThreadEvent["type"] = ThreadEvent["type
     }
   : never;
 
+export type EventInstance<Type extends ThreadEvent["type"] = ThreadEvent["type"]> = AgentEventInput<Type>;
+
+export type EventContract<Type extends ThreadEvent["type"] = ThreadEvent["type"]> = {
+  type: Type;
+  payload: z.ZodType<Extract<ThreadEvent, { type: Type }>["payload"]>;
+  visibility?: EventVisibility;
+  version?: number;
+  description?: string;
+};
+
+export type EventFactory<Type extends ThreadEvent["type"] = ThreadEvent["type"]> = {
+  readonly type: Type;
+  readonly payload: z.ZodType<Extract<ThreadEvent, { type: Type }>["payload"]>;
+  readonly visibility?: EventVisibility;
+  readonly version?: number;
+  readonly description?: string;
+  (payload: Extract<ThreadEvent, { type: Type }>["payload"], metadata?: AgentEventMetadata): EventInstance<Type>;
+};
+
+export function defineEvent<const Type extends ThreadEvent["type"]>(contract: EventContract<Type>): EventFactory<Type>;
 export function defineEvent<const Type extends ThreadEvent["type"]>(
   type: Type,
   payload: Extract<ThreadEvent, { type: Type }>["payload"],
+  metadata?: AgentEventMetadata,
+): AgentEventInput<Type>;
+export function defineEvent<const Type extends ThreadEvent["type"]>(
+  typeOrContract: Type | EventContract<Type>,
+  payload?: Extract<ThreadEvent, { type: Type }>["payload"],
   metadata: AgentEventMetadata = {},
-): AgentEventInput<Type> {
+): AgentEventInput<Type> | EventFactory<Type> {
+  if (typeof typeOrContract === "object") {
+    const contract = typeOrContract;
+    const factory = ((factoryPayload: Extract<ThreadEvent, { type: Type }>["payload"], factoryMetadata: AgentEventMetadata = {}) => {
+      const result = contract.payload.safeParse(factoryPayload);
+      if (!result.success) {
+        throw new WeaveError("EVENT_PAYLOAD_INVALID", `Invalid payload for event ${contract.type}`, result.error);
+      }
+
+      return { ...factoryMetadata, type: contract.type, payload: result.data } as EventInstance<Type>;
+    }) as unknown as EventFactory<Type>;
+    Object.defineProperties(factory, {
+      type: { value: contract.type, enumerable: true },
+      payload: { value: contract.payload, enumerable: true },
+      visibility: { value: contract.visibility, enumerable: true },
+      version: { value: contract.version, enumerable: true },
+      description: { value: contract.description, enumerable: true },
+    });
+    return factory;
+  }
+
+  if (payload === undefined) {
+    throw new Error(`Event payload is required for ${typeOrContract}`);
+  }
+
+  const type = typeOrContract;
   return { ...metadata, type, payload } as AgentEventInput<Type>;
 }
 
@@ -113,7 +166,8 @@ export type AgentContext<
   cancelChild(key: string, thread: ThreadRef, options?: CancelChildOptions): Promise<void>;
   children(options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
   checkpoint<Value>(key: string, compute: () => MaybePromise<Value>): Promise<Value>;
-  emit(key: string, event: AgentEventInput): Promise<void>;
+  emit(key: string, event: EventInstance): Promise<void>;
+  id(key: string): string;
   uuid(key: string): string;
 };
 

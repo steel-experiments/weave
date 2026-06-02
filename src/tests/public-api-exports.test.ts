@@ -64,8 +64,16 @@ assert.equal(defineWeaveApp(echoApp), echoApp);
 
 const emitted = event("agent.response.produced", { message: "ok" });
 const defined = defineEvent("agent.response.produced", { message: "ok" });
+const responseProduced = event({
+  type: "agent.response.produced",
+  payload: z.object({ message: z.string().min(1) }),
+  description: "Public API response event.",
+});
 assert.equal(emitted.type, "agent.response.produced");
 assert.deepEqual(defined.payload, { message: "ok" });
+assert.equal(responseProduced.type, "agent.response.produced");
+assert.equal(responseProduced.description, "Public API response event.");
+assert.deepEqual(responseProduced({ message: "ok" }).payload, { message: "ok" });
 
 const policy = approvalPolicy({
   name: "public-api.policy",

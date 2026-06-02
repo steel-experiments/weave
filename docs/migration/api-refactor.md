@@ -197,6 +197,40 @@ for (const file of files) {
 
 If a key is reused for a different durable effect kind or changed payload, Weave raises `ReplayMismatchError`.
 
+## Typed Events And Stable IDs
+
+Prefer contract-based event factories for new emitted domain facts.
+
+Before:
+
+```ts
+await ctx.emit("final-response", {
+  type: "agent.response.produced",
+  payload: { message },
+});
+```
+
+After:
+
+```ts
+const responseProduced = event({
+  type: "agent.response.produced",
+  payload: z.object({
+    message: z.string().min(1),
+  }),
+});
+
+await ctx.emit("final-response", responseProduced({ message }));
+```
+
+Use `ctx.id(key)` for deterministic durable IDs:
+
+```ts
+const findingId = ctx.id("finding:auth-docs");
+```
+
+`ctx.uuid(key)` remains as a compatibility alias, but new code should prefer `ctx.id(key)` because it communicates that the value is deterministic, not random.
+
 ## Replay Safety
 
 `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
@@ -262,7 +296,8 @@ Use `ctx.children` to list known children and `ctx.cancelChild` to record durabl
 - Replay is event-log replay, not persisted JavaScript continuation capture.
 - Raw side effects inside `agent.run` are unsafe.
 - Arbitrary parallel durable effects are unsupported.
-- `ctx.emit` and `ctx.uuid` are provisional replay helpers.
+- `ctx.emit` supports typed event factories and raw compatibility input.
+- `ctx.id` is preferred for deterministic IDs; `ctx.uuid` remains a compatibility alias.
 - Capabilities are planned but not implemented in V1 authoring.
 - Effect-backed internals are not required for public V1 authoring.
 - Cancelled children use failed thread semantics; there is no separate `cancelled` status yet.

@@ -529,8 +529,12 @@ class ReplayAgentContext implements AgentContext {
     return value;
   }
 
-  uuid(key: string): string {
+  id(key: string): string {
     return deterministicUuid("agent-context", this.threadId, this.scopeKey, key);
+  }
+
+  uuid(key: string): string {
+    return this.id(key);
   }
 
   drainEvents(): ThreadEvent[] {

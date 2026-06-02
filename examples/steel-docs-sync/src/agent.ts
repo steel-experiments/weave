@@ -15,6 +15,30 @@ export const SteelDocsSessionMetadataSchema = z.object({
   openApiSpecUrl: z.string().url().optional(),
 });
 
+const findingProduced = event({
+  type: "agent.finding.produced",
+  payload: z.object({
+    findingId: z.string().uuid(),
+    severity: z.enum(["info", "warning", "critical"]),
+    summary: z.string().min(1),
+    evidence: z.array(
+      z.object({
+        source: z.string().min(1),
+        summary: z.string().min(1),
+      }),
+    ),
+  }),
+  description: "Structured finding produced by the Steel docs sync model review.",
+});
+
+const responseProduced = event({
+  type: "agent.response.produced",
+  payload: z.object({
+    message: z.string().min(1),
+  }),
+  description: "Final Steel docs sync response message.",
+});
+
 export const steelDocsAgent = agent({
   name: "steel-docs",
   description: "Deterministic Steel docs sync audit agent.",
@@ -27,8 +51,8 @@ export const steelDocsAgent = agent({
     for (const [index, finding] of reviewData.findings.entries()) {
       await ctx.emit(
         `model-review-finding:${index}`,
-        event("agent.finding.produced", {
-          findingId: ctx.uuid(`model-review-finding:${index}`),
+        findingProduced({
+          findingId: ctx.id(`model-review-finding:${index}`),
           severity: finding.severity,
           summary: finding.summary,
           evidence: finding.evidence.map((evidence, evidenceIndex) => ({
@@ -41,7 +65,7 @@ export const steelDocsAgent = agent({
 
     await ctx.emit(
       "final-response",
-      event("agent.response.produced", {
+      responseProduced({
         message: reviewData.finalMessage,
       }),
     );

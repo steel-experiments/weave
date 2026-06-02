@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -104,48 +104,48 @@ ctx.uuid("finding:auth-docs") === ctx.id("finding:auth-docs");
 
 ## Acceptance Criteria
 
-- [ ] `event({...})` exists and is exported from the root package.
-- [ ] Existing `event(type, payload, metadata?)` still works.
-- [ ] `ctx.emit` accepts typed event instances.
-- [ ] `ctx.emit` still accepts raw event input for compatibility.
-- [ ] Typed event factories validate payloads before emit planning.
-- [ ] `ctx.emit` no-ops on same key/type/payload replay.
-- [ ] `ctx.emit` throws `ReplayMismatchError` on same key with different type.
-- [ ] `ctx.emit` throws `ReplayMismatchError` on same key/type with different canonical payload.
-- [ ] `ctx.id` exists and is deterministic.
-- [ ] `ctx.uuid` remains as an alias or compatibility helper.
-- [ ] Steel docs sync uses typed event factories.
-- [ ] Docs explain typed events and stable IDs.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] `event({...})` exists and is exported from the root package.
+- [x] Existing `event(type, payload, metadata?)` still works.
+- [x] `ctx.emit` accepts typed event instances.
+- [x] `ctx.emit` still accepts raw event input for compatibility.
+- [x] Typed event factories validate payloads before emit planning.
+- [x] `ctx.emit` no-ops on same key/type/payload replay.
+- [x] `ctx.emit` throws `ReplayMismatchError` on same key with different type.
+- [x] `ctx.emit` throws `ReplayMismatchError` on same key/type with different canonical payload.
+- [x] `ctx.id` exists and is deterministic.
+- [x] `ctx.uuid` remains as an alias or compatibility helper.
+- [x] Steel docs sync uses typed event factories.
+- [x] Docs explain typed events and stable IDs.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Add event contract/factory API.
-- [ ] Add `ctx.id` and `ctx.uuid` alias behavior.
-- [ ] Add replay and validation tests.
-- [ ] Migrate Steel docs sync emissions.
-- [ ] Update docs and migration guide.
-- [ ] Run verification.
+- [x] Add event contract/factory API.
+- [x] Add `ctx.id` and `ctx.uuid` alias behavior.
+- [x] Add replay and validation tests.
+- [x] Migrate Steel docs sync emissions.
+- [x] Update docs and migration guide.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
-
-Include:
-
-- final public API shape
-- compatibility behavior preserved
-- tests added
-- examples migrated
-- commands run
-- known gaps or follow-up slices
+- Added contract-based typed event factories through `event({ type, payload, ...metadata })` and `defineEvent({ ... })`.
+- Preserved `event(type, payload, metadata?)` and raw `ctx.emit(key, { type, payload })` compatibility.
+- Added `EventContract`, `EventFactory`, and `EventInstance` to the authoring boundary.
+- Added `ctx.id(key)` as the preferred deterministic ID helper and kept `ctx.uuid(key)` as an alias.
+- Added replay authoring tests for typed factory append/replay, event type mismatch, canonical payload mismatch, payload schema validation, stable ID behavior, UUID alias compatibility, and raw emit compatibility.
+- Added public API smoke coverage for `event({...})`.
+- Migrated Steel docs sync emissions to typed event factories and `ctx.id`.
+- Updated docs in `docs/declarative-api.md`, `docs/event-taxonomy.md`, and `docs/migration/api-refactor.md`.
+- Verified with `npm test` and `npm run typecheck`.
+- Follow-up slices remain intentionally separate: capability contracts, policy enforcement, event subscription/integration inference, event migration machinery, and Effect-backed internals.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/migration/api-refactor.md`
-- [ ] `README.md` if public example guidance changes
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/migration/api-refactor.md`
+- [x] `README.md` if public example guidance changes

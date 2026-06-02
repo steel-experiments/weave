@@ -26,11 +26,13 @@ export interface WeaveModuleBoundary {
     payload: Extract<ThreadEvent, { type: Type }>["payload"],
     metadata?: AgentEventMetadata,
   ): AgentEventInput<Type>;
+  event<const Type extends ThreadEvent["type"]>(contract: EventContract<Type>): EventFactory<Type>;
   defineEvent<const Type extends ThreadEvent["type"]>(
     type: Type,
     payload: Extract<ThreadEvent, { type: Type }>["payload"],
     metadata?: AgentEventMetadata,
   ): AgentEventInput<Type>;
+  defineEvent<const Type extends ThreadEvent["type"]>(contract: EventContract<Type>): EventFactory<Type>;
   defineWeaveApp<
     const Agents extends readonly AgentContract[],
     const Integrations extends readonly IntegrationContract[] = readonly IntegrationContract[],
@@ -117,7 +119,25 @@ interface AgentContext<Tools extends readonly AnyToolContract[] = readonly AnyTo
   children(options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
   checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
+  id(key: string): string;
   uuid(key: string): string;
+}
+
+interface EventContract<Type extends string = string> {
+  type: Type;
+  payload: Schema<unknown>;
+  visibility?: "public" | "internal";
+  version?: number;
+  description?: string;
+}
+
+interface EventFactory<Type extends string = string> {
+  readonly type: Type;
+  readonly payload: Schema<unknown>;
+  readonly visibility?: "public" | "internal";
+  readonly version?: number;
+  readonly description?: string;
+  (payload: unknown, metadata?: AgentEventMetadata): AgentEventInput;
 }
 
 interface IntegrationContract<

@@ -41,6 +41,37 @@ const EventEnvelopeBase = z.object({
 
 `scopeKey` and `stepKey` identify durable effects for replay. For `ctx.tool`, the default scope is `agent:<agentName>` and the agent author supplies the stable step key.
 
+## Typed Event Factories
+
+App code should prefer defining reusable event factories with `event({ type, payload })`:
+
+```ts
+const responseProduced = event({
+  type: "agent.response.produced",
+  payload: z.object({
+    message: z.string().min(1),
+  }),
+  description: "Final response shown to the user.",
+});
+```
+
+The factory validates payloads before producing an event input for `ctx.emit`:
+
+```ts
+await ctx.emit("final-response", responseProduced({ message }));
+```
+
+Replay identity is still `threadId + scopeKey + stepKey`. Re-emitting the same key, type, and canonical payload is a no-op. Reusing a key with a different event type or different canonical payload raises `ReplayMismatchError`.
+
+The lower-level raw form remains supported for compatibility:
+
+```ts
+await ctx.emit("final-response", {
+  type: "agent.response.produced",
+  payload: { message },
+});
+```
+
 ## Event Set
 
 The PoC uses this event set.

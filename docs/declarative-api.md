@@ -25,9 +25,10 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `weave` | Current app registry API |
 | `integration` | Current integration API |
 | `ctx.tool` | First durable effect |
-| `ctx.emit` | Provisional replay-safe event helper |
-| `event` | Current typed event factory |
-| `ctx.uuid` | Provisional deterministic ID helper |
+| `ctx.emit` | Current replay-safe event helper |
+| `event` | Current typed event contract/factory helper |
+| `ctx.id` | Current deterministic ID helper |
+| `ctx.uuid` | Compatibility alias for `ctx.id` |
 | `ctx.gate` | Current approval effect |
 | `ctx.checkpoint` | Current local durable effect |
 | `ctx.spawn` | Current child-thread effect |
@@ -282,7 +283,7 @@ await ctx.emit("finding", {
 Use deterministic IDs for now:
 
 ```ts
-const findingId = ctx.uuid("finding");
+const findingId = ctx.id("finding");
 await ctx.emit("finding", {
   type: "agent.finding.produced",
   payload: { findingId, summary },
@@ -408,7 +409,7 @@ Policy helpers are useful for naming and reusing approval rules across agents. T
 
 ## Event Factories And Replay Helpers
 
-`ctx.emit` records replay-safe domain facts. Prefer constructing emitted facts with `event(type, payload)` so TypeScript checks the payload against the event type.
+`ctx.emit` records replay-safe domain facts. Prefer defining reusable event contracts with `event({ type, payload })`, then emit event instances created by those factories.
 
 ### ctx.emit
 
@@ -417,7 +418,7 @@ Policy helpers are useful for naming and reusing approval rules across agents. T
 ```ts
 await ctx.emit(
   "final-response",
-  event("agent.response.produced", {
+  responseProduced({
     message,
   }),
 );
@@ -426,7 +427,7 @@ await ctx.emit(
 Semantics:
 
 - requires a stable key
-- accepts typed `event(type, payload)` values or compatible `{ type, payload }` objects
+- accepts typed `event({...})` factory instances, typed `event(type, payload)` values, or compatible `{ type, payload }` objects
 - durable identity is `threadId + scopeKey + stepKey`
 - if the same key, type, and canonical payload were already emitted, it is a no-op
 - if the same key is reused with a different type or payload, Weave throws `ReplayMismatchError`
@@ -435,10 +436,23 @@ Semantics:
 Good:
 
 ```ts
+const findingProduced = event({
+  type: "agent.finding.produced",
+  payload: z.object({
+    findingId: z.string().uuid(),
+    severity: z.enum(["info", "warning", "critical"]),
+    summary: z.string().min(1),
+    evidence: z.array(z.object({
+      source: z.string().min(1),
+      summary: z.string().min(1),
+    })),
+  }),
+});
+
 await ctx.emit(
   "finding:auth-docs",
-  event("agent.finding.produced", {
-    findingId: ctx.uuid("finding:auth-docs"),
+  findingProduced({
+    findingId: ctx.id("finding:auth-docs"),
     severity: "warning",
     summary,
     evidence,
@@ -470,6 +484,22 @@ await ctx.tool("send-email", sendEmail, {
 
 ### event
 
+`event({ type, payload, ...metadata })` defines a reusable typed event factory. The factory validates payloads with the supplied schema before returning an event input for `ctx.emit`.
+
+```ts
+const responseProduced = event({
+  type: "agent.response.produced",
+  payload: z.object({
+    message: z.string().min(1),
+  }),
+  description: "Final response shown to the user.",
+});
+
+await ctx.emit("final-response", responseProduced({ message }));
+```
+
+The older `event(type, payload, metadata?)` form still creates a typed event input for `ctx.emit` and remains supported for compatibility.
+
 `event(type, payload, metadata?)` creates a typed event input for `ctx.emit`.
 
 ```ts
@@ -481,14 +511,14 @@ const finding = event("agent.finding.produced", {
 });
 ```
 
-The factory does not append anything by itself. It is only a typed builder for `ctx.emit` inputs.
+Event helpers do not append anything by themselves. They are typed builders for `ctx.emit` inputs.
 
-### ctx.uuid
+### ctx.id
 
-`ctx.uuid(key)` returns a deterministic UUID-like identifier derived from the current thread, scope, and key.
+`ctx.id(key)` returns a deterministic UUID-like identifier derived from the current thread, scope, and key.
 
 ```ts
-const findingId = ctx.uuid("finding:auth-docs");
+const findingId = ctx.id("finding:auth-docs");
 ```
 
 Semantics:
@@ -498,12 +528,12 @@ Semantics:
 - useful for event payload IDs
 - not random
 - not suitable for cryptographic or security-sensitive purposes
-- provisional; may be renamed to `ctx.id` or `ctx.stableId` before a future stability milestone
+- `ctx.uuid(key)` is retained as a compatibility alias
 
 Good:
 
 ```ts
-const findingId = ctx.uuid("finding:0");
+const findingId = ctx.id("finding:0");
 await ctx.emit("finding:0", {
   type: "agent.finding.produced",
   payload: {
@@ -517,7 +547,7 @@ await ctx.emit("finding:0", {
 Bad:
 
 ```ts
-const nonce = ctx.uuid("oauth-nonce");
+const nonce = ctx.id("oauth-nonce");
 ```
 
 For nonces, secrets, or security tokens, use a tool, credential provider, or future durable random/capability helper with explicit semantics.
@@ -735,7 +765,8 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 ## Current Limitations
 
 - `ctx.tool`, `ctx.gate`, `ctx.checkpoint`, `ctx.spawn`, `ctx.join`, `ctx.children`, and `ctx.cancelChild` are implemented.
-- `ctx.emit` and `ctx.uuid` are provisional replay helpers.
+- `ctx.emit` is implemented and supports typed event factories plus raw compatibility input.
+- `ctx.id` is the preferred deterministic ID helper; `ctx.uuid` remains a compatibility alias.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
 - capabilities are planned but not implemented in V1 authoring.
 - Package subpaths are available, but root exports still include runtime internals for compatibility.
@@ -745,6 +776,5 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 
 ## Planned Next Primitives
 
-- stable naming for replay helpers such as `ctx.uuid`.
-- capabilities and richer policy enforcement for centralized governance and scoped grants.
+- capability contracts and richer policy enforcement for centralized governance and scoped grants.
 - Effect-backed internals behind the same Promise-first public API.
