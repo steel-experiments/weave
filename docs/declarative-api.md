@@ -594,10 +594,12 @@ if (result.status === "failed") {
   return `Research failed: ${result.message}`;
 }
 
-return result.outputSummary;
+return result.output ?? result.outputSummary;
 ```
 
-`ctx.join` is durable and requires its own stable key. If the parent has a matching `child_thread.completed` event, it returns `{ status: "completed", thread, outputSummary }`. If the parent has a matching `child_thread.failed` event, it returns `{ status: "failed", thread, errorCode, message }`, or throws `ChildThreadFailedError` when `throwOnFailure: true` is set.
+`ctx.join` is durable and requires its own stable key. If the parent has a matching `child_thread.completed` event, it returns `{ status: "completed", thread, output, outputSummary }`. If the parent has a matching `child_thread.failed` event, it returns `{ status: "failed", thread, errorCode, message }`, or throws `ChildThreadFailedError` when `throwOnFailure: true` is set.
+
+Run-first agents store raw non-`undefined` return values in `agent.output.completed`. The raw output is canonical replay data; `agent.response.produced` remains the timeline/display message. Child completion mirroring copies `agent.output.completed.payload.output` into `child_thread.completed.payload.output`, making it available as `AgentRun.output` from `ctx.join`.
 
 When no parent terminal event exists, `ctx.join` asks `ThreadService.mirrorChildTerminalEvent` to mirror a terminal child projection into the parent. If the child is still running, the parent runner pass suspends. Mirrored terminal events wake the parent runner with `child-completed` or `child-failed`.
 

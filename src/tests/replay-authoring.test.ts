@@ -371,6 +371,11 @@ async function testDomainToolOutputReplay(): Promise<void> {
   assert(secondPlan);
   assert.equal(secondPlan.events[0]?.type, "agent.response.produced");
   assert.deepEqual(secondPlan.events[0]?.payload, { message: "ok:1" });
+  assert.equal(secondPlan.events[1]?.type, "agent.output.completed");
+  assert.deepEqual(secondPlan.events[1]?.payload, {
+    output: "ok:1",
+    summary: "ok:1",
+  });
 }
 
 async function testToolWorkerOutputSummaries(): Promise<void> {
@@ -767,7 +772,8 @@ async function testJoinMirrorsCompletedChild(): Promise<void> {
       if (result.status === "failed") {
         return { finalMessage: result.message };
       }
-      return { finalMessage: result.outputSummary ?? "child complete" };
+      const output = result.output as { answer?: number } | undefined;
+      return { finalMessage: `answer=${output?.answer ?? "missing"}` };
     },
   });
   const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
@@ -787,6 +793,18 @@ async function testJoinMirrorsCompletedChild(): Promise<void> {
       actor: { type: "agent", id: "child-agent" },
       payload: { message: "child finished" },
     },
+    {
+      eventId: eventKey(spawned.payload.childThreadId, "agent.output.completed", "done"),
+      threadId: spawned.payload.childThreadId,
+      type: "agent.output.completed",
+      occurredAt: nowIso(),
+      correlationId: spawned.correlationId,
+      actor: { type: "agent", id: "child-agent" },
+      payload: {
+        output: { answer: 42 },
+        summary: "child finished",
+      },
+    },
   ]);
 
   assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
@@ -799,6 +817,7 @@ async function testJoinMirrorsCompletedChild(): Promise<void> {
   assert.deepEqual(completed.payload, {
     childThreadId: spawned.payload.childThreadId,
     childAgentName: "child-agent",
+    output: { answer: 42 },
     outputSummary: "child finished",
   });
 
@@ -806,7 +825,12 @@ async function testJoinMirrorsCompletedChild(): Promise<void> {
   assert(finalPlan);
   assert.equal(finalPlan.resumeReason, "child-completed");
   assert.equal(finalPlan.events[0]?.type, "agent.response.produced");
-  assert.deepEqual(finalPlan.events[0]?.payload, { message: "child finished" });
+  assert.deepEqual(finalPlan.events[0]?.payload, { message: "answer=42" });
+  assert.equal(finalPlan.events[1]?.type, "agent.output.completed");
+  assert.deepEqual(finalPlan.events[1]?.payload, {
+    output: { finalMessage: "answer=42" },
+    summary: "answer=42",
+  });
 }
 
 async function testJoinFailedChild(): Promise<void> {

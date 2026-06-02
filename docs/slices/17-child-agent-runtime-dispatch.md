@@ -47,5 +47,4 @@ Changed modules:
 Known follow-ups:
 
 - Per-agent runner/worker scheduling policies.
-- Raw child output event support for typed `AgentRun.output`.
 - Child cancellation APIs.

@@ -250,6 +250,7 @@ export class ThreadService {
 
     if (childProjection.status === "completed") {
       const response = newestEventOfType(childEvents, "agent.response.produced");
+      const output = newestEventOfType(childEvents, "agent.output.completed");
       const event: Extract<ThreadEvent, { type: "child_thread.completed" }> = {
         ...base,
         eventId: deterministicUuid("child-thread-completed", input.parentThreadId, input.parentScopeKey, input.parentStepKey, input.childThreadId),
@@ -258,7 +259,10 @@ export class ThreadService {
         payload: {
           childThreadId: input.childThreadId,
           ...(input.childAgentName ? { childAgentName: input.childAgentName } : {}),
-          ...(response?.payload.message ? { outputSummary: response.payload.message } : {}),
+          ...(output && "output" in output.payload ? { output: output.payload.output } : {}),
+          ...(output?.payload.summary ?? response?.payload.message
+            ? { outputSummary: output?.payload.summary ?? response?.payload.message }
+            : {}),
         },
       };
       await appendChildTerminalEvent(this.engine, event);

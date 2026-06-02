@@ -529,6 +529,7 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       case "agent.step.started":
       case "agent.step.completed":
       case "checkpoint.completed":
+      case "agent.output.completed":
       case "agent.finding.produced":
       case "agent.remediation.proposed":
       case "agent.incident_report.produced":
@@ -601,6 +602,7 @@ function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
     case "tool.failed":
     case "gate.created":
     case "agent.response.produced":
+    case "agent.output.completed":
     case "agent.failed":
     case "agent.finding.produced":
     case "agent.remediation.proposed":

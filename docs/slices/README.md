@@ -37,3 +37,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `15-ctx-join-child-terminal-mirroring.md`: shipped slice adding `ctx.join` and parent child-terminal mirroring.
 - `16-child-listing.md`: shipped slice adding `ThreadService.listChildren` and `ctx.children`.
 - `17-child-agent-runtime-dispatch.md`: shipped slice dispatching child threads to their target agent.
+- `18-agent-output-raw-join-output.md`: shipped slice storing raw agent outputs and returning them from `ctx.join`.

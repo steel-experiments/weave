@@ -84,8 +84,12 @@ class RunAgentPlanner implements AgentPlanner {
     try {
       const output = await this.agent.run(context, input);
       const plannedEvents = context.drainEvents();
+      const outputSummary = formatAgentOutput(output);
       if (!plannedEvents.some((event) => event.type === "agent.response.produced")) {
-        plannedEvents.push(context.responseEvent("agent-run-output", formatAgentOutput(output)));
+        plannedEvents.push(context.responseEvent("agent-run-output", outputSummary));
+      }
+      if (output !== undefined) {
+        plannedEvents.push(context.outputEvent("agent-run-output", output, outputSummary));
       }
 
       return toPlan(events, plannedEvents);
@@ -359,6 +363,7 @@ class ReplayAgentContext implements AgentContext {
       return {
         status: "completed",
         thread,
+        ...("output" in matchingEvent.payload ? { output: matchingEvent.payload.output as Output } : {}),
         outputSummary: matchingEvent.payload.outputSummary,
       };
     }
@@ -476,6 +481,25 @@ class ReplayAgentContext implements AgentContext {
       stepKey: key,
       actor: this.actor,
       payload: { message },
+    };
+  }
+
+  outputEvent(key: string, output: unknown, summary?: string): ThreadEvent {
+    const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
+    return {
+      eventId: eventKey(this.threadId, "agent.output.completed", `${this.scopeKey}:${key}`),
+      threadId: this.threadId,
+      type: "agent.output.completed",
+      occurredAt: nowIso(),
+      correlationId: cause?.correlationId,
+      causationId: cause?.eventId,
+      scopeKey: this.scopeKey,
+      stepKey: key,
+      actor: this.actor,
+      payload: {
+        output,
+        ...(summary ? { summary } : {}),
+      },
     };
   }
 
@@ -673,6 +697,10 @@ function resumeReasonFor(event: ThreadEvent | undefined): AgentPlan["resumeReaso
 }
 
 function formatAgentOutput(output: unknown): string {
+  if (output === undefined) {
+    return "undefined";
+  }
+
   if (typeof output === "string") {
     return output;
   }

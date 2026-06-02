@@ -62,6 +62,7 @@ The PoC uses this event set.
 - `child_thread.failed`
 - `runner.resumed`
 - `agent.response.produced`
+- `agent.output.completed`
 
 ## Typed Payload Schemas
 
@@ -243,6 +244,17 @@ const AgentResponseProducedPayload = z.object({
   message: z.string().min(1),
 })
 ```
+
+### Agent output completed
+
+```ts
+const AgentOutputCompletedPayload = z.object({
+  output: z.unknown(),
+  summary: z.string().min(1).optional(),
+})
+```
+
+`output` is the canonical raw return value from `agent.run`. `summary` is optional display metadata and usually matches the response message.
 
 ## Discriminated Union
 

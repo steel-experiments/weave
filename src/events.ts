@@ -152,6 +152,11 @@ export const AgentResponseProducedPayloadSchema = z.object({
   message: z.string().min(1),
 });
 
+export const AgentOutputCompletedPayloadSchema = z.object({
+  output: z.unknown(),
+  summary: z.string().min(1).optional(),
+});
+
 export const AgentFindingProducedPayloadSchema = z.object({
   findingId: z.string().uuid(),
   severity: z.enum(["info", "warning", "critical"]),
@@ -200,6 +205,7 @@ export const ChildThreadSpawnedPayloadSchema = z.object({
 export const ChildThreadCompletedPayloadSchema = z.object({
   childThreadId: z.string().min(1),
   childAgentName: z.string().min(1).optional(),
+  output: z.unknown().optional(),
   outputSummary: z.string().min(1).optional(),
 });
 
@@ -295,6 +301,11 @@ const AgentResponseProducedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: AgentResponseProducedPayloadSchema,
 });
 
+const AgentOutputCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("agent.output.completed"),
+  payload: AgentOutputCompletedPayloadSchema,
+});
+
 const AgentFindingProducedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("agent.finding.produced"),
   payload: AgentFindingProducedPayloadSchema,
@@ -348,6 +359,7 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   GateResolvedEventSchema,
   RunnerResumedEventSchema,
   AgentResponseProducedEventSchema,
+  AgentOutputCompletedEventSchema,
   AgentFindingProducedEventSchema,
   AgentRemediationProposedEventSchema,
   AgentIncidentReportProducedEventSchema,
