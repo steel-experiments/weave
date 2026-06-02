@@ -1445,6 +1445,45 @@ async function testUnknownRootSessionAgentRecordsFailure(): Promise<void> {
   assert.equal(events.some((event) => event.type === "agent.output.completed"), false);
 }
 
+async function testUnknownChildSessionAgentRecordsFailure(): Promise<void> {
+  const parentThreadId = "unknown-child-agent-parent";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const defaultAgent = agent({
+    name: "default-agent",
+    input: inputSchema,
+    async run() {
+      return { finalMessage: "default ran" };
+    },
+  });
+  const child = await service.startChildSession({
+    parentThreadId,
+    agentName: "missing-child-agent",
+    input: { query: "child-input" },
+    source: "test",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-missing-child",
+    idempotencyKey: "spawn-missing-child",
+  });
+  const runner = new ThreadRunner(
+    engine,
+    engine,
+    createRuntimeAgentPlanner(weave({ agents: [defaultAgent] }), defaultAgent.name, service),
+    "test-runner",
+  );
+
+  const result = await runner.runOnce(child.threadId);
+  assert.deepEqual(result, { acted: true, appendedEvents: 1, reason: "agent-failed" });
+  const events = await engine.read(child.threadId);
+  const failed = events.find(
+    (event): event is Extract<ThreadEvent, { type: "agent.failed" }> => event.type === "agent.failed",
+  );
+  assert(failed);
+  assert.equal(failed.payload.errorCode, "AGENT_NOT_FOUND");
+  assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+  assert.equal(events.some((event) => event.type === "agent.output.completed"), false);
+}
+
 async function testRuntimeRegistersToolsFromAllAgents(): Promise<void> {
   const threadId = "runtime-all-agent-tools";
   const childOnlyTool = tool({
@@ -1824,6 +1863,7 @@ await testRuntimePlannerFallsBackToDefaultAgent();
 await testStartSessionAgentNameDispatchesRootSession();
 await testStartSessionIdempotencyMismatch();
 await testUnknownRootSessionAgentRecordsFailure();
+await testUnknownChildSessionAgentRecordsFailure();
 await testRuntimeRegistersToolsFromAllAgents();
 await testStartChildSessionIdempotency();
 await testAgentFailureEvent();

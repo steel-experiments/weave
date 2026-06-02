@@ -47,3 +47,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `25-unknown-agent-dispatch-failure.md`: shipped slice recording unknown runtime agent dispatch as durable `AGENT_NOT_FOUND` failures.
 - `26-root-session-idempotency-mismatch.md`: shipped slice rejecting changed root session inputs for reused idempotency keys.
 - `27-child-session-idempotency-mismatch.md`: shipped slice rejecting changed child session inputs for reused idempotency keys.
+- `28-unknown-child-agent-dispatch-failure.md`: shipped slice proving unknown child target agents record durable `AGENT_NOT_FOUND` failures.
