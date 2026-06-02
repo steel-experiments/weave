@@ -48,6 +48,11 @@ export type ChildrenOptions = {
   status?: ThreadStatus | readonly ThreadStatus[];
 };
 
+export type CancelChildOptions = {
+  reason?: string;
+  actor?: Actor;
+};
+
 export type AgentRun<Output = unknown> =
   | {
       status: "completed";
@@ -105,6 +110,7 @@ export type AgentContext<
     options?: SpawnOptions,
   ): Promise<ThreadRef<Output>>;
   join<Output>(key: string, thread: ThreadRef<Output>, options?: JoinOptions): Promise<AgentRun<Output>>;
+  cancelChild(key: string, thread: ThreadRef, options?: CancelChildOptions): Promise<void>;
   children(options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
   checkpoint<Value>(key: string, compute: () => MaybePromise<Value>): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;

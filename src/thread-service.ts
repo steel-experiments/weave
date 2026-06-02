@@ -60,6 +60,22 @@ export type ListChildrenOptions = {
   status?: ThreadStatus | readonly ThreadStatus[];
 };
 
+export type CancelChildThreadInput = {
+  parentThreadId: string;
+  childThreadId: string;
+  childAgentName?: string;
+  parentScopeKey?: string;
+  parentStepKey?: string;
+  reason?: string;
+  actor?: Actor;
+};
+
+export type CancelChildThreadResult = {
+  childThreadId: string;
+  cancelled: boolean;
+  errorCode: "CHILD_CANCELLED";
+};
+
 export class ThreadService {
   constructor(private readonly engine: ThreadEngine) {}
 
@@ -287,6 +303,56 @@ export class ThreadService {
     };
     await appendChildTerminalEvent(this.engine, event);
     return { mirrored: true, eventType: "child_thread.failed" };
+  }
+
+  async cancelChildThread(input: CancelChildThreadInput): Promise<CancelChildThreadResult> {
+    const childProjection = await this.engine.getProjection(input.childThreadId);
+    if (!childProjection || childProjection.parentThreadId !== input.parentThreadId) {
+      throw new Error(`Child thread not found for parent: ${input.childThreadId}`);
+    }
+
+    if (childProjection.status === "completed") {
+      throw new Error(`Child thread is already completed: ${input.childThreadId}`);
+    }
+
+    const childEvents = await this.engine.read(input.childThreadId);
+    const existingCancellation = childEvents.find((event): event is Extract<ThreadEvent, { type: "agent.failed" }> => {
+      return event.type === "agent.failed" && event.payload.errorCode === "CHILD_CANCELLED";
+    });
+    let appendedCancellation = false;
+
+    if (!existingCancellation && childProjection.status !== "failed") {
+      const cause = newestEvent(childEvents);
+      await this.engine.append([
+        {
+          eventId: deterministicUuid("child-cancelled", input.parentThreadId, input.childThreadId),
+          threadId: input.childThreadId,
+          type: "agent.failed",
+          occurredAt: nowIso(),
+          correlationId: cause?.correlationId,
+          causationId: cause?.eventId,
+          idempotencyKey: `child-cancelled:${input.parentThreadId}:${input.childThreadId}`,
+          actor: input.actor ?? { type: "system", id: "thread-service" },
+          payload: {
+            errorCode: "CHILD_CANCELLED",
+            message: input.reason ?? `Child thread cancelled: ${input.childThreadId}`,
+          },
+        },
+      ]);
+      appendedCancellation = true;
+    }
+
+    if (input.parentScopeKey && input.parentStepKey) {
+      await this.mirrorChildTerminalEvent({
+        parentThreadId: input.parentThreadId,
+        childThreadId: input.childThreadId,
+        childAgentName: input.childAgentName,
+        parentScopeKey: input.parentScopeKey,
+        parentStepKey: input.parentStepKey,
+      });
+    }
+
+    return { childThreadId: input.childThreadId, cancelled: appendedCancellation || existingCancellation !== undefined, errorCode: "CHILD_CANCELLED" };
   }
 
   async listChildren(parentThreadId: string, options: ListChildrenOptions = {}): Promise<readonly ThreadRef[]> {

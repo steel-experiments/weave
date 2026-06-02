@@ -949,6 +949,76 @@ async function testJoinRejectsInvalidStructuredChildOutput(): Promise<void> {
   );
 }
 
+async function testCancelChildRecordsTerminalFailure(): Promise<void> {
+  const parentThreadId = "cancel-child-terminal-failure";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      const child = await ctx.spawn("spawn-child", childAgent, input);
+      await ctx.cancelChild("cancel-child", child, { reason: "No longer needed." });
+      return { finalMessage: "cancelled" };
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  const spawned = (await engine.read(parentThreadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned",
+  );
+  assert(spawned);
+  const childFailed = (await engine.read(spawned.payload.childThreadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "agent.failed" }> => event.type === "agent.failed",
+  );
+  assert(childFailed);
+  assert.deepEqual(childFailed.payload, { errorCode: "CHILD_CANCELLED", message: "No longer needed." });
+  const parentFailed = (await engine.read(parentThreadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "child_thread.failed" }> => event.type === "child_thread.failed",
+  );
+  assert(parentFailed);
+  assert.equal(parentFailed.scopeKey, "agent:parent-agent");
+  assert.equal(parentFailed.stepKey, "cancel-child");
+  assert.deepEqual(parentFailed.payload, {
+    childThreadId: spawned.payload.childThreadId,
+    childAgentName: "child-agent",
+    errorCode: "CHILD_CANCELLED",
+    message: "No longer needed.",
+  });
+
+  const finalPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
+  assert(finalPlan);
+  assert.deepEqual(finalPlan.events[0]?.payload, { message: "cancelled" });
+  const childFailures = (await engine.read(spawned.payload.childThreadId)).filter((event) => event.type === "agent.failed");
+  assert.equal(childFailures.length, 1);
+}
+
+async function testJoinCancelledChild(): Promise<void> {
+  const parentThreadId = "join-cancelled-child";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      const child = await ctx.spawn("spawn-child", childAgent, input);
+      await ctx.cancelChild("cancel-child", child, { reason: "Cancelled before join." });
+      const result = await ctx.join("wait-child", child);
+      return { finalMessage: result.status === "failed" ? `${result.errorCode}:${result.message}` : "unexpected" };
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  const finalPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
+  assert(finalPlan);
+  assert.deepEqual(finalPlan.events[0]?.payload, { message: "CHILD_CANCELLED:Cancelled before join." });
+}
+
 async function testJoinFailedChild(): Promise<void> {
   const parentThreadId = "join-failed-child";
   const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
@@ -1539,6 +1609,8 @@ await testSpawnInputMismatch();
 await testJoinMirrorsCompletedChild();
 await testJoinValidatesStructuredChildOutput();
 await testJoinRejectsInvalidStructuredChildOutput();
+await testCancelChildRecordsTerminalFailure();
+await testJoinCancelledChild();
 await testJoinFailedChild();
 await testListChildren();
 await testContextChildren();

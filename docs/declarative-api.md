@@ -603,6 +603,20 @@ Run-first agents store raw non-`undefined` return values in `agent.output.comple
 
 When no parent terminal event exists, `ctx.join` asks `ThreadService.mirrorChildTerminalEvent` to mirror a terminal child projection into the parent. If the child is still running, the parent runner pass suspends. Mirrored terminal events wake the parent runner with `child-completed` or `child-failed`.
 
+Parents can cancel child work they no longer need with `ctx.cancelChild`:
+
+```ts
+const child = await ctx.spawn("research-docs", docsResearchAgent, {
+  repo: "acme/docs",
+});
+
+await ctx.cancelChild("cancel-research-docs", child, {
+  reason: "A newer docs audit superseded this child.",
+});
+```
+
+`ctx.cancelChild` is durable and requires a stable key. Cancellation records terminal `agent.failed` on the child with `errorCode: "CHILD_CANCELLED"`, mirrors `child_thread.failed` into the parent for the cancellation key, and then replays as a no-op. A later `ctx.join` on the same child returns a failed result with `CHILD_CANCELLED`. Runtime callers can cancel through `ThreadService.cancelChildThread`.
+
 Parents can list known child threads with `ctx.children()`:
 
 ```ts

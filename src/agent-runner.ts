@@ -4,6 +4,7 @@ import type {
   AgentEventInput,
   AgentRun,
   AnyAgentContract,
+  CancelChildOptions,
   ChildrenOptions,
   GateRequest,
   GateResolution,
@@ -25,7 +26,14 @@ import type { AgentPlan, AgentPlanner } from "./runner.js";
 import type { ThreadService } from "./thread-service.js";
 import type { ToolContract } from "./tool-contract.js";
 
-type SuspensionReason = "tool-requested" | "tool-pending" | "gate-created" | "gate-pending" | "spawn-created" | "join-pending";
+type SuspensionReason =
+  | "tool-requested"
+  | "tool-pending"
+  | "gate-created"
+  | "gate-pending"
+  | "spawn-created"
+  | "join-pending"
+  | "cancel-child-created";
 
 class AgentSuspended extends Error {
   constructor(
@@ -426,6 +434,50 @@ class ReplayAgentContext implements AgentContext {
     }
 
     this.suspend("join", key, "join-pending", []);
+  }
+
+  async cancelChild(key: string, thread: ThreadRef, options: CancelChildOptions = {}): Promise<void> {
+    const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
+    if (matchingEvent && matchingEvent.type !== "child_thread.failed") {
+      throw new ReplayMismatchError("Durable step key was previously used for a different effect kind", {
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        existingType: matchingEvent.type,
+        requestedType: "child_thread.failed",
+      });
+    }
+
+    if (matchingEvent?.type === "child_thread.failed") {
+      if (matchingEvent.payload.childThreadId !== thread.threadId) {
+        throw new ReplayMismatchError("Durable child cancellation key was previously used for a different child thread", {
+          scopeKey: this.scopeKey,
+          stepKey: key,
+          previousChildThreadId: matchingEvent.payload.childThreadId,
+          nextChildThreadId: thread.threadId,
+        });
+      }
+      return;
+    }
+
+    if (!this.options.service) {
+      throw new WeaveError("CANCEL_CHILD_SERVICE_UNAVAILABLE", "ctx.cancelChild requires ThreadService runtime binding", {
+        threadId: this.threadId,
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        childThreadId: thread.threadId,
+      });
+    }
+
+    await this.options.service.cancelChildThread({
+      parentThreadId: this.threadId,
+      childThreadId: thread.threadId,
+      childAgentName: thread.agentName,
+      parentScopeKey: this.scopeKey,
+      parentStepKey: key,
+      reason: options.reason,
+      actor: options.actor ?? this.actor,
+    });
+    this.suspend("cancel-child", key, "cancel-child-created", []);
   }
 
   async children(options: ChildrenOptions = {}): Promise<readonly ThreadRef[]> {

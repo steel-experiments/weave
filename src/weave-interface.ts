@@ -113,6 +113,7 @@ interface AgentContext<Tools extends readonly AnyToolContract[] = readonly AnyTo
     options?: SpawnOptions,
   ): Promise<ThreadRef<Output>>;
   join<Output>(key: string, thread: ThreadRef<Output>, options?: JoinOptions): Promise<AgentRun<Output>>;
+  cancelChild(key: string, thread: ThreadRef, options?: CancelChildOptions): Promise<void>;
   children(options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
   checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
@@ -180,6 +181,7 @@ interface ThreadLeaseStore {
 interface ThreadService {
   startSession(input: string | StartSessionInput): Promise<{ threadId: string; correlationId: string }>;
   startChildSession(input: StartChildSessionInput): Promise<StartChildSessionResult>;
+  cancelChildThread(input: CancelChildThreadInput): Promise<CancelChildThreadResult>;
   listChildren(parentThreadId: string, options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
   resolveGate(threadId: string, gateId: string, resolution: "approved" | "denied", comment?: string): Promise<void>;
 }
@@ -372,6 +374,9 @@ type SpawnOptions = {
 };
 type JoinOptions = { throwOnFailure?: boolean };
 type ChildrenOptions = { includeDetached?: boolean; agentName?: string | readonly string[]; status?: ThreadProjection["status"] | readonly ThreadProjection["status"][] };
+type CancelChildOptions = { reason?: string; actor?: Actor };
+type CancelChildThreadInput = { parentThreadId: string; childThreadId: string; childAgentName?: string; parentScopeKey?: string; parentStepKey?: string; reason?: string; actor?: Actor };
+type CancelChildThreadResult = { childThreadId: string; cancelled: boolean; errorCode: "CHILD_CANCELLED" };
 type AgentRun<Output = unknown> =
   | { status: "completed"; thread: ThreadRef<Output>; output?: Output; outputSummary?: string }
   | { status: "failed"; thread: ThreadRef<Output>; errorCode: string; message: string };
