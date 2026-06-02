@@ -127,3 +127,5 @@ npm run daemon:tool
 ## Docs
 
 Start with `docs/README.md` for project direction and planning docs.
+
+For migration from planner-first agents and legacy tool output envelopes, see `docs/migration/api-refactor.md`.

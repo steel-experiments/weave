@@ -58,7 +58,7 @@ As a Weave app author, I can adopt the new V1 authoring model with clear public 
 - [x] Child-thread lineage, ownership, cancellation, and terminal mirroring are covered.
 - [x] Docs accurately describe implemented V1 behavior and limitations.
 - [x] Examples have clear roles and remain trustworthy.
-- [ ] Upgrade guidance exists for authors moving from planner-first and enveloped tool outputs.
+- [x] Upgrade guidance exists for authors moving from planner-first and enveloped tool outputs.
 - [ ] `npm test` and `npm run typecheck` pass after all stabilization changes.
 
 ## Progress
@@ -69,7 +69,7 @@ As a Weave app author, I can adopt the new V1 authoring model with clear public 
 - [x] `33-child-thread-integrity-audit.md`
 - [x] `34-documentation-conformance-pass.md`
 - [x] `35-example-quality-audit.md`
-- [ ] `36-api-refactor-upgrade-guide.md`
+- [x] `36-api-refactor-upgrade-guide.md`
 
 ## Completion Notes
 

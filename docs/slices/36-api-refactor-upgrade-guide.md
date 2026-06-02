@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -48,39 +48,45 @@ As a maintainer of an existing Weave app, I can understand the preferred V1 styl
 
 ## Acceptance Criteria
 
-- [ ] Upgrade guide exists in an agreed docs path.
-- [ ] Guide shows new preferred run-first authoring style.
-- [ ] Guide states legacy planner style is still supported.
-- [ ] Guide explains tool output migration from envelope to raw domain output.
-- [ ] Guide explains explicit runtime binding.
-- [ ] Guide documents stable durable keys and replay limitations.
-- [ ] Guide documents known limitations and future areas without overclaiming.
-- [ ] Guide is linked from `docs/declarative-api.md` or `README.md`.
+- [x] Upgrade guide exists in an agreed docs path.
+- [x] Guide shows new preferred run-first authoring style.
+- [x] Guide states legacy planner style is still supported.
+- [x] Guide explains tool output migration from envelope to raw domain output.
+- [x] Guide explains explicit runtime binding.
+- [x] Guide documents stable durable keys and replay limitations.
+- [x] Guide documents known limitations and future areas without overclaiming.
+- [x] Guide is linked from `docs/declarative-api.md` or `README.md`.
 
 ## Progress
 
-- [ ] Pick docs path.
-- [ ] Draft migration guide.
-- [ ] Verify snippets.
-- [ ] Link guide from docs.
-- [ ] Run verification.
+- [x] Pick docs path.
+- [x] Draft migration guide.
+- [x] Verify snippets.
+- [x] Link guide from docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+Shipped behavior:
 
-Include:
+- Added `docs/migration/api-refactor.md` as the upgrade guide path.
+- Covered preferred run-first agent authoring, legacy planner compatibility, tool output migration, runtime binding, package subpaths, stable durable keys, replay safety, child threads, parallel durable effect limitations, and known limitations.
+- Linked the guide from `docs/README.md`, `docs/declarative-api.md`, and the root `README.md`.
 
-- guide path
-- migration topics covered
-- snippets verified
-- commands run
-- known gaps
+Commands run:
+
+- `npm test`
+- `npm run typecheck`
+
+Known gaps:
+
+- The guide is intentionally concise and does not document every internal runtime detail.
+- Removal timelines for compatibility APIs are not specified because none have been decided.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] new upgrade guide file
-- [ ] `docs/declarative-api.md`
-- [ ] `README.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] new upgrade guide file
+- [x] `docs/declarative-api.md`
+- [x] `README.md`

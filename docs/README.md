@@ -56,6 +56,7 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 - `engine-contracts.md`: typed engine contracts for the first Postgres-backed implementation
 - `event-taxonomy.md`: strongly typed PoC event set using Zod-style schemas
 - `runnable-inbox.md`: explicit inbox routing and claim model for daemon work
+- `migration/api-refactor.md`: upgrade guide from planner-first and legacy tool-output patterns to V1 authoring
 
 ## Existing Vertical And Demo Docs
 

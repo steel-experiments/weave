@@ -707,6 +707,8 @@ The root export remains backward-compatible for now, but examples should use sub
 
 ## Migration Notes
 
+For a focused migration path from planner-first agents and legacy tool output envelopes, see `docs/migration/api-refactor.md`.
+
 Existing planner agents usually construct events manually.
 
 Before:

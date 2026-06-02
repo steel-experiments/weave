@@ -55,4 +55,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `33-child-thread-integrity-audit.md`: shipped slice for child lineage, ownership, cancellation, and terminal mirroring hardening.
 - `34-documentation-conformance-pass.md`: shipped slice aligning docs with implemented V1 behavior and limitations.
 - `35-example-quality-audit.md`: shipped slice making examples trustworthy demos and regression assets.
-- `36-api-refactor-upgrade-guide.md`: proposed slice for a human-readable migration guide from planner-first to V1 authoring.
+- `36-api-refactor-upgrade-guide.md`: shipped slice for a human-readable migration guide from planner-first to V1 authoring.
