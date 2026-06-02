@@ -159,14 +159,22 @@ const ToolProgressPayload = z.object({
 ### Tool completed
 
 ```ts
-const ToolCompletedPayload = z.object({
-  toolCallId: z.string().uuid(),
-  output: z.unknown(),
-  summary: z.string().min(1).optional(),
-})
+const ToolCompletedPayload = z.union([
+  z.object({
+    toolCallId: z.string().uuid(),
+    output: z.unknown(),
+    summary: z.string().min(1).optional(),
+  }),
+  z.object({
+    toolCallId: z.string().uuid(),
+    summary: z.string().min(1),
+    requiresManualApproval: z.boolean(),
+    data: z.unknown().optional(),
+  }),
+])
 ```
 
-`output` is the canonical raw tool result used for replay. `summary` is optional display metadata. Legacy `ToolCompletionOutput` envelopes may still carry `requiresManualApproval`, but that is compatibility-only and not the future approval model.
+`output` is the canonical raw tool result used for replay. `summary` is optional display metadata. Legacy `ToolCompletionOutput` envelopes may still carry `requiresManualApproval`, but that is compatibility-only and not the future approval model. Older top-level `summary`/`requiresManualApproval`/`data` payloads are normalized into the current `output` shape when events are decoded.
 
 ### Tool failed
 

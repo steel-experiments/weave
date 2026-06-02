@@ -498,7 +498,7 @@ Semantics:
 - useful for event payload IDs
 - not random
 - not suitable for cryptographic or security-sensitive purposes
-- provisional; may be renamed to `ctx.id` or `ctx.stableId` before public API freeze
+- provisional; may be renamed to `ctx.id` or `ctx.stableId` before a future stability milestone
 
 Good:
 
@@ -520,7 +520,7 @@ Bad:
 const nonce = ctx.uuid("oauth-nonce");
 ```
 
-For nonces, secrets, or security tokens, use a tool, capability, credential provider, or future durable random helper with explicit semantics.
+For nonces, secrets, or security tokens, use a tool, credential provider, or future durable random/capability helper with explicit semantics.
 
 ## Parallel Durable Effects
 
@@ -544,7 +544,7 @@ const [a, b] = await Promise.all([
 
 If an agent starts a second suspending durable effect before the first suspension is reconciled, Weave throws `ParallelDurableEffectError` with code `PARALLEL_DURABLE_EFFECT`.
 
-This guardrail currently applies to `ctx.tool` and `ctx.gate` when they would suspend. Future parallel semantics may allow explicitly batched durable effects, but implicit `Promise.all` is not supported yet.
+This guardrail applies when a second suspending durable effect starts before the first suspension is reconciled, including `ctx.tool`, `ctx.gate`, `ctx.spawn`, `ctx.join`, and `ctx.cancelChild`. Future parallel semantics may allow explicitly batched durable effects, but implicit `Promise.all` is not supported yet.
 
 ## Subthread Lineage
 
@@ -732,10 +732,10 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 
 ## Current Limitations
 
-- `ctx.tool`, `ctx.gate`, and `ctx.checkpoint` are implemented durable effects.
+- `ctx.tool`, `ctx.gate`, `ctx.checkpoint`, `ctx.spawn`, `ctx.join`, `ctx.children`, and `ctx.cancelChild` are implemented.
 - `ctx.emit` and `ctx.uuid` are provisional replay helpers.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
-- capabilities and richer projections are planned but not implemented in this slice.
+- capabilities are planned but not implemented in V1 authoring.
 - Package subpaths are available, but root exports still include runtime internals for compatibility.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.
@@ -743,6 +743,6 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 
 ## Planned Next Primitives
 
-- runtime support for dispatching child threads to the intended child agent.
-- policies and capabilities for centralized governance and scoped grants.
+- stable naming for replay helpers such as `ctx.uuid`.
+- capabilities and richer policy enforcement for centralized governance and scoped grants.
 - Effect-backed internals behind the same Promise-first public API.

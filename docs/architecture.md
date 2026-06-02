@@ -27,7 +27,7 @@ Examples:
 
 Responsibilities:
 
-- consume allowed tools and capabilities
+- consume allowed tools and, in future slices, scoped capabilities
 - process thread-visible events
 - emit decisions or effect requests back into the thread
 
@@ -80,7 +80,7 @@ Responsibilities:
 
 - determine what an agent is allowed to do
 - enforce approval or gate requirements
-- mediate capability-based secret use
+- mediate credential use today and capability-based secret use in future slices
 - keep raw secret material out of normal agent execution paths where possible
 
 ### 5. Integration Layer
@@ -124,6 +124,8 @@ A thread-native object representing work paused on approval, human input, or ano
 
 ### Capability
 
+Planned, not part of the current V1 authoring surface.
+
 A scoped permission or secret reference granted to a worker or integration without exposing raw secret values more broadly than necessary.
 
 ### Stream Link
@@ -158,7 +160,7 @@ The initial architecture should be simple and narrow.
 
 Over time it can grow to support:
 
-- child threads and subagents
+- child threads and subagents with richer orchestration
 - filtered stream routing
 - richer policy engines
 - pluggable storage backends

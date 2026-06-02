@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -47,42 +47,59 @@ As an app author or maintainer, I can read the docs and understand exactly how t
 
 ## Acceptance Criteria
 
-- [ ] Docs state that `weave({...})` returns an app definition or registry.
-- [ ] Docs state that runtime binding is explicit.
-- [ ] Docs describe `agent.run` as replay-based, not continuation persistence.
-- [ ] Docs explain stable durable keys and identity by `threadId`, `scopeKey`, and `stepKey`.
-- [ ] Docs explain that raw side effects inside `agent.run` are unsafe.
-- [ ] Docs explain that new tools return raw domain outputs and old envelopes are legacy compatibility.
-- [ ] Docs describe `ctx.emit`, `ctx.uuid`, and `ctx.checkpoint` replay semantics precisely.
-- [ ] Docs state that parallel durable effects are unsupported.
-- [ ] Docs avoid overclaiming future capabilities, Effect runtime, workflow backend, or full policy engine maturity.
+- [x] Docs state that `weave({...})` returns an app definition or registry.
+- [x] Docs state that runtime binding is explicit.
+- [x] Docs describe `agent.run` as replay-based, not continuation persistence.
+- [x] Docs explain stable durable keys and identity by `threadId`, `scopeKey`, and `stepKey`.
+- [x] Docs explain that raw side effects inside `agent.run` are unsafe.
+- [x] Docs explain that new tools return raw domain outputs and old envelopes are legacy compatibility.
+- [x] Docs describe `ctx.emit`, `ctx.uuid`, and `ctx.checkpoint` replay semantics precisely.
+- [x] Docs state that parallel durable effects are unsupported.
+- [x] Docs avoid overclaiming future capabilities, Effect runtime, workflow backend, or full policy engine maturity.
 
 ## Progress
 
-- [ ] Review declarative API docs.
-- [ ] Review event taxonomy docs.
-- [ ] Review architecture and README docs.
-- [ ] Review slice docs.
-- [ ] Update wording and limitations.
-- [ ] Run verification where needed.
+- [x] Review declarative API docs.
+- [x] Review event taxonomy docs.
+- [x] Review architecture and README docs.
+- [x] Review slice docs.
+- [x] Update wording and limitations.
+- [x] Run verification where needed.
 
 ## Completion Notes
 
-Fill this in when shipped.
+Shipped behavior:
 
-Include:
+- Reviewed `docs/declarative-api.md`, `docs/event-taxonomy.md`, `docs/architecture.md`, `README.md`, and current slice status docs against the implemented V1 branch.
+- Updated V1 limitations to include implemented child-thread helpers and to remove stale child-dispatch-as-planned wording.
+- Clarified that `ctx.uuid` is provisional before a future stability milestone, not an announced API freeze.
+- Clarified that parallel durable effect guardrails apply to all suspending durable effects, including child-thread effects.
+- Qualified capabilities as future work in architecture and declarative API docs.
+- Updated event taxonomy to document legacy top-level tool completion envelope normalization.
+- Updated the root README current implementation list to reflect run-first agents, `agent-runner`, `tool-worker`, child session services, and current example locations.
 
-- docs changed
-- overclaims removed or qualified
-- snippets verified
-- commands run
-- known docs gaps
+Changed docs:
+
+- `docs/declarative-api.md`
+- `docs/event-taxonomy.md`
+- `docs/architecture.md`
+- `README.md`
+
+Commands run:
+
+- `npm test`
+- `npm run typecheck`
+
+Known docs gaps:
+
+- The upgrade guide is still pending in `36-api-refactor-upgrade-guide.md`.
+- Example-specific README coverage remains part of `35-example-quality-audit.md`.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/architecture.md`
-- [ ] `README.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/architecture.md`
+- [x] `README.md`

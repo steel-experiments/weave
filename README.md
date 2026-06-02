@@ -85,18 +85,17 @@ Do not run `npm run poc` and `npm run system:poc` at the same time because both 
 ## Current Implementation
 
 - `src/events.ts`: Zod event schemas and typed event union
-- `src/postgres-engine.ts`: Postgres event log, projection, lease, and gate persistence
-- `src/thread-service.ts`: session start and gate resolution service
-- `src/mock-agent.ts`: deterministic mock agent adapter
-- `src/mock-tool-worker.ts`: async mock tool worker with progress events
-- `src/runner.ts`: one-step thread runner
+- `src/agent-contract.ts`: run-first agent authoring contracts and durable context API
+- `src/agent-runner.ts`: replay adapter for `agent.run`, durable effects, gates, checkpoints, and child threads
+- `src/postgres-engine.ts`: Postgres event log, projection, lease, lineage, gate, and inbox persistence
+- `src/thread-service.ts`: session start, child session, gate resolution, child listing, and child cancellation service
+- `src/runner.ts`: one-step thread runner with durable agent failure events
+- `src/tool-worker.ts`: contract tool worker with credentials, artifacts, progress, retries, and output summaries
 - `src/daemons.ts`: runner and tool worker daemons backed by explicit inbox claims
-- `src/scripts/poc.ts`: end-to-end verification script
-- `src/api-server.ts`: minimal HTTP API for thread sessions, events, projections, and gate resolution
-- `src/scripts/system-poc.ts`: API-driven verification with background daemons
-- `src/sre-agent.ts`: deterministic SRE investigation agent for the north-star demo
-- `src/sre-tool-worker.ts`: mock SRE observability and remediation tools
-- `src/scripts/sre-demo.ts`: API-driven SRE demo using the thread service and daemons
+- `src/api-server.ts`: HTTP API for thread sessions, events, projections, summaries, streams, diagnostics, and gates
+- `examples/sre-demo`: deterministic SRE demo using gates and domain-shaped outputs
+- `examples/steel-docs-sync`: docs-sync demo using run-first authoring patterns
+- `examples/simple-assistant`: model-backed assistant demo using tool-routed model calls
 
 The service milestone uses an explicit `weave.thread_inbox` table. Event appends route wake events into per-consumer inbox rows, and daemons claim those rows before processing work.
 
