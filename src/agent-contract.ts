@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { Actor, ThreadEvent } from "./events.js";
+import type { Actor, SessionMetadata, SessionSource, ThreadEvent } from "./events.js";
 import type { AgentPlanner } from "./runner.js";
 import type { AnyToolContract, ToolContract } from "./tool-contract.js";
 import type { MaybePromise } from "./types.js";
@@ -17,6 +17,24 @@ export type GateRequest = {
 };
 
 export type GateResolution = GateResolvedPayload;
+
+export type ThreadRef<Output = unknown> = {
+  threadId: string;
+  agentName: string;
+  parentThreadId?: string;
+  rootThreadId?: string;
+  parentScopeKey?: string;
+  parentStepKey?: string;
+  output?: Output;
+};
+
+export type SpawnOptions = {
+  prompt?: string;
+  source?: SessionSource;
+  actor?: Actor;
+  metadata?: SessionMetadata;
+  detached?: boolean;
+};
 
 export type AgentEventMetadata = {
   correlationId?: string;
@@ -54,6 +72,12 @@ export type AgentContext<
     options?: ToolCallOptions,
   ): Promise<Output>;
   gate(key: string, request: GateRequest): Promise<GateResolution>;
+  spawn<Input extends SessionMetadata, Output>(
+    key: string,
+    agent: AgentContract<string, Input, Output>,
+    input: Input,
+    options?: SpawnOptions,
+  ): Promise<ThreadRef<Output>>;
   checkpoint<Value>(key: string, compute: () => MaybePromise<Value>): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
   uuid(key: string): string;

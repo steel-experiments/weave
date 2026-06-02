@@ -51,6 +51,5 @@ Changed modules:
 Known follow-ups:
 
 - Runtime support for selecting/starting child agent runners.
-- `ctx.spawn` durable effect on top of `startChildSession`.
 - `ctx.join` durable effect consuming child lifecycle events.
 - Automatic mirroring from child terminal events into parent `child_thread.completed` / `child_thread.failed`.

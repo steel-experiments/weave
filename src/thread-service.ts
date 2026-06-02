@@ -4,6 +4,7 @@ import {
   deterministicUuid,
   newEventId,
   nowIso,
+  stableJsonHash,
   type Actor,
   type ThreadEvent,
   type SessionMetadata,
@@ -184,6 +185,7 @@ export class ThreadService {
       parentScopeKey,
       parentStepKey,
       mode: input.detached ? "detached" : "attached",
+      inputHash: stableJsonHash(input.input),
       inputSummary: input.prompt,
       metadata: input.metadata,
     });
@@ -287,6 +289,7 @@ async function ensureChildSpawnedEvent(
     parentScopeKey: string;
     parentStepKey: string;
     mode: "attached" | "detached";
+    inputHash?: string;
     inputSummary?: string;
     metadata?: SessionMetadata;
   },
@@ -316,6 +319,7 @@ async function ensureChildSpawnedEvent(
       scopeKey: input.parentScopeKey,
       stepKey: input.parentStepKey,
       mode: input.mode,
+      ...(input.inputHash ? { inputHash: input.inputHash } : {}),
       ...(input.inputSummary ? { inputSummary: input.inputSummary } : {}),
       ...(input.metadata ? { metadata: input.metadata } : {}),
     },

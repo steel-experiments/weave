@@ -581,6 +581,7 @@ function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
     case "prompt.received":
     case "tool.completed":
     case "gate.resolved":
+    case "child_thread.spawned":
     case "child_thread.completed":
     case "child_thread.failed":
       return ["runner"];
@@ -599,7 +600,6 @@ function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
     case "credential.failed":
     case "tool.failed":
     case "gate.created":
-    case "child_thread.spawned":
     case "agent.response.produced":
     case "agent.failed":
     case "agent.finding.produced":

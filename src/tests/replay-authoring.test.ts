@@ -17,6 +17,7 @@ import {
   deterministicUuid,
   eventKey,
   nowIso,
+  stableJsonHash,
   ThreadEventSchema,
   ThreadProjectionSchema,
   type ThreadProjection,
@@ -56,6 +57,14 @@ const lookupAgent = agent({
   async run(ctx, input) {
     const result = await ctx.tool("lookup", lookupTool, input);
     return result.data.result;
+  },
+});
+
+const childAgent = agent({
+  name: "child-agent",
+  input: inputSchema,
+  async run(_ctx, input) {
+    return `child handled ${input.query}`;
   },
 });
 
@@ -662,8 +671,84 @@ async function testStartChildSessionCreatesLineage(): Promise<void> {
     scopeKey: "agent:parent-agent",
     stepKey: "spawn-research",
     mode: "attached",
+    inputHash: stableJsonHash({ query: "research docs" }),
     inputSummary: "Research docs sync approach.",
   });
+}
+
+async function testSpawnCreatesChildSession(): Promise<void> {
+  const parentThreadId = "spawn-child-session";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      const child = await ctx.spawn("spawn-child", childAgent, input, {
+        prompt: "Run child agent.",
+      });
+      return { finalMessage: `spawned ${child.threadId}` };
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  const firstPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
+  assert.equal(firstPlan, null);
+
+  const parentEvents = await engine.read(parentThreadId);
+  const spawned = parentEvents.find(
+    (event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned",
+  );
+  assert(spawned);
+  assert.equal(spawned.scopeKey, "agent:parent-agent");
+  assert.equal(spawned.stepKey, "spawn-child");
+  assert.equal(spawned.payload.childAgentName, "child-agent");
+  assert.equal(spawned.payload.inputHash, stableJsonHash({ query: "hello" }));
+
+  const childProjection = await engine.getProjection(spawned.payload.childThreadId);
+  assert(childProjection);
+  assert.equal(childProjection.parentThreadId, parentThreadId);
+  assert.equal(childProjection.parentScopeKey, "agent:parent-agent");
+  assert.equal(childProjection.parentStepKey, "spawn-child");
+
+  const replayPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
+  assert(replayPlan);
+  assert.equal(replayPlan.resumeReason, "child-spawned");
+  assert.equal(replayPlan.events[0]?.type, "agent.response.produced");
+  const spawnedAgain = (await engine.read(parentThreadId)).filter((event) => event.type === "child_thread.spawned");
+  assert.equal(spawnedAgain.length, 1);
+}
+
+async function testSpawnInputMismatch(): Promise<void> {
+  const parentThreadId = "spawn-input-mismatch";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      await ctx.spawn("spawn-child", childAgent, input);
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  await planner.plan(parentThreadId, await engine.read(parentThreadId));
+
+  const mismatchAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.spawn("spawn-child", childAgent, { query: "changed" });
+    },
+  });
+  const mismatchPlanner = createAgentPlanner(mismatchAgent, mismatchAgent.name, { service });
+
+  await assert.rejects(
+    async () => {
+      await mismatchPlanner.plan(parentThreadId, await engine.read(parentThreadId));
+    },
+    ReplayMismatchError,
+  );
 }
 
 async function testStartChildSessionIdempotency(): Promise<void> {
@@ -913,6 +998,8 @@ await testTypedEventFactory();
 await testChildThreadEventSchemas();
 await testThreadProjectionLineageSchema();
 await testStartChildSessionCreatesLineage();
+await testSpawnCreatesChildSession();
+await testSpawnInputMismatch();
 await testStartChildSessionIdempotency();
 await testAgentFailureEvent();
 

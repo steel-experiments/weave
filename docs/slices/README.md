@@ -33,3 +33,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `11-parallel-durable-effects-guardrails.md`: shipped slice rejecting unsupported parallel suspending effects.
 - `12-subthread-lineage-foundation.md`: shipped slice adding lineage fields and child-thread event taxonomy.
 - `13-start-child-session-service.md`: shipped slice adding `ThreadService.startChildSession` for API-created child threads.
+- `14-ctx-spawn-durable-effect.md`: shipped slice adding service-backed `ctx.spawn` for child sessions.

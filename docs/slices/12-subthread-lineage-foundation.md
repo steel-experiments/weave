@@ -52,6 +52,5 @@ Changed modules:
 
 Known follow-ups:
 
-- `ctx.spawn` durable effect.
 - `ctx.join` durable effect.
 - Parent lifecycle mirroring when child threads complete or fail.

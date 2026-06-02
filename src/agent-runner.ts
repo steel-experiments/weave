@@ -5,19 +5,24 @@ import type {
   AnyAgentContract,
   GateRequest,
   GateResolution,
+  SpawnOptions,
+  ThreadRef,
 } from "./agent-contract.js";
 import { ParallelDurableEffectError, ReplayMismatchError, ToolFailedError, WeaveError } from "./errors.js";
 import {
   deterministicUuid,
   eventKey,
   nowIso,
+  stableJsonHash,
   type Actor,
+  type SessionMetadata,
   type ThreadEvent,
 } from "./events.js";
 import type { AgentPlan, AgentPlanner } from "./runner.js";
+import type { ThreadService } from "./thread-service.js";
 import type { ToolContract } from "./tool-contract.js";
 
-type SuspensionReason = "tool-requested" | "tool-pending" | "gate-created" | "gate-pending";
+type SuspensionReason = "tool-requested" | "tool-pending" | "gate-created" | "gate-pending" | "spawn-created";
 
 class AgentSuspended extends Error {
   constructor(
@@ -29,9 +34,17 @@ class AgentSuspended extends Error {
   }
 }
 
-export function createAgentPlanner(agent: AnyAgentContract, agentName = agent.name): AgentPlanner {
+export type CreateAgentPlannerOptions = {
+  service?: ThreadService;
+};
+
+export function createAgentPlanner(
+  agent: AnyAgentContract,
+  agentName = agent.name,
+  options: CreateAgentPlannerOptions = {},
+): AgentPlanner {
   if (agent.run) {
-    return new RunAgentPlanner(agent, agentName);
+    return new RunAgentPlanner(agent, agentName, options);
   }
 
   if (agent.planner) {
@@ -45,6 +58,7 @@ class RunAgentPlanner implements AgentPlanner {
   constructor(
     private readonly agent: AgentContract,
     private readonly agentName: string,
+    private readonly options: CreateAgentPlannerOptions,
   ) {}
 
   async plan(threadId: string, events: ThreadEvent[]): Promise<AgentPlan | null> {
@@ -61,6 +75,7 @@ class RunAgentPlanner implements AgentPlanner {
       agentName: this.agentName,
       threadId,
       events,
+      service: this.options.service,
     });
 
     try {
@@ -102,6 +117,7 @@ class ReplayAgentContext implements AgentContext {
       agentName: string;
       threadId: string;
       events: readonly ThreadEvent[];
+      service?: ThreadService;
     },
   ) {
     this.actor = { type: "agent", id: options.agentName };
@@ -242,6 +258,78 @@ class ReplayAgentContext implements AgentContext {
     }
 
     this.suspend("gate", key, "gate-created", [this.gateCreatedEvent(key, request)]);
+  }
+
+  async spawn<Input extends SessionMetadata, Output>(
+    key: string,
+    childAgent: AgentContract<string, Input, Output>,
+    input: Input,
+    options: SpawnOptions = {},
+  ): Promise<ThreadRef<Output>> {
+    const inputResult = childAgent.input ? childAgent.input.safeParse(input) : { success: true as const, data: input };
+    if (!inputResult.success) {
+      throw new WeaveError("SPAWN_INPUT_INVALID", `Invalid input for child agent ${childAgent.name}`, inputResult.error);
+    }
+
+    const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
+    if (matchingEvent && matchingEvent.type !== "child_thread.spawned") {
+      throw new ReplayMismatchError("Durable step key was previously used for a different effect kind", {
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        existingType: matchingEvent.type,
+        requestedType: "child_thread.spawned",
+      });
+    }
+
+    const expected = this.spawnExpectedPayload(key, childAgent.name, inputResult.data, options);
+    const spawned = matchingEvent?.type === "child_thread.spawned" ? matchingEvent : undefined;
+    if (spawned) {
+      const comparable = {
+        childAgentName: spawned.payload.childAgentName,
+        scopeKey: spawned.payload.scopeKey,
+        stepKey: spawned.payload.stepKey,
+        mode: spawned.payload.mode,
+        inputHash: spawned.payload.inputHash,
+      };
+      if (canonicalJson(comparable) !== canonicalJson(expected)) {
+        throw new ReplayMismatchError("Durable spawn key was previously used with different child work", {
+          scopeKey: this.scopeKey,
+          stepKey: key,
+          eventType: "child_thread.spawned",
+        });
+      }
+
+      return {
+        threadId: spawned.payload.childThreadId,
+        agentName: spawned.payload.childAgentName,
+        parentThreadId: this.threadId,
+        parentScopeKey: this.scopeKey,
+        parentStepKey: key,
+      };
+    }
+
+    if (!this.options.service) {
+      throw new WeaveError("SPAWN_SERVICE_UNAVAILABLE", "ctx.spawn requires ThreadService runtime binding", {
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        childAgentName: childAgent.name,
+      });
+    }
+
+    await this.options.service.startChildSession({
+      parentThreadId: this.threadId,
+      agentName: childAgent.name,
+      input: inputResult.data,
+      prompt: options.prompt,
+      source: options.source,
+      actor: options.actor ?? this.actor,
+      metadata: options.metadata,
+      parentScopeKey: this.scopeKey,
+      parentStepKey: key,
+      detached: options.detached,
+      idempotencyKey: `${this.scopeKey}:${key}`,
+    });
+    this.suspend("spawn", key, "spawn-created", []);
   }
 
   async checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value> {
@@ -386,6 +474,21 @@ class ReplayAgentContext implements AgentContext {
       proposedAction: request.proposedAction,
     };
   }
+
+  private spawnExpectedPayload(
+    key: string,
+    childAgentName: string,
+    input: SessionMetadata,
+    options: SpawnOptions,
+  ): Pick<Extract<ThreadEvent, { type: "child_thread.spawned" }>["payload"], "childAgentName" | "scopeKey" | "stepKey" | "mode" | "inputHash"> {
+    return {
+      childAgentName,
+      scopeKey: this.scopeKey,
+      stepKey: key,
+      mode: options.detached ? "detached" : "attached",
+      inputHash: stableJsonHash(input),
+    };
+  }
 }
 
 function toPlan(history: readonly ThreadEvent[], events: ThreadEvent[]): AgentPlan | null {
@@ -470,6 +573,10 @@ function resumeReasonFor(event: ThreadEvent | undefined): AgentPlan["resumeReaso
 
   if (event?.type === "gate.resolved") {
     return "gate-resolved";
+  }
+
+  if (event?.type === "child_thread.spawned") {
+    return "child-spawned";
   }
 
   return "tool-completed";

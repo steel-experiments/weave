@@ -35,7 +35,7 @@ export function createWeaveRuntime(options: WeaveRuntimeOptions): WeaveRuntime {
   const runner = new ThreadRunner(
     options.engine,
     options.engine,
-    createAgentPlanner(activeAgent, String(options.agentName)),
+    createAgentPlanner(activeAgent, String(options.agentName), { service: options.service }),
     options.runnerOwnerId,
     options.app.observability,
   );

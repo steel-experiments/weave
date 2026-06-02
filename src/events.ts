@@ -136,7 +136,7 @@ export const GateResolvedPayloadSchema = z.object({
 });
 
 export const RunnerResumedPayloadSchema = z.object({
-  reason: z.enum(["new-prompt", "tool-completed", "gate-resolved", "manual-retry"]),
+  reason: z.enum(["new-prompt", "tool-completed", "gate-resolved", "child-spawned", "manual-retry"]),
 });
 
 export const AgentResponseProducedPayloadSchema = z.object({
@@ -183,6 +183,7 @@ export const ChildThreadSpawnedPayloadSchema = z.object({
   scopeKey: z.string().min(1),
   stepKey: z.string().min(1),
   mode: z.enum(["attached", "detached"]),
+  inputHash: z.string().min(1).optional(),
   inputSummary: z.string().min(1).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
@@ -420,4 +421,24 @@ export function newEventId(): string {
 
 export function eventKey(threadId: string, type: string, semanticKey: string): string {
   return deterministicUuid("event", threadId, type, semanticKey);
+}
+
+export function stableJsonHash(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(sortForStableJson(value))).digest("hex");
+}
+
+function sortForStableJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortForStableJson);
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, sortForStableJson(nested)]),
+  );
 }

@@ -191,6 +191,7 @@ const ChildThreadSpawnedPayload = z.object({
   scopeKey: z.string().min(1),
   stepKey: z.string().min(1),
   mode: z.enum(["attached", "detached"]),
+  inputHash: z.string().min(1).optional(),
   inputSummary: z.string().min(1).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
@@ -221,7 +222,7 @@ const ChildThreadFailedPayload = z.object({
 
 ```ts
 const RunnerResumedPayload = z.object({
-  reason: z.enum(["new-prompt", "tool-completed", "gate-resolved", "manual-retry"]),
+  reason: z.enum(["new-prompt", "tool-completed", "gate-resolved", "child-spawned", "manual-retry"]),
 })
 ```
 

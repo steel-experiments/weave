@@ -106,6 +106,12 @@ interface AgentContext<Tools extends readonly AnyToolContract[] = readonly AnyTo
   readonly signal: AbortSignal;
   tool<Input, Output>(key: string, tool: ToolContract<string, Input, Output>, input: Input, options?: ToolCallOptions): Promise<Output>;
   gate(key: string, request: GateRequest): Promise<GateResolution>;
+  spawn<Input extends Record<string, unknown>, Output>(
+    key: string,
+    agent: AgentContract<string, Input, Output>,
+    input: Input,
+    options?: SpawnOptions,
+  ): Promise<ThreadRef<Output>>;
   checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
   uuid(key: string): string;
@@ -343,6 +349,22 @@ type StartChildSessionResult = {
   rootThreadId: string;
 };
 type ToolCallOptions = Record<string, unknown>;
+type ThreadRef<Output = unknown> = {
+  threadId: string;
+  agentName: string;
+  parentThreadId?: string;
+  rootThreadId?: string;
+  parentScopeKey?: string;
+  parentStepKey?: string;
+  output?: Output;
+};
+type SpawnOptions = {
+  prompt?: string;
+  source?: string;
+  actor?: Actor;
+  metadata?: Record<string, unknown>;
+  detached?: boolean;
+};
 type GateRequest = { gateType?: "manual-approval"; reason: "tool-result-requires-approval" | "risky-remediation"; relatedToolCallId?: string; proposedAction?: string };
 type GateResolution = { gateId: string; resolution: "approved" | "denied"; comment?: string };
 type AgentEventMetadata = { correlationId?: string; causationId?: string; idempotencyKey?: string };

@@ -30,7 +30,8 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.uuid` | Provisional deterministic ID helper |
 | `ctx.gate` | Current approval effect |
 | `ctx.checkpoint` | Current local durable effect |
-| `ctx.spawn` / `ctx.join` | Planned |
+| `ctx.spawn` | Current child-thread effect |
+| `ctx.join` | Planned |
 | `approvalPolicy` | Current authoring helper |
 | subthread lineage fields | Current storage/read model |
 | capabilities | Planned |
@@ -45,7 +46,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 
 The older `defineTool`, `defineAgent`, `defineWeaveApp`, and `defineIntegration` names remain exported for compatibility. New examples should prefer the shorter authoring names.
 
-Capabilities, projections, and subthreads are planned public primitives. They are not part of the first V1 authoring slice unless explicitly documented below.
+Capabilities and richer projections are planned public primitives. They are not part of the first V1 authoring slice unless explicitly documented below.
 
 ## App Definition
 
@@ -570,6 +571,18 @@ await service.startChildSession({
 
 The child session stores `input` in `session.started.payload.metadata`, which is the current replay input source for `agent.run`. The parent thread receives a `child_thread.spawned` event.
 
+Agents can create child sessions with `ctx.spawn`:
+
+```ts
+const child = await ctx.spawn("research-docs", docsResearchAgent, {
+  repo: "acme/docs",
+});
+```
+
+`ctx.spawn` is durable and requires a stable key. On first execution it starts the child session through `ThreadService.startChildSession`, appends `child_thread.spawned` to the parent, and suspends the parent runner pass. On replay it returns the existing `ThreadRef`. If the child agent, mode, or input hash changes for the same key, Weave throws `ReplayMismatchError`.
+
+`ctx.spawn` does not wait for the child. Use future `ctx.join` semantics for that.
+
 Parent thread lifecycle events:
 
 - `child_thread.spawned`
@@ -653,7 +666,7 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - `ctx.tool`, `ctx.gate`, and `ctx.checkpoint` are implemented durable effects.
 - `ctx.emit` and `ctx.uuid` are provisional replay helpers.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
-- `ctx.spawn`, `ctx.join`, capabilities, and richer projections are planned but not implemented in this slice.
+- `ctx.join`, capabilities, and richer projections are planned but not implemented in this slice.
 - Package subpaths are available, but root exports still include runtime internals for compatibility.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.
@@ -661,6 +674,6 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 
 ## Planned Next Primitives
 
-- `ctx.spawn` and `ctx.join` for child threads and sub-agent work.
+- `ctx.join` for waiting on child thread work.
 - policies and capabilities for centralized governance and scoped grants.
 - Effect-backed internals behind the same Promise-first public API.
