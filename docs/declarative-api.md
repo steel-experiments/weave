@@ -683,6 +683,8 @@ await service.startSession({
 
 When `session.started.payload.agentName` is present, the runtime dispatches that thread to the named agent. Threads without `agentName` use the runtime's configured default agent. If the named agent is not registered in the runtime app, the runner records `agent.failed` with `AGENT_NOT_FOUND`.
 
+Root sessions support deterministic idempotency through `idempotencyKey`. Reusing the same key with the same `prompt`, `source`, `agentName`, and `metadata` returns the existing `{ threadId, correlationId }`. Reusing the same key with changed input throws `ReplayMismatchError`.
+
 ## Failure Semantics
 
 Failed tools append `tool.failed`, mark the thread failed, and dead-letter the tool-worker inbox item. `tool.failed` is terminal in V1 and does not wake the runner.

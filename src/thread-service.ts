@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ThreadEngine } from "./contracts.js";
 import type { ThreadRef } from "./agent-contract.js";
+import { ReplayMismatchError } from "./errors.js";
 import {
   deterministicUuid,
   newEventId,
@@ -20,6 +21,19 @@ export type StartSessionInput = {
   actor?: Actor;
   metadata?: SessionMetadata;
   idempotencyKey?: string;
+};
+
+type NormalizedStartSessionInput = Required<Pick<StartSessionInput, "prompt" | "source" | "actor">> & {
+  agentName?: string;
+  metadata?: SessionMetadata;
+  idempotencyKey?: string;
+};
+
+type ExistingSession = {
+  threadId: string;
+  correlationId: string;
+  sessionStarted?: Extract<ThreadEvent, { type: "session.started" }>;
+  promptReceived?: Extract<ThreadEvent, { type: "prompt.received" }>;
 };
 
 export type StartChildSessionInput = {
@@ -93,7 +107,8 @@ export class ThreadService {
 
     const existingSession = await readExistingSession(this.engine, threadId);
     if (existingSession) {
-      return existingSession;
+      validateStartSessionIdempotency(normalized, existingSession);
+      return toSessionResult(existingSession);
     }
 
     const events: ThreadEvent[] = [
@@ -136,7 +151,8 @@ export class ThreadService {
 
       const concurrentSession = await readExistingSession(this.engine, threadId);
       if (concurrentSession) {
-        return concurrentSession;
+        validateStartSessionIdempotency(normalized, concurrentSession);
+        return toSessionResult(concurrentSession);
       }
 
       throw error;
@@ -450,11 +466,7 @@ function matchesFilter<Value extends string>(value: Value | undefined, filter: V
   return Array.isArray(filter) ? filter.includes(value) : filter === value;
 }
 
-function normalizeStartSessionInput(input: string | StartSessionInput): Required<Pick<StartSessionInput, "prompt" | "source" | "actor">> & {
-  agentName?: string;
-  metadata?: SessionMetadata;
-  idempotencyKey?: string;
-} {
+function normalizeStartSessionInput(input: string | StartSessionInput): NormalizedStartSessionInput {
   if (typeof input === "string") {
     return {
       prompt: input,
@@ -476,7 +488,7 @@ function normalizeStartSessionInput(input: string | StartSessionInput): Required
 async function readExistingSession(
   engine: ThreadEngine,
   threadId: string,
-): Promise<{ threadId: string; correlationId: string } | null> {
+): Promise<ExistingSession | null> {
   const events = await engine.read(threadId, { limit: 2 });
   if (events.length === 0) {
     return null;
@@ -490,6 +502,46 @@ async function readExistingSession(
   return {
     threadId,
     correlationId,
+    sessionStarted: events.find(
+      (event): event is Extract<ThreadEvent, { type: "session.started" }> => event.type === "session.started",
+    ),
+    promptReceived: events.find(
+      (event): event is Extract<ThreadEvent, { type: "prompt.received" }> => event.type === "prompt.received",
+    ),
+  };
+}
+
+function validateStartSessionIdempotency(input: NormalizedStartSessionInput, existing: ExistingSession): void {
+  const sessionPayload = existing.sessionStarted?.payload;
+  const promptPayload = existing.promptReceived?.payload;
+  const mismatches: string[] = [];
+
+  if (sessionPayload?.source !== input.source) {
+    mismatches.push("source");
+  }
+  if (sessionPayload?.agentName !== input.agentName) {
+    mismatches.push("agentName");
+  }
+  if (stableJsonHash(sessionPayload?.metadata) !== stableJsonHash(input.metadata)) {
+    mismatches.push("metadata");
+  }
+  if (promptPayload?.prompt !== input.prompt) {
+    mismatches.push("prompt");
+  }
+
+  if (mismatches.length > 0) {
+    throw new ReplayMismatchError("Idempotent root session request does not match the existing session", {
+      threadId: existing.threadId,
+      idempotencyKey: input.idempotencyKey,
+      mismatches,
+    });
+  }
+}
+
+function toSessionResult(session: ExistingSession): { threadId: string; correlationId: string } {
+  return {
+    threadId: session.threadId,
+    correlationId: session.correlationId,
   };
 }
 

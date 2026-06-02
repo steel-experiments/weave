@@ -1372,6 +1372,42 @@ async function testStartSessionAgentNameDispatchesRootSession(): Promise<void> {
   assert.deepEqual(plan.events[0]?.payload, { message: "target ran root-input" });
 }
 
+async function testStartSessionIdempotencyMismatch(): Promise<void> {
+  const engine = new MemoryThreadEngine();
+  const service = new ThreadService(engine);
+  const input = {
+    prompt: "Run target agent.",
+    source: "test" as const,
+    agentName: "target-agent",
+    metadata: { query: "root-input" },
+    idempotencyKey: "root-session-idempotency",
+  };
+
+  const first = await service.startSession(input);
+  const second = await service.startSession(input);
+  assert.deepEqual(second, first);
+  assert.equal((await engine.read(first.threadId)).length, 2);
+
+  await assert.rejects(
+    async () => {
+      await service.startSession({ ...input, prompt: "Different prompt." });
+    },
+    ReplayMismatchError,
+  );
+  await assert.rejects(
+    async () => {
+      await service.startSession({ ...input, agentName: "different-agent" });
+    },
+    ReplayMismatchError,
+  );
+  await assert.rejects(
+    async () => {
+      await service.startSession({ ...input, metadata: { query: "changed" } });
+    },
+    ReplayMismatchError,
+  );
+}
+
 async function testUnknownRootSessionAgentRecordsFailure(): Promise<void> {
   const engine = new MemoryThreadEngine();
   const service = new ThreadService(engine);
@@ -1755,6 +1791,7 @@ await testContextChildrenFilters();
 await testRuntimePlannerDispatchesChildAgent();
 await testRuntimePlannerFallsBackToDefaultAgent();
 await testStartSessionAgentNameDispatchesRootSession();
+await testStartSessionIdempotencyMismatch();
 await testUnknownRootSessionAgentRecordsFailure();
 await testRuntimeRegistersToolsFromAllAgents();
 await testStartChildSessionIdempotency();
