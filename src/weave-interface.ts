@@ -359,6 +359,7 @@ type ThreadRef<Output = unknown> = {
   rootThreadId?: string;
   parentScopeKey?: string;
   parentStepKey?: string;
+  status?: ThreadProjection["status"];
   outputSchema?: Schema<Output>;
   output?: Output;
 };
@@ -370,7 +371,7 @@ type SpawnOptions = {
   detached?: boolean;
 };
 type JoinOptions = { throwOnFailure?: boolean };
-type ChildrenOptions = { includeDetached?: boolean };
+type ChildrenOptions = { includeDetached?: boolean; agentName?: string | readonly string[]; status?: ThreadProjection["status"] | readonly ThreadProjection["status"][] };
 type AgentRun<Output = unknown> =
   | { status: "completed"; thread: ThreadRef<Output>; output?: Output; outputSummary?: string }
   | { status: "failed"; thread: ThreadRef<Output>; errorCode: string; message: string };

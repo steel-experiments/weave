@@ -10,6 +10,7 @@ import {
   type ThreadEvent,
   type SessionMetadata,
   type SessionSource,
+  type ThreadStatus,
 } from "./events.js";
 
 export type StartSessionInput = {
@@ -55,6 +56,8 @@ export type MirrorChildTerminalEventResult =
 
 export type ListChildrenOptions = {
   includeDetached?: boolean;
+  agentName?: string | readonly string[];
+  status?: ThreadStatus | readonly ThreadStatus[];
 };
 
 export class ThreadService {
@@ -304,7 +307,15 @@ export class ThreadService {
         continue;
       }
 
+      if (!matchesFilter(event.payload.childAgentName, options.agentName)) {
+        continue;
+      }
+
       const projection = await this.engine.getProjection(event.payload.childThreadId);
+      if (!matchesFilter(projection?.status, options.status)) {
+        continue;
+      }
+
       refs.push({
         threadId: event.payload.childThreadId,
         agentName: event.payload.childAgentName,
@@ -312,6 +323,7 @@ export class ThreadService {
         rootThreadId: projection?.rootThreadId ?? undefined,
         parentScopeKey: event.payload.scopeKey,
         parentStepKey: event.payload.stepKey,
+        status: projection?.status,
       });
     }
 
@@ -356,6 +368,18 @@ export class ThreadService {
       },
     ]);
   }
+}
+
+function matchesFilter<Value extends string>(value: Value | undefined, filter: Value | readonly Value[] | undefined): boolean {
+  if (filter === undefined) {
+    return true;
+  }
+
+  if (value === undefined) {
+    return false;
+  }
+
+  return Array.isArray(filter) ? filter.includes(value) : filter === value;
 }
 
 function normalizeStartSessionInput(input: string | StartSessionInput): Required<Pick<StartSessionInput, "prompt" | "source" | "actor">> & {

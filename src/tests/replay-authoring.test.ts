@@ -1033,6 +1033,7 @@ async function testListChildren(): Promise<void> {
       rootThreadId: parentThreadId,
       parentScopeKey: "agent:parent-agent",
       parentStepKey: "spawn-attached",
+      status: "waiting",
     },
   ]);
 
@@ -1041,6 +1042,29 @@ async function testListChildren(): Promise<void> {
   assert.deepEqual(
     allChildren.map((child) => child.agentName),
     ["attached-agent", "detached-agent"],
+  );
+
+  const attachedByAgent = await service.listChildren(parentThreadId, { agentName: "attached-agent" });
+  assert.deepEqual(
+    attachedByAgent.map((child) => child.agentName),
+    ["attached-agent"],
+  );
+
+  await engine.append([
+    {
+      eventId: eventKey(attached.threadId, "agent.response.produced", "done"),
+      threadId: attached.threadId,
+      type: "agent.response.produced",
+      occurredAt: nowIso(),
+      actor: { type: "agent", id: "attached-agent" },
+      payload: { message: "done" },
+    },
+  ]);
+
+  const completedChildren = await service.listChildren(parentThreadId, { status: "completed" });
+  assert.deepEqual(
+    completedChildren.map((child) => ({ agentName: child.agentName, status: child.status })),
+    [{ agentName: "attached-agent", status: "completed" }],
   );
 }
 
@@ -1070,6 +1094,53 @@ async function testContextChildren(): Promise<void> {
   const plan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
   assert(plan);
   assert.deepEqual(plan.events[0]?.payload, { message: "children=child-agent" });
+}
+
+async function testContextChildrenFilters(): Promise<void> {
+  const parentThreadId = "context-children-filters";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const first = await service.startChildSession({
+    parentThreadId,
+    agentName: "first-agent",
+    input: { query: "first" },
+    source: "test",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-first",
+    idempotencyKey: "spawn-first",
+  });
+  await service.startChildSession({
+    parentThreadId,
+    agentName: "second-agent",
+    input: { query: "second" },
+    source: "test",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-second",
+    idempotencyKey: "spawn-second",
+  });
+  await engine.append([
+    {
+      eventId: eventKey(first.threadId, "agent.response.produced", "done"),
+      threadId: first.threadId,
+      type: "agent.response.produced",
+      occurredAt: nowIso(),
+      actor: { type: "agent", id: "first-agent" },
+      payload: { message: "done" },
+    },
+  ]);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx) {
+      const children = await ctx.children({ agentName: ["first-agent", "second-agent"], status: "completed" });
+      return { finalMessage: `children=${children.map((child) => `${child.agentName}:${child.status}`).join(",")}` };
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  const plan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
+  assert(plan);
+  assert.deepEqual(plan.events[0]?.payload, { message: "children=first-agent:completed" });
 }
 
 async function testRuntimePlannerDispatchesChildAgent(): Promise<void> {
@@ -1471,6 +1542,7 @@ await testJoinRejectsInvalidStructuredChildOutput();
 await testJoinFailedChild();
 await testListChildren();
 await testContextChildren();
+await testContextChildrenFilters();
 await testRuntimePlannerDispatchesChildAgent();
 await testRuntimePlannerFallsBackToDefaultAgent();
 await testRuntimeRegistersToolsFromAllAgents();

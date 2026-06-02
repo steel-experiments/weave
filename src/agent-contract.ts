@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { Actor, SessionMetadata, SessionSource, ThreadEvent } from "./events.js";
+import type { Actor, SessionMetadata, SessionSource, ThreadEvent, ThreadStatus } from "./events.js";
 import type { AgentPlanner } from "./runner.js";
 import type { AnyToolContract, ToolContract } from "./tool-contract.js";
 import type { MaybePromise } from "./types.js";
@@ -25,6 +25,7 @@ export type ThreadRef<Output = unknown> = {
   rootThreadId?: string;
   parentScopeKey?: string;
   parentStepKey?: string;
+  status?: ThreadStatus;
   outputSchema?: z.ZodType<Output>;
   output?: Output;
 };
@@ -43,6 +44,8 @@ export type JoinOptions = {
 
 export type ChildrenOptions = {
   includeDetached?: boolean;
+  agentName?: string | readonly string[];
+  status?: ThreadStatus | readonly ThreadStatus[];
 };
 
 export type AgentRun<Output = unknown> =

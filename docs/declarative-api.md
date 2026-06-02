@@ -609,7 +609,16 @@ Parents can list known child threads with `ctx.children()`:
 const children = await ctx.children();
 ```
 
-`ctx.children()` returns attached children by default. Pass `{ includeDetached: true }` to include detached children. Runtime callers can use the same behavior through `ThreadService.listChildren(parentThreadId, options)`.
+`ctx.children()` returns attached children by default. Pass `{ includeDetached: true }` to include detached children. Pass `agentName` or `status` to filter returned refs:
+
+```ts
+const completedResearch = await ctx.children({
+  agentName: "research-docs",
+  status: "completed",
+});
+```
+
+Both filters accept a single value or an array of values. Returned refs include `status` when the child projection is available. Runtime callers can use the same behavior through `ThreadService.listChildren(parentThreadId, options)`.
 
 Parent thread lifecycle events:
 
