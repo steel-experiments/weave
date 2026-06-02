@@ -107,6 +107,22 @@ export const ToolFailedPayloadSchema = z.object({
   message: z.string().min(1),
 });
 
+export const PolicyEvaluatedPayloadSchema = z.object({
+  policyEvaluationId: z.string().uuid(),
+  requestType: z.literal("tool"),
+  outcome: z.enum(["allowed", "denied", "approval_required"]),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  policyStepKey: z.string().min(1),
+  toolCallId: z.string().uuid(),
+  toolName: ToolNameSchema,
+  inputHash: z.string().min(1),
+  capabilityNames: z.array(z.string().min(1)),
+  policyName: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+  gateId: z.string().uuid().optional(),
+});
+
 export const CredentialKindSchema = z.enum(["secret", "delegated-identity", "scoped-token", "browser-session"]);
 
 export const CredentialRequestedPayloadSchema = z.object({
@@ -280,6 +296,11 @@ const ToolFailedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: ToolFailedPayloadSchema,
 });
 
+const PolicyEvaluatedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("policy.evaluated"),
+  payload: PolicyEvaluatedPayloadSchema,
+});
+
 const CredentialRequestedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("credential.requested"),
   payload: CredentialRequestedPayloadSchema,
@@ -366,6 +387,7 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   ToolProgressEventSchema,
   ToolCompletedEventSchema,
   ToolFailedEventSchema,
+  PolicyEvaluatedEventSchema,
   CredentialRequestedEventSchema,
   CredentialResolvedEventSchema,
   CredentialFailedEventSchema,

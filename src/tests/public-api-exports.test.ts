@@ -12,8 +12,10 @@ import {
   defineWeaveApp,
   event,
   integration,
+  policy,
   tool,
   weave,
+  definePolicy,
 } from "weave";
 import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
@@ -65,6 +67,19 @@ const echoAgent = agent({
   },
 });
 
+const allowEchoPolicy = policy({
+  name: "public-api.allow-echo",
+  evaluate(request) {
+    return request.type === "tool" && request.toolName === "public-api.echo" ? { outcome: "allow" } : undefined;
+  },
+});
+const denyNothingPolicy = definePolicy({
+  name: "public-api.deny-nothing",
+  evaluate() {
+    return undefined;
+  },
+});
+
 const echoIntegration = integration({
   name: "public-api.integration",
   tools: [echoTool],
@@ -75,6 +90,7 @@ const echoApp = weave({
   agents: [echoAgent],
   tools: [echoTool],
   integrations: [echoIntegration],
+  policies: [allowEchoPolicy],
 });
 
 assert.equal(defineTool(echoTool), echoTool);
@@ -84,6 +100,9 @@ assert.equal(defineWeaveApp(echoApp), echoApp);
 assert.equal(githubRead.name, "github.read");
 assert.equal(definedGitHubWrite.name, "github.write");
 assert.equal(echoTool.capabilities?.[0], githubRead);
+assert.equal(allowEchoPolicy.name, "public-api.allow-echo");
+assert.equal(denyNothingPolicy.name, "public-api.deny-nothing");
+assert.equal(echoApp.policies?.[0], allowEchoPolicy);
 
 const emitted = event("agent.response.produced", { message: "ok" });
 const defined = defineEvent("agent.response.produced", { message: "ok" });
@@ -98,7 +117,7 @@ assert.equal(responseProduced.type, "agent.response.produced");
 assert.equal(responseProduced.description, "Public API response event.");
 assert.deepEqual(responseProduced({ message: "ok" }).payload, { message: "ok" });
 
-const policy = approvalPolicy({
+const approval = approvalPolicy({
   name: "public-api.policy",
   requiresApproval(input: { risky: boolean }) {
     return input.risky;
@@ -117,8 +136,8 @@ const definedPolicy = defineApprovalPolicy({
   },
 });
 
-assert.equal(policy.evaluate({ risky: false }), undefined);
-assert.equal(policy.evaluate({ risky: true })?.reason, "risky-remediation");
+assert.equal(approval.evaluate({ risky: false }), undefined);
+assert.equal(approval.evaluate({ risky: true })?.reason, "risky-remediation");
 assert.equal(definedPolicy.requiresApproval({ risky: true }), true);
 
 assert.equal(typeof createWeaveRuntime, "function");

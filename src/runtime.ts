@@ -68,7 +68,7 @@ export function createRuntimeAgentPlanner(
       let planner = planners.get(agentName);
       if (!planner) {
         const agent = findRuntimeAgent(app, agentName);
-        planner = createAgentPlanner(agent, agentName, { service });
+        planner = createAgentPlanner(agent, agentName, { service, policies: app.policies });
         planners.set(agentName, planner);
       }
 

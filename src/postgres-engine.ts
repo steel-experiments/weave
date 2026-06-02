@@ -594,6 +594,7 @@ function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
     case "agent.step.completed":
     case "agent.failed":
     case "checkpoint.completed":
+    case "policy.evaluated":
     case "tool.started":
     case "tool.progress":
     case "credential.requested":

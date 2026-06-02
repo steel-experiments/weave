@@ -1,4 +1,5 @@
 import type { GateRequest } from "./agent-contract.js";
+import type { AnyCapabilityContract } from "./capability-contract.js";
 
 export type ApprovalPolicyDecision = GateRequest | undefined;
 
@@ -27,3 +28,47 @@ export function defineApprovalPolicy<Input>(definition: ApprovalPolicyDefinition
 }
 
 export const approvalPolicy = defineApprovalPolicy;
+
+export type ToolPolicyRequest<Input = unknown> = {
+  type: "tool";
+  threadId: string;
+  agentName: string;
+  scopeKey: string;
+  stepKey: string;
+  toolName: string;
+  input: Input;
+  capabilities: readonly AnyCapabilityContract[];
+};
+
+export type PolicyRequest = ToolPolicyRequest;
+
+export type PolicyDecision =
+  | {
+      outcome: "allow";
+      reason?: string;
+    }
+  | {
+      outcome: "deny";
+      reason: string;
+    }
+  | {
+      outcome: "approval_required";
+      reason?: string;
+      gate: GateRequest;
+    };
+
+export type PolicyRule<Request extends PolicyRequest = PolicyRequest> = {
+  name: string;
+  description?: string;
+  evaluate(request: Request): PolicyDecision | undefined;
+};
+
+export type AnyPolicyRule = PolicyRule<PolicyRequest>;
+
+export function definePolicy<const Name extends string, Request extends PolicyRequest = PolicyRequest>(
+  rule: PolicyRule<Request> & { name: Name },
+): PolicyRule<Request> & { name: Name } {
+  return rule;
+}
+
+export const policy = definePolicy;

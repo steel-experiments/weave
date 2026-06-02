@@ -27,6 +27,12 @@ export interface WeaveModuleBoundary {
   ): IntegrationContract<Name, Tools>;
   approvalPolicy<Input>(definition: ApprovalPolicyDefinition<Input>): ApprovalPolicy<Input>;
   defineApprovalPolicy<Input>(definition: ApprovalPolicyDefinition<Input>): ApprovalPolicy<Input>;
+  policy<const Name extends string, Request extends PolicyRequest = PolicyRequest>(
+    rule: PolicyRule<Request> & { name: Name },
+  ): PolicyRule<Request> & { name: Name };
+  definePolicy<const Name extends string, Request extends PolicyRequest = PolicyRequest>(
+    rule: PolicyRule<Request> & { name: Name },
+  ): PolicyRule<Request> & { name: Name };
   event<const Type extends ThreadEvent["type"]>(
     type: Type,
     payload: Extract<ThreadEvent, { type: Type }>["payload"],
@@ -91,6 +97,7 @@ interface WeaveAppDefinition<
   credentialProvider?: CredentialProvider;
   artifactStore?: ThreadArtifactStore;
   observability?: ObservabilitySink;
+  policies?: readonly AnyPolicyRule[];
 }
 
 interface AgentContract<
@@ -171,6 +178,32 @@ interface ApprovalPolicyDefinition<Input> {
   requiresApproval(input: Input): boolean;
   gate(input: Input): GateRequest;
 }
+
+interface ToolPolicyRequest<Input = unknown> {
+  type: "tool";
+  threadId: string;
+  agentName: string;
+  scopeKey: string;
+  stepKey: string;
+  toolName: string;
+  input: Input;
+  capabilities: readonly AnyCapabilityContract[];
+}
+
+type PolicyRequest = ToolPolicyRequest;
+
+type PolicyDecision =
+  | { outcome: "allow"; reason?: string }
+  | { outcome: "deny"; reason: string }
+  | { outcome: "approval_required"; reason?: string; gate: GateRequest };
+
+interface PolicyRule<Request extends PolicyRequest = PolicyRequest> {
+  name: string;
+  description?: string;
+  evaluate(request: Request): PolicyDecision | undefined;
+}
+
+type AnyPolicyRule = PolicyRule<PolicyRequest>;
 
 interface ToolContract<
   Name extends string = string,

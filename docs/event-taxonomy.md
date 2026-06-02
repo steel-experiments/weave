@@ -90,6 +90,7 @@ The PoC uses this event set.
 - `tool.progress`
 - `tool.completed`
 - `tool.failed`
+- `policy.evaluated`
 - `credential.requested`
 - `credential.resolved`
 - `credential.failed`
@@ -216,6 +217,28 @@ const ToolFailedPayload = z.object({
   message: z.string().min(1),
 })
 ```
+
+### Policy evaluated
+
+```ts
+const PolicyEvaluatedPayload = z.object({
+  policyEvaluationId: z.string().uuid(),
+  requestType: z.literal("tool"),
+  outcome: z.enum(["allowed", "denied", "approval_required"]),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  policyStepKey: z.string().min(1),
+  toolCallId: z.string().uuid(),
+  toolName: z.string().min(1),
+  inputHash: z.string().min(1),
+  capabilityNames: z.array(z.string().min(1)),
+  policyName: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+  gateId: z.string().uuid().optional(),
+})
+```
+
+`policy.evaluated` is durable audit evidence for runtime request policy decisions. It is emitted before `tool.requested` for allowed tool requests, before `gate.created` for approval-required requests, and before `agent.failed` for denied requests.
 
 ### Credential requested
 

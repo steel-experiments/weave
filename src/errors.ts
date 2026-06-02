@@ -37,6 +37,13 @@ export class ChildThreadFailedError extends WeaveError {
   }
 }
 
+export class PolicyDeniedError extends WeaveError {
+  constructor(message: string, details?: unknown) {
+    super("POLICY_DENIED", message, details);
+    this.name = "PolicyDeniedError";
+  }
+}
+
 export function isWeaveError(error: unknown, code?: string): error is WeaveError {
   return error instanceof WeaveError && (code === undefined || error.code === code);
 }

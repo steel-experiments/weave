@@ -12,7 +12,14 @@ import type {
   SpawnOptions,
   ThreadRef,
 } from "./agent-contract.js";
-import { ChildThreadFailedError, ParallelDurableEffectError, ReplayMismatchError, ToolFailedError, WeaveError } from "./errors.js";
+import {
+  ChildThreadFailedError,
+  ParallelDurableEffectError,
+  PolicyDeniedError,
+  ReplayMismatchError,
+  ToolFailedError,
+  WeaveError,
+} from "./errors.js";
 import {
   deterministicUuid,
   eventKey,
@@ -25,6 +32,7 @@ import {
 import type { AgentPlan, AgentPlanner } from "./runner.js";
 import type { ThreadService } from "./thread-service.js";
 import type { ToolContract } from "./tool-contract.js";
+import type { AnyPolicyRule, PolicyDecision, PolicyRequest } from "./policy-contract.js";
 
 type SuspensionReason =
   | "tool-requested"
@@ -47,6 +55,7 @@ class AgentSuspended extends Error {
 
 export type CreateAgentPlannerOptions = {
   service?: ThreadService;
+  policies?: readonly AnyPolicyRule[];
 };
 
 export function createAgentPlanner(
@@ -87,6 +96,7 @@ class RunAgentPlanner implements AgentPlanner {
       threadId,
       events,
       service: this.options.service,
+      policies: this.options.policies,
     });
 
     try {
@@ -113,6 +123,9 @@ class RunAgentPlanner implements AgentPlanner {
       if (error instanceof ToolFailedError) {
         return null;
       }
+      if (error instanceof PolicyDeniedError) {
+        return toPlan(events, [...context.drainEvents(), context.failedEvent(error)]);
+      }
       throw error;
     }
   }
@@ -134,6 +147,7 @@ class ReplayAgentContext implements AgentContext {
       threadId: string;
       events: readonly ThreadEvent[];
       service?: ThreadService;
+      policies?: readonly AnyPolicyRule[];
     },
   ) {
     this.actor = { type: "agent", id: options.agentName };
@@ -201,6 +215,8 @@ class ReplayAgentContext implements AgentContext {
 
       this.suspend("tool", key, "tool-pending", []);
     }
+
+    this.enforceToolPolicy(key, tool, inputResult.data);
 
     const requested = this.toolRequestedEvent(key, tool.name, inputResult.data);
     this.suspend("tool", key, "tool-requested", [requested]);
@@ -582,9 +598,202 @@ class ReplayAgentContext implements AgentContext {
     };
   }
 
+  failedEvent(error: WeaveError): Extract<ThreadEvent, { type: "agent.failed" }> {
+    const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
+    return {
+      eventId: eventKey(this.threadId, "agent.failed", `${error.code}:${cause?.eventId ?? this.options.events.length}`),
+      threadId: this.threadId,
+      type: "agent.failed",
+      occurredAt: nowIso(),
+      correlationId: cause?.correlationId,
+      causationId: cause?.eventId,
+      scopeKey: this.scopeKey,
+      stepKey: "agent-run-failed",
+      actor: this.actor,
+      payload: {
+        errorCode: error.code,
+        message: error.message,
+      },
+    };
+  }
+
+  private enforceToolPolicy<Input, Output>(key: string, tool: ToolContract<string, Input, Output>, input: Input): void {
+    const existing = this.findPolicyEvaluation(key);
+    if (existing) {
+      this.validatePolicyEvaluation(key, tool, input, existing);
+      this.applyStoredPolicyDecision(key, existing);
+      return;
+    }
+
+    const policies = this.options.policies ?? [];
+    if (policies.length === 0) {
+      return;
+    }
+
+    const toolCallId = this.toolCallId(key, tool.name);
+    const evaluation = evaluatePolicies(policies, {
+      type: "tool",
+      threadId: this.threadId,
+      agentName: this.options.agentName,
+      scopeKey: this.scopeKey,
+      stepKey: key,
+      toolName: tool.name,
+      input,
+      capabilities: tool.capabilities ?? [],
+    });
+    const policyEvent = this.policyEvaluatedEvent(key, tool, input, toolCallId, evaluation);
+    this.pendingEvents.push(policyEvent);
+
+    if (evaluation.decision.outcome === "allow") {
+      return;
+    }
+
+    if (evaluation.decision.outcome === "deny") {
+      throw new PolicyDeniedError(evaluation.decision.reason, {
+        policyName: evaluation.policyName,
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        toolName: tool.name,
+      });
+    }
+
+    this.suspend("policy", this.policyGateStepKey(key), "gate-created", [
+      this.gateCreatedEvent(this.policyGateStepKey(key), {
+        ...evaluation.decision.gate,
+        relatedToolCallId: evaluation.decision.gate.relatedToolCallId ?? toolCallId,
+      }),
+    ]);
+  }
+
+  private applyStoredPolicyDecision(key: string, event: Extract<ThreadEvent, { type: "policy.evaluated" }>): void {
+    if (event.payload.outcome === "allowed") {
+      return;
+    }
+
+    if (event.payload.outcome === "denied") {
+      throw new PolicyDeniedError(event.payload.reason ?? "Policy denied request", {
+        policyName: event.payload.policyName,
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        toolName: event.payload.toolName,
+      });
+    }
+
+    const gateCreated = findEventByDurableIdentity(this.options.events, this.scopeKey, this.policyGateStepKey(key));
+    if (!gateCreated || gateCreated.type !== "gate.created") {
+      throw new ReplayMismatchError("Policy approval required but durable gate evidence is missing", {
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        policyStepKey: event.payload.policyStepKey,
+      });
+    }
+
+    const resolved = findGateResolvedEvent(this.options.events, gateCreated.payload.gateId);
+    if (!resolved) {
+      this.suspend("policy", this.policyGateStepKey(key), "gate-pending", []);
+    }
+
+    if (resolved.payload.resolution === "denied") {
+      throw new PolicyDeniedError(resolved.payload.comment ?? event.payload.reason ?? "Policy approval denied", {
+        policyName: event.payload.policyName,
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        gateId: gateCreated.payload.gateId,
+      });
+    }
+  }
+
+  private validatePolicyEvaluation<Input, Output>(
+    key: string,
+    tool: ToolContract<string, Input, Output>,
+    input: Input,
+    event: Extract<ThreadEvent, { type: "policy.evaluated" }>,
+  ): void {
+    const expected = {
+      scopeKey: this.scopeKey,
+      stepKey: key,
+      policyStepKey: this.policyStepKey(key),
+      toolCallId: this.toolCallId(key, tool.name),
+      toolName: tool.name,
+      inputHash: stableJsonHash(input),
+      capabilityNames: capabilityNames(tool),
+    };
+    const actual = {
+      scopeKey: event.payload.scopeKey,
+      stepKey: event.payload.stepKey,
+      policyStepKey: event.payload.policyStepKey,
+      toolCallId: event.payload.toolCallId,
+      toolName: event.payload.toolName,
+      inputHash: event.payload.inputHash,
+      capabilityNames: event.payload.capabilityNames,
+    };
+
+    if (canonicalJson(actual) !== canonicalJson(expected)) {
+      throw new ReplayMismatchError("Durable policy evaluation key was previously used with different request input", {
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        eventType: "policy.evaluated",
+      });
+    }
+  }
+
+  private findPolicyEvaluation(key: string): Extract<ThreadEvent, { type: "policy.evaluated" }> | undefined {
+    const event = findEventByDurableIdentity(this.options.events, this.scopeKey, this.policyStepKey(key));
+    if (event && event.type !== "policy.evaluated") {
+      throw new ReplayMismatchError("Durable policy key was previously used for a different event type", {
+        scopeKey: this.scopeKey,
+        stepKey: this.policyStepKey(key),
+        existingType: event.type,
+        requestedType: "policy.evaluated",
+      });
+    }
+    return event;
+  }
+
+  private policyEvaluatedEvent<Input, Output>(
+    key: string,
+    tool: ToolContract<string, Input, Output>,
+    input: Input,
+    toolCallId: string,
+    evaluation: EvaluatedPolicyDecision,
+  ): Extract<ThreadEvent, { type: "policy.evaluated" }> {
+    const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
+    const policyStepKey = this.policyStepKey(key);
+    const gateId =
+      evaluation.decision.outcome === "approval_required"
+        ? deterministicUuid("gate", this.threadId, this.scopeKey, this.policyGateStepKey(key))
+        : undefined;
+    return {
+      eventId: eventKey(this.threadId, "policy.evaluated", `${this.scopeKey}:${policyStepKey}`),
+      threadId: this.threadId,
+      type: "policy.evaluated",
+      occurredAt: nowIso(),
+      correlationId: cause?.correlationId,
+      causationId: cause?.eventId,
+      scopeKey: this.scopeKey,
+      stepKey: policyStepKey,
+      actor: this.actor,
+      payload: {
+        policyEvaluationId: deterministicUuid("policy-evaluation", this.threadId, this.scopeKey, key, tool.name),
+        requestType: "tool",
+        outcome: policyOutcome(evaluation.decision),
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        policyStepKey,
+        toolCallId,
+        toolName: tool.name,
+        inputHash: stableJsonHash(input),
+        capabilityNames: capabilityNames(tool),
+        policyName: evaluation.policyName,
+        reason: evaluation.decision.reason,
+        gateId,
+      },
+    };
+  }
+
   private toolRequestedEvent<Input>(key: string, toolName: string, input: Input): ThreadEvent {
-    const cause = newestEvent(this.options.events);
-    const toolCallId = deterministicUuid("tool-call", this.threadId, this.scopeKey, key, toolName);
+    const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
+    const toolCallId = this.toolCallId(key, toolName);
     return {
       eventId: eventKey(this.threadId, "tool.requested", `${this.scopeKey}:${key}:${toolName}`),
       threadId: this.threadId,
@@ -603,6 +812,18 @@ class ReplayAgentContext implements AgentContext {
         stepKey: key,
       },
     };
+  }
+
+  private toolCallId(key: string, toolName: string): string {
+    return deterministicUuid("tool-call", this.threadId, this.scopeKey, key, toolName);
+  }
+
+  private policyStepKey(key: string): string {
+    return `${key}:policy`;
+  }
+
+  private policyGateStepKey(key: string): string {
+    return `${key}:policy-gate`;
   }
 
   private suspend(
@@ -770,8 +991,53 @@ function findGateResolvedEvent(
   );
 }
 
+type EvaluatedPolicyDecision = {
+  policyName?: string;
+  decision: PolicyDecision;
+};
+
+function evaluatePolicies(policies: readonly AnyPolicyRule[], request: PolicyRequest): EvaluatedPolicyDecision {
+  let approvalRequired: EvaluatedPolicyDecision | undefined;
+  let allowed: EvaluatedPolicyDecision | undefined;
+
+  for (const rule of policies) {
+    const decision = rule.evaluate(request);
+    if (!decision) {
+      continue;
+    }
+
+    const evaluated = { policyName: rule.name, decision };
+    if (decision.outcome === "deny") {
+      return evaluated;
+    }
+    if (decision.outcome === "approval_required") {
+      approvalRequired ??= evaluated;
+      continue;
+    }
+    allowed ??= evaluated;
+  }
+
+  return approvalRequired ?? allowed ?? { decision: { outcome: "allow" } };
+}
+
+function policyOutcome(decision: PolicyDecision): "allowed" | "denied" | "approval_required" {
+  if (decision.outcome === "allow") {
+    return "allowed";
+  }
+  return decision.outcome === "deny" ? "denied" : "approval_required";
+}
+
+function capabilityNames(tool: ToolContract<string, any, any>): string[] {
+  return [...(tool.capabilities ?? []).map((capability) => capability.name)].sort();
+}
+
 function hasTerminalAgentResponse(events: readonly ThreadEvent[]): boolean {
-  return events.some((event) => event.type === "agent.response.produced" || event.type === "agent.incident_report.produced");
+  return events.some(
+    (event) =>
+      event.type === "agent.response.produced" ||
+      event.type === "agent.incident_report.produced" ||
+      event.type === "agent.failed",
+  );
 }
 
 function newestEvent(events: readonly ThreadEvent[]): ThreadEvent | undefined {

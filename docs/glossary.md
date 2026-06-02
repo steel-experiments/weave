@@ -54,7 +54,7 @@ An observer or controller that listens to thread events and may trigger actions 
 
 ## Capability
 
-A typed declaration of scoped access intent, such as `github.read` for a specific owner and repository. In the current authoring API, capabilities are metadata attached to tools, not enforced runtime grants.
+A typed declaration of scoped access intent, such as `github.read` for a specific owner and repository. Capabilities are metadata attached to tools and can be inspected by runtime request policies.
 
 ## Capability Contract
 
@@ -62,7 +62,11 @@ The formal declaration of a capability name, description, and schema-backed scop
 
 ## Policy
 
-The rules that decide what actions an agent, worker, or human may take under which conditions.
+The rules that decide what actions an agent, worker, or human may take under which conditions. Current runtime request policies can allow, deny, or require approval for `ctx.tool` requests before `tool.requested` is recorded.
+
+## Policy Evaluation
+
+Durable audit evidence that a runtime request policy evaluated a tool request. Policy evaluations record the outcome, policy name, input hash, tool name, tool call ID, and capability names used for replay safety.
 
 ## Trace
 

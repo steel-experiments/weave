@@ -35,8 +35,9 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.join` | Current child-thread wait effect |
 | `ctx.children` | Current child listing helper |
 | `approvalPolicy` | Current authoring helper |
+| `policy` | Current request policy enforcement helper |
 | subthread lineage fields | Current storage/read model |
-| `capability` | Current declaration-only metadata helper |
+| `capability` | Current tool metadata helper used by request policies |
 | package subpaths | Current runtime boundary |
 
 ## Authoring Primitives
@@ -45,11 +46,12 @@ The runtime turns durable operations into thread events, worker work, resumable 
 - `agent`: declares an agent using the new `run(ctx, input)` authoring model or the lower-level planner model.
 - `weave`: composes agents, tools, integrations, and runtime dependencies into an application registry.
 - `integration`: declares external route and event handling adapters.
-- `capability`: declares scoped access intent for tools; policy enforcement over those declarations is planned separately.
+- `capability`: declares scoped access intent for tools and exposes capability names to request policy evaluation.
+- `policy`: declares runtime request policy rules for tool requests.
 
-The older `defineTool`, `defineAgent`, `defineWeaveApp`, `defineIntegration`, and `defineCapability` names remain exported for compatibility. New examples should prefer the shorter authoring names.
+The older `defineTool`, `defineAgent`, `defineWeaveApp`, `defineIntegration`, `defineCapability`, and `definePolicy` names remain exported for compatibility. New examples should prefer the shorter authoring names.
 
-Capability contracts are declaration-only metadata in this slice. They do not enforce runtime permissions until the policy enforcement slice wires them into tool and gate evaluation.
+Capability contracts are metadata by themselves. They affect runtime behavior only when request policies inspect them.
 
 ## App Definition
 
@@ -60,6 +62,7 @@ const app = weave({
   name: "acme-agents",
   agents: [fixBug],
   tools: [inspectIssue, runTests],
+  policies: [productionPolicy],
 });
 ```
 
@@ -406,11 +409,65 @@ if (gate) {
 }
 ```
 
-Policy helpers are useful for naming and reusing approval rules across agents. The agent still calls `ctx.gate`; future runtime policy enforcement may add stronger guarantees.
+Approval policy helpers are useful for naming and reusing approval rules inside agent logic. They do not automatically enforce runtime request policy. Use `policy(...)` in the app `policies` list for runtime enforcement over tool requests.
+
+## Runtime Request Policies
+
+`policy({...})` declares runtime policy rules for durable tool requests. Policies are evaluated during `ctx.tool` planning, before a `tool.requested` event is recorded and before any worker can execute the tool.
+
+```ts
+const productionToolPolicy = policy({
+  name: "production-tool-policy",
+  evaluate(request) {
+    if (request.type !== "tool") {
+      return undefined;
+    }
+
+    if (request.capabilities.some((capability) => capability.name === "github.write")) {
+      return {
+        outcome: "approval_required",
+        reason: "GitHub writes require approval.",
+        gate: {
+          reason: "risky-remediation",
+          proposedAction: `Approve ${request.toolName}.`,
+        },
+      };
+    }
+
+    return { outcome: "allow" };
+  },
+});
+
+const app = weave({
+  name: "coding-app",
+  agents: [fixBug],
+  policies: [productionToolPolicy],
+});
+```
+
+Supported outcomes:
+
+- `allow`: records `policy.evaluated` with `outcome: "allowed"`, then records `tool.requested`
+- `deny`: records `policy.evaluated` with `outcome: "denied"`, records `agent.failed`, and does not record `tool.requested`
+- `approval_required`: records `policy.evaluated`, records a `gate.created` event, and waits for `gate.resolved` before recording `tool.requested`
+
+Replay semantics:
+
+- a recorded policy decision is replayed instead of re-evaluating current policy code
+- policy-relevant request identity includes scope key, step key, tool call ID, tool name, input hash, and capability names
+- changing policy-relevant request input after a `policy.evaluated` event raises `ReplayMismatchError`
+- existing tool requests without policy evidence remain compatible and are not retroactively blocked
+
+Current boundary:
+
+- enforcement happens at `ctx.tool` planning time
+- tool workers do not re-evaluate policies in this slice
+- explicit `ctx.gate` calls remain agent-authored approval flows
+- credential resolution remains separate from policy evaluation
 
 ## Capability Contracts
 
-`capability({...})` declares scoped access intent. It is auditable metadata that can be attached to tools today; it does not grant credentials, authorize requests, or block execution by itself.
+`capability({...})` declares scoped access intent. It is auditable metadata attached to tools and exposed to runtime request policies. It does not grant credentials by itself.
 
 ```ts
 const githubRead = capability({
@@ -445,10 +502,9 @@ Semantics:
 
 - `name` is the stable policy-facing capability identifier
 - `description` explains the intended access
-- `scopes` is a schema for future policy input, not a runtime grant in this slice
-- tool execution is unchanged when capabilities are present
+- `scopes` is a schema for policy-facing scope metadata, not a credential grant
+- tool execution is unchanged when capabilities are present unless a runtime `policy` evaluates them
 - credentials still resolve secret material separately through credential providers
-- slice 39 is responsible for enforcing policies over declared capabilities
 
 ## Event Factories And Replay Helpers
 
@@ -811,7 +867,7 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - `ctx.emit` is implemented and supports typed event factories plus raw compatibility input.
 - `ctx.id` is the preferred deterministic ID helper; `ctx.uuid` remains a compatibility alias.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
-- capability contracts are implemented as declaration-only tool metadata; runtime enforcement is planned next.
+- capability contracts are tool metadata; runtime request policies can inspect them for `ctx.tool` enforcement.
 - Package subpaths are available, but root exports still include runtime internals for compatibility.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.

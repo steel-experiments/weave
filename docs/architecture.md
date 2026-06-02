@@ -80,7 +80,7 @@ Responsibilities:
 
 - determine what an agent is allowed to do
 - enforce approval or gate requirements
-- mediate credential use today and enforce declared capability intent in future slices
+- mediate credential use and enforce declared capability intent at supported request boundaries
 - keep raw secret material out of normal agent execution paths where possible
 
 ### 5. Integration Layer
@@ -128,7 +128,11 @@ A typed declaration of scoped access intent. Capability contracts can be attache
 
 Capability contracts are not credentials. Credentials resolve secret material; capabilities describe authorized access intent and expected scope shape.
 
-Current capability declarations are inert. Runtime policy enforcement over capabilities is planned as a follow-up layer.
+Runtime request policies can inspect capability names during `ctx.tool` planning. Tool workers do not re-evaluate policies in the current architecture slice.
+
+### Policy
+
+A runtime request rule that can allow, deny, or require approval before a supported durable request is recorded. Current enforcement happens at the `ctx.tool` planning boundary and records `policy.evaluated` audit evidence.
 
 ### Stream Link
 

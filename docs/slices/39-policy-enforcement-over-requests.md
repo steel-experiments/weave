@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -54,43 +54,46 @@ As an operator, I can configure policy rules that approve, deny, or require gate
 
 ## Acceptance Criteria
 
-- [ ] Policy enforcement boundary is documented and tested.
-- [ ] Policies can allow, deny, or require approval for supported request types.
-- [ ] Require-approval outcomes integrate with gates.
-- [ ] Denied outcomes record durable evidence and prevent execution.
-- [ ] Replay does not duplicate policy or gate events.
-- [ ] Capability declarations from slice 38 are usable in policy decisions.
-- [ ] Docs distinguish policy helpers from runtime enforcement.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Policy enforcement boundary is documented and tested.
+- [x] Policies can allow, deny, or require approval for supported request types.
+- [x] Require-approval outcomes integrate with gates.
+- [x] Denied outcomes record durable evidence and prevent execution.
+- [x] Replay does not duplicate policy or gate events.
+- [x] Capability declarations from slice 38 are usable in policy decisions.
+- [x] Docs distinguish policy helpers from runtime enforcement.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Define enforcement boundary.
-- [ ] Implement policy decision model.
-- [ ] Integrate gates and failures.
-- [ ] Add tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Define enforcement boundary.
+- [x] Implement policy decision model.
+- [x] Integrate gates and failures.
+- [x] Add tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
-
-Include:
-
-- final enforcement boundary
-- durable audit event behavior
-- tests added
-- docs updated
-- commands run
-- policy limitations and follow-up slices
+- Final enforcement boundary is `ctx.tool` planning. Policies are evaluated before `tool.requested` is recorded and before workers can execute.
+- Added `policy(...)` and `definePolicy(...)` runtime request rule helpers plus app-level `policies` registration.
+- Added `policy.evaluated` durable audit events with `allowed`, `denied`, and `approval_required` outcomes.
+- `allow` records policy evidence and then `tool.requested`.
+- `deny` records policy evidence plus `agent.failed` and does not record `tool.requested`.
+- `approval_required` records policy evidence plus `gate.created`; after `gate.resolved: approved`, replay records `tool.requested`; after denial, replay records `agent.failed`.
+- Replay uses recorded `policy.evaluated` decisions instead of re-running current policy code. Policy-relevant request mismatch raises `ReplayMismatchError`.
+- Capability declarations are available to policy rules through `request.capabilities`.
+- Existing tool requests without policy evidence remain compatible and are not retroactively blocked.
+- Tests added for allow, deny, approval required, approval denial, replay idempotency, capability-aware policy decisions, input mismatch, public exports, and app registration.
+- Docs updated in `docs/declarative-api.md`, `docs/event-taxonomy.md`, `docs/architecture.md`, and `docs/glossary.md`.
+- Verified with `npm test` and `npm run typecheck`.
+- Limitations: worker-side re-evaluation, external policy services, policy over raw `ctx.gate`, and richer capability scope validation remain follow-up work.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md` if events change
-- [ ] `docs/architecture.md`
-- [ ] `docs/glossary.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md` if events change
+- [x] `docs/architecture.md`
+- [x] `docs/glossary.md`

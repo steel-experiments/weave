@@ -26,7 +26,7 @@ import {
   type ThreadProjection,
   type ThreadEvent,
 } from "../events.js";
-import { approvalPolicy } from "../policy-contract.js";
+import { approvalPolicy, policy } from "../policy-contract.js";
 import { ThreadRunner } from "../runner.js";
 import { createRuntimeAgentPlanner, createWeaveRuntime } from "../runtime.js";
 import { buildThreadSummary } from "../summary.js";
@@ -118,6 +118,183 @@ async function testCapabilityMetadataDoesNotAffectToolPlanning(): Promise<void> 
   assert.equal(plan.events.length, 1);
   assert.equal(plan.events[0]?.type, "tool.requested");
   assert.equal(plan.events[0]?.payload.toolName, "test.lookup");
+}
+
+async function testPolicyAllowRecordsAuditAndRequestsTool(): Promise<void> {
+  const allowLookup = policy({
+    name: "test.allow-lookup-capability",
+    evaluate(request) {
+      assert.equal(request.type, "tool");
+      assert(request.capabilities.some((capability) => capability.name === "test.lookup.read"));
+      return { outcome: "allow", reason: "lookup reads are allowed" };
+    },
+  });
+  const planner = createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [allowLookup] });
+  const history = initialHistory("policy-allow");
+
+  const plan = await planner.plan("policy-allow", history);
+
+  assert(plan);
+  assert.equal(plan.events.length, 2);
+  assert.equal(plan.events[0]?.type, "policy.evaluated");
+  assert.equal(plan.events[0]?.payload.outcome, "allowed");
+  assert.equal(plan.events[0]?.payload.policyName, "test.allow-lookup-capability");
+  assert.deepEqual(plan.events[0]?.payload.capabilityNames, ["test.lookup.read"]);
+  assert.equal(plan.events[1]?.type, "tool.requested");
+
+  const replay = await planner.plan("policy-allow", [...history, ...plan.events]);
+  assert.equal(replay, null);
+}
+
+async function testPolicyDenyRecordsAuditAndFailsAgent(): Promise<void> {
+  const denyLookup = policy({
+    name: "test.deny-lookup",
+    evaluate(request) {
+      return request.toolName === "test.lookup" ? { outcome: "deny", reason: "lookup denied by policy" } : undefined;
+    },
+  });
+  const planner = createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [denyLookup] });
+  const history = initialHistory("policy-deny");
+
+  const plan = await planner.plan("policy-deny", history);
+
+  assert(plan);
+  assert.equal(plan.events.length, 2);
+  assert.equal(plan.events[0]?.type, "policy.evaluated");
+  assert.equal(plan.events[0]?.payload.outcome, "denied");
+  assert.equal(plan.events[0]?.payload.reason, "lookup denied by policy");
+  assert.equal(plan.events[1]?.type, "agent.failed");
+  assert.equal(plan.events[1]?.payload.errorCode, "POLICY_DENIED");
+  assert(!plan.events.some((event) => event.type === "tool.requested"));
+
+  const replay = await planner.plan("policy-deny", [...history, ...plan.events]);
+  assert.equal(replay, null);
+}
+
+async function testPolicyApprovalRequiredCreatesGateThenRequestsTool(): Promise<void> {
+  const requireApproval = policy({
+    name: "test.require-lookup-approval",
+    evaluate(request) {
+      return request.toolName === "test.lookup"
+        ? {
+            outcome: "approval_required",
+            reason: "lookup requires approval",
+            gate: {
+              reason: "risky-remediation",
+              proposedAction: "Approve lookup tool execution.",
+            },
+          }
+        : undefined;
+    },
+  });
+  const planner = createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [requireApproval] });
+  const history = initialHistory("policy-approval");
+
+  const firstPlan = await planner.plan("policy-approval", history);
+
+  assert(firstPlan);
+  assert.equal(firstPlan.events.length, 2);
+  assert.equal(firstPlan.events[0]?.type, "policy.evaluated");
+  assert.equal(firstPlan.events[0]?.payload.outcome, "approval_required");
+  const gateCreated = firstPlan.events[1];
+  assert.equal(gateCreated?.type, "gate.created");
+  assert.equal(gateCreated.stepKey, "lookup:policy-gate");
+  assert.equal(gateCreated.payload.relatedToolCallId, firstPlan.events[0]?.payload.toolCallId);
+
+  const pendingPlan = await planner.plan("policy-approval", [...history, ...firstPlan.events]);
+  assert.equal(pendingPlan, null);
+
+  assert(gateCreated.type === "gate.created");
+  const gateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+    eventId: eventKey("policy-approval", "gate.resolved", "lookup-policy-gate"),
+    threadId: "policy-approval",
+    type: "gate.resolved",
+    occurredAt: nowIso(),
+    correlationId: gateCreated.correlationId,
+    causationId: gateCreated.eventId,
+    scopeKey: gateCreated.scopeKey,
+    stepKey: gateCreated.stepKey,
+    actor: { type: "human", id: "approver" },
+    payload: {
+      gateId: gateCreated.payload.gateId,
+      resolution: "approved",
+    },
+  };
+
+  const approvedPlan = await planner.plan("policy-approval", [...history, ...firstPlan.events, gateResolved]);
+  assert(approvedPlan);
+  assert.equal(approvedPlan.resumeReason, "gate-resolved");
+  assert.equal(approvedPlan.events.length, 1);
+  assert.equal(approvedPlan.events[0]?.type, "tool.requested");
+}
+
+async function testPolicyApprovalDeniedFailsAgent(): Promise<void> {
+  const requireApproval = policy({
+    name: "test.require-denied-approval",
+    evaluate() {
+      return {
+        outcome: "approval_required",
+        gate: {
+          reason: "risky-remediation",
+          proposedAction: "Approve denied lookup tool execution.",
+        },
+      };
+    },
+  });
+  const planner = createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [requireApproval] });
+  const history = initialHistory("policy-approval-denied");
+  const firstPlan = await planner.plan("policy-approval-denied", history);
+  assert(firstPlan);
+  const gateCreated = firstPlan.events.find((event): event is Extract<ThreadEvent, { type: "gate.created" }> => {
+    return event.type === "gate.created";
+  });
+  assert(gateCreated);
+  const gateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+    eventId: eventKey("policy-approval-denied", "gate.resolved", "lookup-policy-gate-denied"),
+    threadId: "policy-approval-denied",
+    type: "gate.resolved",
+    occurredAt: nowIso(),
+    correlationId: gateCreated.correlationId,
+    causationId: gateCreated.eventId,
+    scopeKey: gateCreated.scopeKey,
+    stepKey: gateCreated.stepKey,
+    actor: { type: "human", id: "approver" },
+    payload: {
+      gateId: gateCreated.payload.gateId,
+      resolution: "denied",
+      comment: "not allowed now",
+    },
+  };
+
+  const deniedPlan = await planner.plan("policy-approval-denied", [...history, ...firstPlan.events, gateResolved]);
+  assert(deniedPlan);
+  assert.equal(deniedPlan.events.length, 1);
+  assert.equal(deniedPlan.events[0]?.type, "agent.failed");
+  assert.equal(deniedPlan.events[0]?.payload.errorCode, "POLICY_DENIED");
+}
+
+async function testPolicyEvaluationInputMismatch(): Promise<void> {
+  const allowLookup = policy({
+    name: "test.allow-lookup-mismatch",
+    evaluate() {
+      return { outcome: "allow" };
+    },
+  });
+  const planner = createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [allowLookup] });
+  const history = initialHistory("policy-input-mismatch");
+  const plan = await planner.plan("policy-input-mismatch", history);
+  assert(plan);
+  const changedHistory = initialHistory("policy-input-mismatch");
+  const sessionStarted = changedHistory[0];
+  assert(sessionStarted?.type === "session.started");
+  sessionStarted.payload.metadata = { query: "changed" };
+
+  await assert.rejects(
+    async () => {
+      await planner.plan("policy-input-mismatch", [...changedHistory, plan.events[0]!]);
+    },
+    ReplayMismatchError,
+  );
 }
 
 async function testCompletedRunFirstAgentIsTerminal(): Promise<void> {
@@ -2622,6 +2799,11 @@ function statusForEvents(events: readonly ThreadEvent[]): ThreadProjection["stat
 
 await testDuplicatePrevention();
 await testCapabilityMetadataDoesNotAffectToolPlanning();
+await testPolicyAllowRecordsAuditAndRequestsTool();
+await testPolicyDenyRecordsAuditAndFailsAgent();
+await testPolicyApprovalRequiredCreatesGateThenRequestsTool();
+await testPolicyApprovalDeniedFailsAgent();
+await testPolicyEvaluationInputMismatch();
 await testCompletedRunFirstAgentIsTerminal();
 await testRunnerReadsFullReplayHistory();
 await testDecodeFailure();
