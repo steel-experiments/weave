@@ -8,9 +8,36 @@ create table if not exists weave.thread (
   status text not null check (status in ('idle', 'running', 'waiting', 'blocked', 'completed', 'failed')),
   next_seq integer not null default 0,
   active_lease_owner_id text,
+  parent_thread_id text,
+  root_thread_id text,
+  parent_scope_key text,
+  parent_step_key text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table weave.thread
+  add column if not exists parent_thread_id text;
+
+alter table weave.thread
+  add column if not exists root_thread_id text;
+
+alter table weave.thread
+  add column if not exists parent_scope_key text;
+
+alter table weave.thread
+  add column if not exists parent_step_key text;
+
+update weave.thread
+  set root_thread_id = id
+  where root_thread_id is null;
+
+create index if not exists thread_parent_thread_idx
+  on weave.thread(parent_thread_id)
+  where parent_thread_id is not null;
+
+create index if not exists thread_root_thread_idx
+  on weave.thread(root_thread_id);
 
 create table if not exists weave.thread_event (
   thread_id text not null references weave.thread(id) on delete cascade,

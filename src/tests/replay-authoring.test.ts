@@ -8,6 +8,8 @@ import {
   deterministicUuid,
   eventKey,
   nowIso,
+  ThreadEventSchema,
+  ThreadProjectionSchema,
   type ThreadProjection,
   type ThreadEvent,
 } from "../events.js";
@@ -530,6 +532,79 @@ async function testTypedEventFactory(): Promise<void> {
   assert.equal(finding.payload.summary, "typed finding");
 }
 
+async function testChildThreadEventSchemas(): Promise<void> {
+  const base = {
+    threadId: "parent-thread",
+    occurredAt: nowIso(),
+    correlationId: deterministicUuid("child-thread", "correlation"),
+    actor: { type: "agent", id: "parent-agent" } as const,
+  };
+
+  const spawned = ThreadEventSchema.parse({
+    ...base,
+    eventId: deterministicUuid("child-thread", "spawned"),
+    type: "child_thread.spawned",
+    scopeKey: "agent:parent-agent",
+    stepKey: "spawn-research",
+    payload: {
+      childThreadId: "child-thread",
+      childAgentName: "research-agent",
+      scopeKey: "agent:parent-agent",
+      stepKey: "spawn-research",
+      mode: "attached",
+      inputSummary: "Research docs sync approach.",
+      metadata: { priority: "normal" },
+    },
+  });
+  assert.equal(spawned.type, "child_thread.spawned");
+  assert.equal(spawned.payload.childThreadId, "child-thread");
+
+  const completed = ThreadEventSchema.parse({
+    ...base,
+    eventId: deterministicUuid("child-thread", "completed"),
+    type: "child_thread.completed",
+    payload: {
+      childThreadId: "child-thread",
+      childAgentName: "research-agent",
+      outputSummary: "Research complete.",
+    },
+  });
+  assert.equal(completed.type, "child_thread.completed");
+
+  const failed = ThreadEventSchema.parse({
+    ...base,
+    eventId: deterministicUuid("child-thread", "failed"),
+    type: "child_thread.failed",
+    payload: {
+      childThreadId: "child-thread",
+      childAgentName: "research-agent",
+      errorCode: "CHILD_FAILED",
+      message: "Child failed.",
+    },
+  });
+  assert.equal(failed.type, "child_thread.failed");
+}
+
+async function testThreadProjectionLineageSchema(): Promise<void> {
+  const projection = ThreadProjectionSchema.parse({
+    threadId: "child-thread",
+    status: "idle",
+    tailSeq: 0,
+    activeLeaseOwnerId: null,
+    pendingGateIds: [],
+    parentThreadId: "parent-thread",
+    rootThreadId: "root-thread",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-research",
+    updatedAt: nowIso(),
+  });
+
+  assert.equal(projection.parentThreadId, "parent-thread");
+  assert.equal(projection.rootThreadId, "root-thread");
+  assert.equal(projection.parentScopeKey, "agent:parent-agent");
+  assert.equal(projection.parentStepKey, "spawn-research");
+}
+
 async function testAgentFailureEvent(): Promise<void> {
   const threadId = "agent-failure-event";
   const engine = new MemoryThreadEngine(initialHistory(threadId));
@@ -708,6 +783,8 @@ await testGateReplay();
 await testGatePayloadMismatch();
 await testApprovalPolicyEvaluation();
 await testTypedEventFactory();
+await testChildThreadEventSchemas();
+await testThreadProjectionLineageSchema();
 await testAgentFailureEvent();
 
 console.log("Replay authoring tests passed");

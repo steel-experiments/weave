@@ -235,6 +235,10 @@ interface ThreadProjection {
   tailSeq: number;
   activeLeaseOwnerId?: string | null;
   pendingGateIds: string[];
+  parentThreadId?: string | null;
+  rootThreadId?: string | null;
+  parentScopeKey?: string | null;
+  parentStepKey?: string | null;
   updatedAt: string;
 }
 

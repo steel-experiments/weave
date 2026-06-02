@@ -32,6 +32,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.checkpoint` | Current local durable effect |
 | `ctx.spawn` / `ctx.join` | Planned |
 | `approvalPolicy` | Current authoring helper |
+| subthread lineage fields | Current storage/read model |
 | capabilities | Planned |
 | package subpaths | Current runtime boundary |
 
@@ -541,6 +542,27 @@ If an agent starts a second suspending durable effect before the first suspensio
 
 This guardrail currently applies to `ctx.tool` and `ctx.gate` when they would suspend. Future parallel semantics may allow explicitly batched durable effects, but implicit `Promise.all` is not supported yet.
 
+## Subthread Lineage
+
+The storage and projection model can now represent parent-child thread relationships. `ThreadProjection` includes:
+
+```ts
+{
+  parentThreadId: string | null;
+  rootThreadId: string | null;
+  parentScopeKey: string | null;
+  parentStepKey: string | null;
+}
+```
+
+Root sessions use their own `threadId` as `rootThreadId`. Child-thread authoring helpers are still planned; this slice only establishes the lineage shape and child-thread event taxonomy.
+
+Parent thread lifecycle events:
+
+- `child_thread.spawned`
+- `child_thread.completed`
+- `child_thread.failed`
+
 ## Planner Compatibility
 
 Planner-first agents still work:
@@ -618,15 +640,14 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - `ctx.tool`, `ctx.gate`, and `ctx.checkpoint` are implemented durable effects.
 - `ctx.emit` and `ctx.uuid` are provisional replay helpers.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
-- `ctx.spawn`, `ctx.join`, policies, capabilities, typed event factories, and projections are planned but not implemented in this slice.
+- `ctx.spawn`, `ctx.join`, capabilities, and richer projections are planned but not implemented in this slice.
 - Package subpaths are available, but root exports still include runtime internals for compatibility.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.
-- Parallel durable effects are not documented as supported yet.
+- Parallel durable effects are explicitly unsupported and throw `PARALLEL_DURABLE_EFFECT` when detected.
 
 ## Planned Next Primitives
 
 - `ctx.spawn` and `ctx.join` for child threads and sub-agent work.
 - policies and capabilities for centralized governance and scoped grants.
-- typed event factories for safer `ctx.emit` calls.
 - Effect-backed internals behind the same Promise-first public API.

@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import type {
   AppendOptions,
   AppendResult,
+  CreateThreadOptions,
   FollowCursor,
   InboxConsumer,
   InboxWorkItem,
@@ -22,12 +23,26 @@ import {
 export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
   constructor(private readonly pool: Pool) {}
 
-  async createThread(threadId: string): Promise<void> {
+  async createThread(threadId: string, options: CreateThreadOptions = {}): Promise<void> {
     await this.pool.query(
-      `insert into weave.thread(id, status, next_seq)
-       values ($1, 'idle', 0)
+      `insert into weave.thread(
+         id,
+         status,
+         next_seq,
+         parent_thread_id,
+         root_thread_id,
+         parent_scope_key,
+         parent_step_key
+       )
+       values ($1, 'idle', 0, $2, $3, $4, $5)
        on conflict (id) do nothing`,
-      [threadId],
+      [
+        threadId,
+        options.parentThreadId ?? null,
+        options.rootThreadId ?? threadId,
+        options.parentScopeKey ?? null,
+        options.parentStepKey ?? null,
+      ],
     );
   }
 
@@ -191,13 +206,21 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       active_lease_owner_id: string | null;
       updated_at: Date;
       pending_gate_ids: string[] | null;
+      parent_thread_id: string | null;
+      root_thread_id: string | null;
+      parent_scope_key: string | null;
+      parent_step_key: string | null;
     }>(
       `select
-         m.id,
-         m.status,
-         m.next_seq,
-         m.active_lease_owner_id,
-         m.updated_at,
+          m.id,
+          m.status,
+          m.next_seq,
+          m.active_lease_owner_id,
+          m.parent_thread_id,
+          m.root_thread_id,
+          m.parent_scope_key,
+          m.parent_step_key,
+          m.updated_at,
          coalesce(array_agg(g.gate_id::text) filter (where g.gate_id is not null), '{}') as pending_gate_ids
        from weave.thread m
        left join weave.thread_gate g
@@ -221,6 +244,10 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       tailSeq: row.next_seq,
       activeLeaseOwnerId: row.active_lease_owner_id,
       pendingGateIds: row.pending_gate_ids ?? [],
+      parentThreadId: row.parent_thread_id,
+      rootThreadId: row.root_thread_id,
+      parentScopeKey: row.parent_scope_key,
+      parentStepKey: row.parent_step_key,
       updatedAt: row.updated_at.toISOString(),
     });
   }
@@ -468,6 +495,9 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       case "tool.requested":
       case "tool.completed":
       case "gate.resolved":
+      case "child_thread.spawned":
+      case "child_thread.completed":
+      case "child_thread.failed":
         if (event.type === "gate.resolved") {
           await client.query(
             `update weave.thread_gate
@@ -551,6 +581,8 @@ function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
     case "prompt.received":
     case "tool.completed":
     case "gate.resolved":
+    case "child_thread.completed":
+    case "child_thread.failed":
       return ["runner"];
     case "tool.requested":
       return ["tool-worker"];
@@ -567,6 +599,7 @@ function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
     case "credential.failed":
     case "tool.failed":
     case "gate.created":
+    case "child_thread.spawned":
     case "agent.response.produced":
     case "agent.failed":
     case "agent.finding.produced":

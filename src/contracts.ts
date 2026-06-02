@@ -37,8 +37,15 @@ export type InboxWorkItem = {
   attempts: number;
 };
 
+export type CreateThreadOptions = {
+  parentThreadId?: string;
+  rootThreadId?: string;
+  parentScopeKey?: string;
+  parentStepKey?: string;
+};
+
 export interface ThreadEngine {
-  createThread(threadId: string): Promise<void>;
+  createThread(threadId: string, options?: CreateThreadOptions): Promise<void>;
   append(events: ThreadEvent[], options?: AppendOptions): Promise<AppendResult>;
   read(threadId: string, options?: ReadOptions): Promise<ThreadEvent[]>;
   follow(threadId: string, cursor?: FollowCursor): AsyncIterable<ThreadEvent>;

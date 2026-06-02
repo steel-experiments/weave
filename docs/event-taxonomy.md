@@ -57,6 +57,9 @@ The PoC uses this event set.
 - `tool.failed`
 - `gate.created`
 - `gate.resolved`
+- `child_thread.spawned`
+- `child_thread.completed`
+- `child_thread.failed`
 - `runner.resumed`
 - `agent.response.produced`
 
@@ -176,6 +179,41 @@ const GateResolvedPayload = z.object({
   gateId: z.string().uuid(),
   resolution: z.enum(["approved", "denied"]),
   comment: z.string().optional(),
+})
+```
+
+### Child thread spawned
+
+```ts
+const ChildThreadSpawnedPayload = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  mode: z.enum(["attached", "detached"]),
+  inputSummary: z.string().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+})
+```
+
+### Child thread completed
+
+```ts
+const ChildThreadCompletedPayload = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1).optional(),
+  outputSummary: z.string().min(1).optional(),
+})
+```
+
+### Child thread failed
+
+```ts
+const ChildThreadFailedPayload = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1).optional(),
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
 })
 ```
 

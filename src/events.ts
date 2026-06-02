@@ -177,6 +177,29 @@ export const CheckpointCompletedPayloadSchema = z.object({
   value: z.unknown(),
 });
 
+export const ChildThreadSpawnedPayloadSchema = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  mode: z.enum(["attached", "detached"]),
+  inputSummary: z.string().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const ChildThreadCompletedPayloadSchema = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1).optional(),
+  outputSummary: z.string().min(1).optional(),
+});
+
+export const ChildThreadFailedPayloadSchema = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1).optional(),
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
+});
+
 const SessionStartedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("session.started"),
   payload: SessionStartedPayloadSchema,
@@ -282,6 +305,21 @@ const CheckpointCompletedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: CheckpointCompletedPayloadSchema,
 });
 
+const ChildThreadSpawnedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("child_thread.spawned"),
+  payload: ChildThreadSpawnedPayloadSchema,
+});
+
+const ChildThreadCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("child_thread.completed"),
+  payload: ChildThreadCompletedPayloadSchema,
+});
+
+const ChildThreadFailedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("child_thread.failed"),
+  payload: ChildThreadFailedPayloadSchema,
+});
+
 export const ThreadEventSchema = z.discriminatedUnion("type", [
   SessionStartedEventSchema,
   PromptReceivedEventSchema,
@@ -304,6 +342,9 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   AgentRemediationProposedEventSchema,
   AgentIncidentReportProducedEventSchema,
   CheckpointCompletedEventSchema,
+  ChildThreadSpawnedEventSchema,
+  ChildThreadCompletedEventSchema,
+  ChildThreadFailedEventSchema,
 ]);
 
 export type ThreadEvent = z.infer<typeof ThreadEventSchema>;
@@ -325,6 +366,10 @@ export const ThreadProjectionSchema = z.object({
   tailSeq: z.number().int().nonnegative(),
   activeLeaseOwnerId: z.string().min(1).nullable(),
   pendingGateIds: z.array(z.string().uuid()),
+  parentThreadId: z.string().min(1).nullable().default(null),
+  rootThreadId: z.string().min(1).nullable().default(null),
+  parentScopeKey: z.string().min(1).nullable().default(null),
+  parentStepKey: z.string().min(1).nullable().default(null),
   updatedAt: z.string().datetime(),
 });
 export type ThreadProjection = z.infer<typeof ThreadProjectionSchema>;
