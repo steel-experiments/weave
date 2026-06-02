@@ -33,13 +33,15 @@
     "poc": "tsx src/scripts/poc.ts",
     "system:poc": "tsx src/scripts/system-poc.ts",
     "sre:demo": "tsx examples/sre-demo/src/index.ts",
+    "assistant:demo": "tsx examples/simple-assistant/src/index.ts",
+    "assistant:server": "tsx examples/simple-assistant/src/server.ts",
     "steel:demo": "tsx examples/steel-docs-sync/src/index.ts",
     "steel:webhook-demo": "tsx examples/steel-docs-sync/src/webhook-demo.ts",
     "otlp:smoke": "tsx src/scripts/otlp-smoke.ts",
     "server": "tsx src/scripts/server.ts",
     "daemon:runner": "tsx src/scripts/runner-daemon.ts",
     "daemon:tool": "tsx src/scripts/tool-daemon.ts",
-    "typecheck": "tsc --noEmit && npm --workspace weave-sre-demo run typecheck && npm --workspace weave-steel-docs-sync run typecheck",
+    "typecheck": "tsc --noEmit && npm --workspace weave-sre-demo run typecheck && npm --workspace weave-steel-docs-sync run typecheck && npm --workspace weave-simple-assistant run typecheck",
     "test": "tsx src/tests/replay-authoring.test.ts"
   },
   "dependencies": {
