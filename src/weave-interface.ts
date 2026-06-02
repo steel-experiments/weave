@@ -155,7 +155,7 @@ interface ToolContract<
 type AnyToolContract = ToolContract<string, unknown, unknown>;
 
 interface ThreadEngine {
-  createThread(threadId: string): Promise<void>;
+  createThread(threadId: string, options?: CreateThreadOptions): Promise<void>;
   append(events: ThreadEvent[], options?: AppendOptions): Promise<AppendResult>;
   read(threadId: string, options?: ReadOptions): Promise<ThreadEvent[]>;
   follow(threadId: string, cursor?: FollowCursor): AsyncIterable<ThreadEvent>;
@@ -171,6 +171,7 @@ interface ThreadLeaseStore {
 
 interface ThreadService {
   startSession(input: string | StartSessionInput): Promise<{ threadId: string; correlationId: string }>;
+  startChildSession(input: StartChildSessionInput): Promise<StartChildSessionResult>;
   resolveGate(threadId: string, gateId: string, resolution: "approved" | "denied", comment?: string): Promise<void>;
 }
 
@@ -322,6 +323,25 @@ interface InboxStore {
 
 type Actor = { type: "user" | "agent" | "worker" | "human" | "system"; id: string };
 type StartSessionInput = { prompt: string; source?: string; actor?: Actor; metadata?: Record<string, unknown>; idempotencyKey?: string };
+type StartChildSessionInput = {
+  parentThreadId: string;
+  agentName: string;
+  input: Record<string, unknown>;
+  prompt?: string;
+  source?: string;
+  actor?: Actor;
+  metadata?: Record<string, unknown>;
+  parentScopeKey?: string;
+  parentStepKey?: string;
+  detached?: boolean;
+  idempotencyKey?: string;
+};
+type StartChildSessionResult = {
+  threadId: string;
+  correlationId: string;
+  parentThreadId: string;
+  rootThreadId: string;
+};
 type ToolCallOptions = Record<string, unknown>;
 type GateRequest = { gateType?: "manual-approval"; reason: "tool-result-requires-approval" | "risky-remediation"; relatedToolCallId?: string; proposedAction?: string };
 type GateResolution = { gateId: string; resolution: "approved" | "denied"; comment?: string };
@@ -331,6 +351,7 @@ type AgentEventInput<Type extends ThreadEvent["type"] = ThreadEvent["type"]> = T
   : never;
 type AppendOptions = { expectedTailSeq?: number; idempotencyKey?: string };
 type AppendResult = { firstSeq: number; lastSeq: number };
+type CreateThreadOptions = { parentThreadId?: string; rootThreadId?: string; parentScopeKey?: string; parentStepKey?: string };
 type ReadOptions = { fromSeq?: number; limit?: number };
 type FollowCursor = { fromSeq?: number; tail?: boolean };
 type Lease = { threadId: string; ownerId: string; token: string; expiresAt: Date };

@@ -555,7 +555,20 @@ The storage and projection model can now represent parent-child thread relations
 }
 ```
 
-Root sessions use their own `threadId` as `rootThreadId`. Child-thread authoring helpers are still planned; this slice only establishes the lineage shape and child-thread event taxonomy.
+Root sessions use their own `threadId` as `rootThreadId`. Child-thread authoring helpers are still planned, but runtime callers can now start child sessions through `ThreadService.startChildSession`.
+
+```ts
+await service.startChildSession({
+  parentThreadId,
+  agentName: "docs.research",
+  input: { repo: "acme/docs" },
+  parentScopeKey: "agent:parent",
+  parentStepKey: "spawn-research",
+  idempotencyKey: "spawn-research",
+});
+```
+
+The child session stores `input` in `session.started.payload.metadata`, which is the current replay input source for `agent.run`. The parent thread receives a `child_thread.spawned` event.
 
 Parent thread lifecycle events:
 

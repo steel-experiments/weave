@@ -32,3 +32,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `10-typed-event-factories.md`: shipped slice adding typed `event(type, payload)` builders for `ctx.emit`.
 - `11-parallel-durable-effects-guardrails.md`: shipped slice rejecting unsupported parallel suspending effects.
 - `12-subthread-lineage-foundation.md`: shipped slice adding lineage fields and child-thread event taxonomy.
+- `13-start-child-session-service.md`: shipped slice adding `ThreadService.startChildSession` for API-created child threads.

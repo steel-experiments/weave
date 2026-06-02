@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { z } from "zod";
 import { agent, event } from "../agent-contract.js";
 import { createAgentPlanner } from "../agent-runner.js";
-import type { AppendOptions, AppendResult, FollowCursor, Lease, ReadOptions, ThreadEngine, ThreadLeaseStore } from "../contracts.js";
+import type {
+  AppendOptions,
+  AppendResult,
+  CreateThreadOptions,
+  FollowCursor,
+  Lease,
+  ReadOptions,
+  ThreadEngine,
+  ThreadLeaseStore,
+} from "../contracts.js";
 import { ParallelDurableEffectError, ReplayMismatchError } from "../errors.js";
 import {
   deterministicUuid,
@@ -15,6 +24,7 @@ import {
 } from "../events.js";
 import { approvalPolicy } from "../policy-contract.js";
 import { ThreadRunner } from "../runner.js";
+import { ThreadService } from "../thread-service.js";
 import { tool, type AnyToolContract } from "../tool-contract.js";
 import { ContractToolWorker } from "../tool-worker.js";
 
@@ -605,6 +615,80 @@ async function testThreadProjectionLineageSchema(): Promise<void> {
   assert.equal(projection.parentStepKey, "spawn-research");
 }
 
+async function testStartChildSessionCreatesLineage(): Promise<void> {
+  const parentThreadId = "parent-child-service";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+
+  const result = await service.startChildSession({
+    parentThreadId,
+    agentName: "research-agent",
+    input: { query: "research docs" },
+    prompt: "Research docs sync approach.",
+    source: "test",
+    actor: { type: "user", id: "tester" },
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-research",
+    idempotencyKey: "spawn-research",
+  });
+
+  assert.equal(result.parentThreadId, parentThreadId);
+  assert.equal(result.rootThreadId, parentThreadId);
+
+  const childProjection = await engine.getProjection(result.threadId);
+  assert(childProjection);
+  assert.equal(childProjection.parentThreadId, parentThreadId);
+  assert.equal(childProjection.rootThreadId, parentThreadId);
+  assert.equal(childProjection.parentScopeKey, "agent:parent-agent");
+  assert.equal(childProjection.parentStepKey, "spawn-research");
+
+  const childEvents = await engine.read(result.threadId);
+  assert.equal(childEvents[0]?.type, "session.started");
+  assert.deepEqual(childEvents[0]?.payload, {
+    source: "test",
+    metadata: { query: "research docs" },
+  });
+  assert.equal(childEvents[1]?.type, "prompt.received");
+  assert.deepEqual(childEvents[1]?.payload, { prompt: "Research docs sync approach." });
+
+  const parentEvents = await engine.read(parentThreadId);
+  const spawnedEvents = parentEvents.filter((event) => event.type === "child_thread.spawned");
+  assert.equal(spawnedEvents.length, 1);
+  const spawned = spawnedEvents[0];
+  assert(spawned?.type === "child_thread.spawned");
+  assert.deepEqual(spawned.payload, {
+    childThreadId: result.threadId,
+    childAgentName: "research-agent",
+    scopeKey: "agent:parent-agent",
+    stepKey: "spawn-research",
+    mode: "attached",
+    inputSummary: "Research docs sync approach.",
+  });
+}
+
+async function testStartChildSessionIdempotency(): Promise<void> {
+  const parentThreadId = "parent-child-idempotent";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const input = {
+    parentThreadId,
+    agentName: "research-agent",
+    input: { query: "research docs" },
+    source: "test" as const,
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-research",
+    idempotencyKey: "spawn-research",
+  };
+
+  const first = await service.startChildSession(input);
+  const second = await service.startChildSession(input);
+
+  assert.deepEqual(second, first);
+  assert.equal((await engine.read(first.threadId)).length, 2);
+  const spawnedEvents = (await engine.read(parentThreadId)).filter((event) => event.type === "child_thread.spawned");
+  assert.equal(spawnedEvents.length, 1);
+}
+
 async function testAgentFailureEvent(): Promise<void> {
   const threadId = "agent-failure-event";
   const engine = new MemoryThreadEngine(initialHistory(threadId));
@@ -719,9 +803,26 @@ function requestedEventForTool(threadId: string, toolName: string): Extract<Thre
 }
 
 class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
-  constructor(readonly events: ThreadEvent[] = []) {}
+  private readonly threads = new Map<string, CreateThreadOptions & { rootThreadId: string }>();
 
-  async createThread(): Promise<void> {}
+  constructor(readonly events: ThreadEvent[] = []) {
+    for (const event of events) {
+      if (!this.threads.has(event.threadId)) {
+        this.threads.set(event.threadId, { rootThreadId: event.threadId });
+      }
+    }
+  }
+
+  async createThread(threadId: string, options: CreateThreadOptions = {}): Promise<void> {
+    if (this.threads.has(threadId)) {
+      return;
+    }
+
+    this.threads.set(threadId, {
+      ...options,
+      rootThreadId: options.rootThreadId ?? threadId,
+    });
+  }
 
   async append(events: ThreadEvent[], _options: AppendOptions = {}): Promise<AppendResult> {
     const firstSeq = this.events.length;
@@ -743,8 +844,34 @@ class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
     return { tailSeq: Math.max(0, this.events.length - 1), updatedAt: nowIso() };
   }
 
-  async getProjection(): Promise<ThreadProjection | null> {
-    return null;
+  async getProjection(threadId: string): Promise<ThreadProjection | null> {
+    const thread = this.threads.get(threadId);
+    if (!thread) {
+      return null;
+    }
+
+    const threadEvents = this.events.filter((event) => event.threadId === threadId);
+    const pendingGateIds = threadEvents
+      .filter((event): event is Extract<ThreadEvent, { type: "gate.created" }> => event.type === "gate.created")
+      .filter((gateCreated) => {
+        return !threadEvents.some((event) => {
+          return event.type === "gate.resolved" && event.payload.gateId === gateCreated.payload.gateId;
+        });
+      })
+      .map((event) => event.payload.gateId);
+
+    return ThreadProjectionSchema.parse({
+      threadId,
+      status: "idle",
+      tailSeq: threadEvents.length,
+      activeLeaseOwnerId: null,
+      pendingGateIds,
+      parentThreadId: thread.parentThreadId ?? null,
+      rootThreadId: thread.rootThreadId,
+      parentScopeKey: thread.parentScopeKey ?? null,
+      parentStepKey: thread.parentStepKey ?? null,
+      updatedAt: nowIso(),
+    });
   }
 
   async acquireLease(threadId: string, ownerId: string, ttlMs: number): Promise<Lease> {
@@ -785,6 +912,8 @@ await testApprovalPolicyEvaluation();
 await testTypedEventFactory();
 await testChildThreadEventSchemas();
 await testThreadProjectionLineageSchema();
+await testStartChildSessionCreatesLineage();
+await testStartChildSessionIdempotency();
 await testAgentFailureEvent();
 
 console.log("Replay authoring tests passed");

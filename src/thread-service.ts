@@ -18,6 +18,27 @@ export type StartSessionInput = {
   idempotencyKey?: string;
 };
 
+export type StartChildSessionInput = {
+  parentThreadId: string;
+  agentName: string;
+  input: SessionMetadata;
+  prompt?: string;
+  source?: SessionSource;
+  actor?: Actor;
+  metadata?: SessionMetadata;
+  parentScopeKey?: string;
+  parentStepKey?: string;
+  detached?: boolean;
+  idempotencyKey?: string;
+};
+
+export type StartChildSessionResult = {
+  threadId: string;
+  correlationId: string;
+  parentThreadId: string;
+  rootThreadId: string;
+};
+
 export class ThreadService {
   constructor(private readonly engine: ThreadEngine) {}
 
@@ -81,6 +102,98 @@ export class ThreadService {
 
       throw error;
     }
+  }
+
+  async startChildSession(input: StartChildSessionInput): Promise<StartChildSessionResult> {
+    const parentProjection = await this.engine.getProjection(input.parentThreadId);
+    if (!parentProjection) {
+      throw new Error(`Parent thread not found: ${input.parentThreadId}`);
+    }
+
+    const source = input.source ?? "system";
+    const actor = input.actor ?? { type: "system", id: "thread-service" };
+    const threadId = input.idempotencyKey
+      ? deterministicUuid("child-session-thread", input.parentThreadId, source, input.idempotencyKey)
+      : randomUUID();
+    const generatedCorrelationId = input.idempotencyKey
+      ? deterministicUuid("child-session-correlation", input.parentThreadId, source, input.idempotencyKey)
+      : randomUUID();
+    const rootThreadId = parentProjection.rootThreadId ?? input.parentThreadId;
+    const parentScopeKey = input.parentScopeKey ?? "service:thread-service";
+    const parentStepKey = input.parentStepKey ?? `child:${threadId}`;
+
+    await this.engine.createThread(threadId, {
+      parentThreadId: input.parentThreadId,
+      rootThreadId,
+      parentScopeKey,
+      parentStepKey,
+    });
+
+    const existingSession = await readExistingSession(this.engine, threadId);
+    const correlationId = existingSession?.correlationId ?? generatedCorrelationId;
+
+    if (!existingSession) {
+      const events: ThreadEvent[] = [
+        {
+          eventId: input.idempotencyKey
+            ? deterministicUuid("child-session-started", threadId, input.idempotencyKey)
+            : newEventId(),
+          threadId,
+          type: "session.started",
+          occurredAt: nowIso(),
+          correlationId,
+          idempotencyKey: input.idempotencyKey,
+          actor: { type: "system", id: "thread-service" },
+          payload: {
+            source,
+            metadata: input.input,
+          },
+        },
+        {
+          eventId: input.idempotencyKey
+            ? deterministicUuid("child-prompt-received", threadId, input.idempotencyKey)
+            : newEventId(),
+          threadId,
+          type: "prompt.received",
+          occurredAt: nowIso(),
+          correlationId,
+          actor,
+          payload: { prompt: input.prompt ?? `Child session for ${input.agentName}` },
+        },
+      ];
+
+      try {
+        await this.engine.append(events);
+      } catch (error) {
+        if (!input.idempotencyKey) {
+          throw error;
+        }
+
+        const concurrentSession = await readExistingSession(this.engine, threadId);
+        if (!concurrentSession) {
+          throw error;
+        }
+      }
+    }
+
+    await ensureChildSpawnedEvent(this.engine, {
+      parentThreadId: input.parentThreadId,
+      childThreadId: threadId,
+      childAgentName: input.agentName,
+      correlationId,
+      parentScopeKey,
+      parentStepKey,
+      mode: input.detached ? "detached" : "attached",
+      inputSummary: input.prompt,
+      metadata: input.metadata,
+    });
+
+    return {
+      threadId,
+      correlationId,
+      parentThreadId: input.parentThreadId,
+      rootThreadId,
+    };
   }
 
   async resolveGate(
@@ -162,4 +275,63 @@ async function readExistingSession(
     threadId,
     correlationId,
   };
+}
+
+async function ensureChildSpawnedEvent(
+  engine: ThreadEngine,
+  input: {
+    parentThreadId: string;
+    childThreadId: string;
+    childAgentName: string;
+    correlationId: string;
+    parentScopeKey: string;
+    parentStepKey: string;
+    mode: "attached" | "detached";
+    inputSummary?: string;
+    metadata?: SessionMetadata;
+  },
+): Promise<void> {
+  const parentEvents = await engine.read(input.parentThreadId);
+  const existing = parentEvents.some((event) => {
+    return event.type === "child_thread.spawned" && event.payload.childThreadId === input.childThreadId;
+  });
+  if (existing) {
+    return;
+  }
+
+  const event: Extract<ThreadEvent, { type: "child_thread.spawned" }> = {
+    eventId: deterministicUuid("child-thread-spawned", input.parentThreadId, input.childThreadId),
+    threadId: input.parentThreadId,
+    type: "child_thread.spawned",
+    occurredAt: nowIso(),
+    correlationId: parentEvents[0]?.correlationId ?? input.correlationId,
+    causationId: parentEvents.at(-1)?.eventId,
+    idempotencyKey: `child-thread-spawned:${input.childThreadId}`,
+    scopeKey: input.parentScopeKey,
+    stepKey: input.parentStepKey,
+    actor: { type: "system", id: "thread-service" },
+    payload: {
+      childThreadId: input.childThreadId,
+      childAgentName: input.childAgentName,
+      scopeKey: input.parentScopeKey,
+      stepKey: input.parentStepKey,
+      mode: input.mode,
+      ...(input.inputSummary ? { inputSummary: input.inputSummary } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+    },
+  };
+
+  try {
+    await engine.append([event]);
+  } catch (error) {
+    const concurrentEvents = await engine.read(input.parentThreadId);
+    const concurrentEvent = concurrentEvents.some((candidate) => {
+      return candidate.type === "child_thread.spawned" && candidate.payload.childThreadId === input.childThreadId;
+    });
+    if (concurrentEvent) {
+      return;
+    }
+
+    throw error;
+  }
 }

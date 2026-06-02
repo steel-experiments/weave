@@ -52,7 +52,6 @@ Changed modules:
 
 Known follow-ups:
 
-- `ThreadService.startChildSession`.
 - `ctx.spawn` durable effect.
 - `ctx.join` durable effect.
 - Parent lifecycle mirroring when child threads complete or fail.
