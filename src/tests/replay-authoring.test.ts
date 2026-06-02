@@ -26,7 +26,7 @@ import {
 } from "../events.js";
 import { approvalPolicy } from "../policy-contract.js";
 import { ThreadRunner } from "../runner.js";
-import { createRuntimeAgentPlanner } from "../runtime.js";
+import { createRuntimeAgentPlanner, createWeaveRuntime } from "../runtime.js";
 import { ThreadService } from "../thread-service.js";
 import { tool, type AnyToolContract } from "../tool-contract.js";
 import { ContractToolWorker } from "../tool-worker.js";
@@ -991,6 +991,95 @@ async function testRuntimePlannerDispatchesChildAgent(): Promise<void> {
   assert.deepEqual(plan.events[0]?.payload, { message: "child ran child-input" });
 }
 
+async function testRuntimePlannerFallsBackToDefaultAgent(): Promise<void> {
+  const threadId = "dispatch-root-default";
+  const engine = new MemoryThreadEngine(initialHistory(threadId));
+  const service = new ThreadService(engine);
+  const defaultAgent = agent({
+    name: "default-agent",
+    input: inputSchema,
+    async run(_ctx, input) {
+      return { finalMessage: `default ran ${input.query}` };
+    },
+  });
+  const otherAgent = agent({
+    name: "other-agent",
+    input: inputSchema,
+    async run() {
+      return { finalMessage: "other ran" };
+    },
+  });
+  const app = weave({ agents: [defaultAgent, otherAgent] });
+  const planner = createRuntimeAgentPlanner(app, defaultAgent.name, service);
+
+  const plan = await planner.plan(threadId, await engine.read(threadId));
+  assert(plan);
+  assert.deepEqual(plan.events[0]?.payload, { message: "default ran hello" });
+}
+
+async function testRuntimeRegistersToolsFromAllAgents(): Promise<void> {
+  const threadId = "runtime-all-agent-tools";
+  const childOnlyTool = tool({
+    name: "child.only-tool",
+    description: "Tool declared only by the non-default child agent.",
+    input: inputSchema,
+    output: z.object({ value: z.string().min(1) }),
+    run({ input }) {
+      return { value: `handled ${input.query}` };
+    },
+  });
+  const defaultAgent = agent({
+    name: "default-agent",
+    input: inputSchema,
+    async run() {
+      return { finalMessage: "default ran" };
+    },
+  });
+  const childToolAgent = agent({
+    name: "child-tool-agent",
+    input: inputSchema,
+    tools: [childOnlyTool],
+    async run(ctx, input) {
+      const result = await ctx.tool("child-only", childOnlyTool, input);
+      return { finalMessage: result.value };
+    },
+  });
+  const request: Extract<ThreadEvent, { type: "tool.requested" }> = {
+    eventId: eventKey(threadId, "tool.requested", "child-only"),
+    threadId,
+    type: "tool.requested",
+    occurredAt: nowIso(),
+    correlationId: deterministicUuid("correlation", threadId),
+    scopeKey: "agent:child-tool-agent",
+    stepKey: "child-only",
+    actor: { type: "agent", id: "child-tool-agent" },
+    payload: {
+      toolCallId: deterministicUuid("tool-call", threadId, "agent:child-tool-agent", "child-only", childOnlyTool.name),
+      toolName: childOnlyTool.name,
+      args: { query: "child-input" },
+      scopeKey: "agent:child-tool-agent",
+      stepKey: "child-only",
+    },
+  };
+  const engine = new MemoryThreadEngine([request]);
+  const service = new ThreadService(engine);
+  const runtimeEngine = engine as unknown as Parameters<typeof createWeaveRuntime>[0]["engine"];
+  const runtime = createWeaveRuntime({
+    app: weave({ agents: [defaultAgent, childToolAgent] }),
+    agentName: defaultAgent.name,
+    engine: runtimeEngine,
+    service,
+  });
+
+  assert.equal((await runtime.toolWorker.processOnce(threadId)).eventType, "tool.started");
+  assert.equal((await runtime.toolWorker.processOnce(threadId)).eventType, "tool.completed");
+  const completed = (await engine.read(threadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "tool.completed" }> => event.type === "tool.completed",
+  );
+  assert(completed);
+  assert.deepEqual(completed.payload.output, { value: "handled child-input" });
+}
+
 async function testStartChildSessionIdempotency(): Promise<void> {
   const parentThreadId = "parent-child-idempotent";
   const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
@@ -1265,6 +1354,8 @@ await testJoinFailedChild();
 await testListChildren();
 await testContextChildren();
 await testRuntimePlannerDispatchesChildAgent();
+await testRuntimePlannerFallsBackToDefaultAgent();
+await testRuntimeRegistersToolsFromAllAgents();
 await testStartChildSessionIdempotency();
 await testAgentFailureEvent();
 

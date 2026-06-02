@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `In Progress`
-- Last updated: `2026-06-01`
+- Status: `Shipped`
+- Last updated: `2026-06-02`
 - Owner: `weave-core`
 
 ## Goal
@@ -115,10 +115,10 @@ Known gaps:
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/interface.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/engine-contracts.md` if storage contracts changed
-- [ ] `docs/glossary.md` if terminology changed during implementation
-- [ ] `docs/README.md` if status or doc links changed
+- [x] this slice document
+- [x] `docs/declarative-api.md`
+- [x] `docs/interface.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/engine-contracts.md` if storage contracts changed
+- [x] `docs/glossary.md` if terminology changed during implementation
+- [x] `docs/README.md` if status or doc links changed

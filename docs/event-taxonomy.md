@@ -50,19 +50,26 @@ The PoC uses this event set.
 - `agent.step.started`
 - `agent.step.completed`
 - `agent.failed`
+- `agent.finding.produced`
+- `agent.incident_report.produced`
+- `agent.output.completed`
+- `agent.remediation.proposed`
 - `tool.requested`
 - `tool.started`
 - `tool.progress`
 - `tool.completed`
 - `tool.failed`
+- `credential.requested`
+- `credential.resolved`
+- `credential.failed`
 - `gate.created`
 - `gate.resolved`
+- `checkpoint.completed`
 - `child_thread.spawned`
 - `child_thread.completed`
 - `child_thread.failed`
 - `runner.resumed`
 - `agent.response.produced`
-- `agent.output.completed`
 
 ## Typed Payload Schemas
 
@@ -70,7 +77,7 @@ The PoC uses this event set.
 
 ```ts
 const SessionStartedPayload = z.object({
-  source: z.enum(["api", "test", "system"]),
+  source: z.enum(["api", "test", "system", "github-action"]),
   agentName: z.string().min(1).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
@@ -98,7 +105,14 @@ const AgentStepStartedPayload = z.object({
 ```ts
 const AgentStepCompletedPayload = z.object({
   stepId: z.string().uuid(),
-  outcome: z.enum(["requested-tool", "created-gate", "produced-response", "no-op"]),
+  outcome: z.enum([
+    "requested-tool",
+    "created-gate",
+    "produced-finding",
+    "proposed-remediation",
+    "produced-response",
+    "no-op",
+  ]),
 })
 ```
 
@@ -128,7 +142,7 @@ const AgentFailedPayload = z.object({
 ```ts
 const ToolStartedPayload = z.object({
   toolCallId: z.string().uuid(),
-  toolName: z.literal("mock.async-progress"),
+  toolName: z.string().min(1),
 })
 ```
 
@@ -164,14 +178,56 @@ const ToolFailedPayload = z.object({
 })
 ```
 
+### Credential requested
+
+```ts
+const CredentialKind = z.enum(["secret", "delegated-identity", "scoped-token", "browser-session"])
+
+const CredentialRequestedPayload = z.object({
+  toolCallId: z.string().uuid(),
+  credentialName: z.string().min(1),
+  kind: CredentialKind,
+  provider: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+  scopes: z.array(z.string().min(1)).optional(),
+  scope: z.record(z.string(), z.string()).optional(),
+})
+```
+
+### Credential resolved
+
+```ts
+const CredentialResolvedPayload = z.object({
+  toolCallId: z.string().uuid(),
+  credentialName: z.string().min(1),
+  kind: CredentialKind,
+  source: z.string().min(1),
+  subject: z.string().min(1).optional(),
+  expiresAt: z.string().datetime().optional(),
+})
+```
+
+### Credential failed
+
+```ts
+const CredentialFailedPayload = z.object({
+  toolCallId: z.string().uuid(),
+  credentialName: z.string().min(1),
+  kind: CredentialKind,
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
+})
+```
+
 ### Gate created
 
 ```ts
 const GateCreatedPayload = z.object({
   gateId: z.string().uuid(),
   gateType: z.literal("manual-approval"),
-  reason: z.literal("tool-result-requires-approval"),
-  relatedToolCallId: z.string().uuid(),
+  reason: z.enum(["tool-result-requires-approval", "risky-remediation"]),
+  relatedToolCallId: z.string().uuid().optional(),
+  proposedAction: z.string().optional(),
 })
 ```
 
@@ -206,6 +262,7 @@ const ChildThreadSpawnedPayload = z.object({
 const ChildThreadCompletedPayload = z.object({
   childThreadId: z.string().min(1),
   childAgentName: z.string().min(1).optional(),
+  output: z.unknown().optional(),
   outputSummary: z.string().min(1).optional(),
 })
 ```
@@ -255,6 +312,56 @@ const AgentOutputCompletedPayload = z.object({
 ```
 
 `output` is the canonical raw return value from `agent.run`. `summary` is optional display metadata and usually matches the response message.
+
+### Agent finding produced
+
+```ts
+const AgentFindingProducedPayload = z.object({
+  findingId: z.string().uuid(),
+  severity: z.enum(["info", "warning", "critical"]),
+  summary: z.string().min(1),
+  evidence: z.array(
+    z.object({
+      source: z.string().min(1),
+      summary: z.string().min(1),
+    }),
+  ),
+})
+```
+
+### Agent remediation proposed
+
+```ts
+const AgentRemediationProposedPayload = z.object({
+  remediationId: z.string().uuid(),
+  actionToolName: z.string().min(1),
+  summary: z.string().min(1),
+  risk: z.enum(["low", "medium", "high"]),
+  requiresApproval: z.boolean(),
+})
+```
+
+### Agent incident report produced
+
+```ts
+const AgentIncidentReportProducedPayload = z.object({
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  rootCause: z.string().min(1),
+  actions: z.array(z.string().min(1)),
+  evidence: z.array(z.string().min(1)),
+})
+```
+
+### Checkpoint completed
+
+```ts
+const CheckpointCompletedPayload = z.object({
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  value: z.unknown(),
+})
+```
 
 ## Discriminated Union
 
@@ -309,6 +416,21 @@ const ToolFailedEvent = EventEnvelopeBase.extend({
   payload: ToolFailedPayload,
 })
 
+const CredentialRequestedEvent = EventEnvelopeBase.extend({
+  type: z.literal("credential.requested"),
+  payload: CredentialRequestedPayload,
+})
+
+const CredentialResolvedEvent = EventEnvelopeBase.extend({
+  type: z.literal("credential.resolved"),
+  payload: CredentialResolvedPayload,
+})
+
+const CredentialFailedEvent = EventEnvelopeBase.extend({
+  type: z.literal("credential.failed"),
+  payload: CredentialFailedPayload,
+})
+
 const GateCreatedEvent = EventEnvelopeBase.extend({
   type: z.literal("gate.created"),
   payload: GateCreatedPayload,
@@ -329,6 +451,46 @@ const AgentResponseProducedEvent = EventEnvelopeBase.extend({
   payload: AgentResponseProducedPayload,
 })
 
+const AgentOutputCompletedEvent = EventEnvelopeBase.extend({
+  type: z.literal("agent.output.completed"),
+  payload: AgentOutputCompletedPayload,
+})
+
+const AgentFindingProducedEvent = EventEnvelopeBase.extend({
+  type: z.literal("agent.finding.produced"),
+  payload: AgentFindingProducedPayload,
+})
+
+const AgentRemediationProposedEvent = EventEnvelopeBase.extend({
+  type: z.literal("agent.remediation.proposed"),
+  payload: AgentRemediationProposedPayload,
+})
+
+const AgentIncidentReportProducedEvent = EventEnvelopeBase.extend({
+  type: z.literal("agent.incident_report.produced"),
+  payload: AgentIncidentReportProducedPayload,
+})
+
+const CheckpointCompletedEvent = EventEnvelopeBase.extend({
+  type: z.literal("checkpoint.completed"),
+  payload: CheckpointCompletedPayload,
+})
+
+const ChildThreadSpawnedEvent = EventEnvelopeBase.extend({
+  type: z.literal("child_thread.spawned"),
+  payload: ChildThreadSpawnedPayload,
+})
+
+const ChildThreadCompletedEvent = EventEnvelopeBase.extend({
+  type: z.literal("child_thread.completed"),
+  payload: ChildThreadCompletedPayload,
+})
+
+const ChildThreadFailedEvent = EventEnvelopeBase.extend({
+  type: z.literal("child_thread.failed"),
+  payload: ChildThreadFailedPayload,
+})
+
 export const ThreadEvent = z.discriminatedUnion("type", [
   SessionStartedEvent,
   PromptReceivedEvent,
@@ -340,10 +502,21 @@ export const ThreadEvent = z.discriminatedUnion("type", [
   ToolProgressEvent,
   ToolCompletedEvent,
   ToolFailedEvent,
+  CredentialRequestedEvent,
+  CredentialResolvedEvent,
+  CredentialFailedEvent,
   GateCreatedEvent,
   GateResolvedEvent,
   RunnerResumedEvent,
   AgentResponseProducedEvent,
+  AgentOutputCompletedEvent,
+  AgentFindingProducedEvent,
+  AgentRemediationProposedEvent,
+  AgentIncidentReportProducedEvent,
+  CheckpointCompletedEvent,
+  ChildThreadSpawnedEvent,
+  ChildThreadCompletedEvent,
+  ChildThreadFailedEvent,
 ])
 ```
 
@@ -356,6 +529,9 @@ Not every durable event needs to wake the runner.
 - `prompt.received`
 - `tool.completed`
 - `gate.resolved`
+- `child_thread.spawned`
+- `child_thread.completed`
+- `child_thread.failed`
 
 ### History-only events for the PoC
 
@@ -366,9 +542,17 @@ Not every durable event needs to wake the runner.
 - `tool.started`
 - `tool.progress`
 - `tool.failed`
+- `credential.requested`
+- `credential.resolved`
+- `credential.failed`
 - `gate.created`
 - `runner.resumed`
 - `agent.response.produced`
+- `agent.output.completed`
+- `agent.finding.produced`
+- `agent.remediation.proposed`
+- `agent.incident_report.produced`
+- `checkpoint.completed`
 
 This separation keeps the durable history rich while the runner wake logic stays simple. In V1, `tool.failed` and `agent.failed` mark the thread failed immediately; they are terminal rather than runner wakes.
 
