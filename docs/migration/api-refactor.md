@@ -14,6 +14,7 @@ The new preferred style is ordinary async TypeScript backed by replay-safe durab
 - `ToolCompletionOutput` envelopes remain supported for compatibility, but are no longer the preferred output shape.
 - Runtime binding is explicit through `createWeaveRuntime` and package subpaths.
 - Root and child sessions can dispatch to a target agent through `agentName`.
+- Tools may declare capability metadata with `capability(...)`; this is not runtime enforcement yet.
 
 ## Agent Authoring
 
@@ -231,6 +232,34 @@ const findingId = ctx.id("finding:auth-docs");
 
 `ctx.uuid(key)` remains as a compatibility alias, but new code should prefer `ctx.id(key)` because it communicates that the value is deterministic, not random.
 
+## Capability Declarations
+
+Tools can declare capability metadata for future policy enforcement.
+
+```ts
+const githubRead = capability({
+  name: "github.read",
+  description: "Read GitHub issues and pull requests.",
+  scopes: z.object({
+    owner: z.string().min(1),
+    repo: z.string().min(1),
+  }),
+});
+
+const inspectIssue = tool({
+  name: "github.issue.inspect",
+  description: "Read a GitHub issue.",
+  input: IssueInput,
+  output: IssueOutput,
+  capabilities: [githubRead],
+  async run(ctx) {
+    return inspectIssueWithGitHub(ctx.credentials.value("github.read"), ctx.input);
+  },
+});
+```
+
+This is declaration-only metadata. It does not replace credential providers, authorize requests, or block execution in V1.
+
 ## Replay Safety
 
 `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
@@ -298,7 +327,7 @@ Use `ctx.children` to list known children and `ctx.cancelChild` to record durabl
 - Arbitrary parallel durable effects are unsupported.
 - `ctx.emit` supports typed event factories and raw compatibility input.
 - `ctx.id` is preferred for deterministic IDs; `ctx.uuid` remains a compatibility alias.
-- Capabilities are planned but not implemented in V1 authoring.
+- Capability contracts are declaration-only metadata; runtime enforcement is planned separately.
 - Effect-backed internals are not required for public V1 authoring.
 - Cancelled children use failed thread semantics; there is no separate `cancelled` status yet.
 

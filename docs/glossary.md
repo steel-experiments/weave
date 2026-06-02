@@ -54,7 +54,11 @@ An observer or controller that listens to thread events and may trigger actions 
 
 ## Capability
 
-A scoped grant that lets a worker or integration perform an action or consume a secret in a restricted context.
+A typed declaration of scoped access intent, such as `github.read` for a specific owner and repository. In the current authoring API, capabilities are metadata attached to tools, not enforced runtime grants.
+
+## Capability Contract
+
+The formal declaration of a capability name, description, and schema-backed scope shape. Policy enforcement can later evaluate these contracts before allowing tool or integration work.
 
 ## Policy
 

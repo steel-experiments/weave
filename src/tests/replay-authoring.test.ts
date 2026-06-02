@@ -4,6 +4,7 @@ import { agent, event } from "../agent-contract.js";
 import { createAgentPlanner } from "../agent-runner.js";
 import { createApiServer } from "../api-server.js";
 import { weave } from "../app-contract.js";
+import { capability } from "../capability-contract.js";
 import type {
   AppendOptions,
   AppendResult,
@@ -41,11 +42,18 @@ const outputSchema = z.object({
   data: z.object({ result: z.string().min(1) }),
 });
 
+const testLookupRead = capability({
+  name: "test.lookup.read",
+  description: "Read lookup data for replay tests.",
+  scopes: z.object({ query: z.string().min(1) }),
+});
+
 const lookupTool = tool({
   name: "test.lookup",
   description: "Test lookup tool.",
   input: inputSchema,
   output: outputSchema,
+  capabilities: [testLookupRead],
   run() {
     return {
       summary: "looked up",
@@ -97,6 +105,19 @@ async function testDuplicatePrevention(): Promise<void> {
 
   const secondPlan = await planner.plan("duplicate-prevention", [...history, ...firstPlan.events]);
   assert.equal(secondPlan, null);
+}
+
+async function testCapabilityMetadataDoesNotAffectToolPlanning(): Promise<void> {
+  const planner = createAgentPlanner(lookupAgent);
+  const history = initialHistory("capability-metadata-inert");
+
+  const plan = await planner.plan("capability-metadata-inert", history);
+
+  assert(plan);
+  assert.equal(lookupTool.capabilities?.[0], testLookupRead);
+  assert.equal(plan.events.length, 1);
+  assert.equal(plan.events[0]?.type, "tool.requested");
+  assert.equal(plan.events[0]?.payload.toolName, "test.lookup");
 }
 
 async function testCompletedRunFirstAgentIsTerminal(): Promise<void> {
@@ -2600,6 +2621,7 @@ function statusForEvents(events: readonly ThreadEvent[]): ThreadProjection["stat
 }
 
 await testDuplicatePrevention();
+await testCapabilityMetadataDoesNotAffectToolPlanning();
 await testCompletedRunFirstAgentIsTerminal();
 await testRunnerReadsFullReplayHistory();
 await testDecodeFailure();

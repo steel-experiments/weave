@@ -36,7 +36,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.children` | Current child listing helper |
 | `approvalPolicy` | Current authoring helper |
 | subthread lineage fields | Current storage/read model |
-| capabilities | Planned |
+| `capability` | Current declaration-only metadata helper |
 | package subpaths | Current runtime boundary |
 
 ## Authoring Primitives
@@ -45,10 +45,11 @@ The runtime turns durable operations into thread events, worker work, resumable 
 - `agent`: declares an agent using the new `run(ctx, input)` authoring model or the lower-level planner model.
 - `weave`: composes agents, tools, integrations, and runtime dependencies into an application registry.
 - `integration`: declares external route and event handling adapters.
+- `capability`: declares scoped access intent for tools; policy enforcement over those declarations is planned separately.
 
-The older `defineTool`, `defineAgent`, `defineWeaveApp`, and `defineIntegration` names remain exported for compatibility. New examples should prefer the shorter authoring names.
+The older `defineTool`, `defineAgent`, `defineWeaveApp`, `defineIntegration`, and `defineCapability` names remain exported for compatibility. New examples should prefer the shorter authoring names.
 
-Capabilities and richer projections are planned public primitives. They are not part of the first V1 authoring slice unless explicitly documented below.
+Capability contracts are declaration-only metadata in this slice. They do not enforce runtime permissions until the policy enforcement slice wires them into tool and gate evaluation.
 
 ## App Definition
 
@@ -406,6 +407,48 @@ if (gate) {
 ```
 
 Policy helpers are useful for naming and reusing approval rules across agents. The agent still calls `ctx.gate`; future runtime policy enforcement may add stronger guarantees.
+
+## Capability Contracts
+
+`capability({...})` declares scoped access intent. It is auditable metadata that can be attached to tools today; it does not grant credentials, authorize requests, or block execution by itself.
+
+```ts
+const githubRead = capability({
+  name: "github.read",
+  description: "Read GitHub issues and pull requests.",
+  scopes: z.object({
+    owner: z.string().min(1),
+    repo: z.string().min(1),
+  }),
+});
+
+const inspectIssue = tool({
+  name: "github.issue.inspect",
+  description: "Read a GitHub issue.",
+  input: z.object({
+    owner: z.string().min(1),
+    repo: z.string().min(1),
+    issueNumber: z.number().int(),
+  }),
+  output: z.object({
+    title: z.string(),
+    body: z.string(),
+  }),
+  capabilities: [githubRead],
+  async run(ctx) {
+    return inspectIssueWithGitHub(ctx.credentials.value("github.read"), ctx.input);
+  },
+});
+```
+
+Semantics:
+
+- `name` is the stable policy-facing capability identifier
+- `description` explains the intended access
+- `scopes` is a schema for future policy input, not a runtime grant in this slice
+- tool execution is unchanged when capabilities are present
+- credentials still resolve secret material separately through credential providers
+- slice 39 is responsible for enforcing policies over declared capabilities
 
 ## Event Factories And Replay Helpers
 
@@ -768,7 +811,7 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - `ctx.emit` is implemented and supports typed event factories plus raw compatibility input.
 - `ctx.id` is the preferred deterministic ID helper; `ctx.uuid` remains a compatibility alias.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
-- capabilities are planned but not implemented in V1 authoring.
+- capability contracts are implemented as declaration-only tool metadata; runtime enforcement is planned next.
 - Package subpaths are available, but root exports still include runtime internals for compatibility.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.

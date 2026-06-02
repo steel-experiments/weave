@@ -6,6 +6,12 @@ export interface WeaveModuleBoundary {
     contract: ToolContract<Name, Input, Output>,
   ): ToolContract<Name, Input, Output>;
   createToolRegistry(tools: readonly AnyToolContract[]): ToolRegistry;
+  defineCapability<const Name extends string, Scope>(
+    contract: CapabilityContract<Name, Scope>,
+  ): CapabilityContract<Name, Scope>;
+  capability<const Name extends string, Scope>(
+    contract: CapabilityContract<Name, Scope>,
+  ): CapabilityContract<Name, Scope>;
 
   defineAgent<const Name extends string, Input, Output, const Tools extends readonly AnyToolContract[]>(
     contract: AgentContract<Name, Input, Output, Tools>,
@@ -176,12 +182,21 @@ interface ToolContract<
   input: Schema<Input>;
   output: Schema<Output>;
   summarize?(output: Output): string;
+  capabilities?: readonly AnyCapabilityContract[];
   gate?(context: { input: Input }): ManualToolGate | undefined;
   credentials?(context: { input: Input }): CredentialRequest | readonly CredentialRequest[] | undefined;
   run(context: ToolRunContext<Input>): Promise<Output> | Output;
 }
 
 type AnyToolContract = ToolContract<string, unknown, unknown>;
+
+interface CapabilityContract<Name extends string = string, Scope = unknown> {
+  name: Name;
+  description: string;
+  scopes: Schema<Scope>;
+}
+
+type AnyCapabilityContract = CapabilityContract<string, unknown>;
 
 interface ThreadEngine {
   createThread(threadId: string, options?: CreateThreadOptions): Promise<void>;

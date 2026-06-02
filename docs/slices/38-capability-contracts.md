@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -73,41 +73,40 @@ Final syntax may change during implementation, but the slice should keep capabil
 
 ## Acceptance Criteria
 
-- [ ] Capability contracts can be declared with schema-backed scope metadata.
-- [ ] Capability declarations can attach to the chosen public contract type.
-- [ ] Capability declarations are exported from the public authoring boundary.
-- [ ] Existing apps and examples continue to run without capabilities.
-- [ ] Docs state that this slice adds declaration only, not enforcement.
-- [ ] Follow-up enforcement work is captured in slice 39.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Capability contracts can be declared with schema-backed scope metadata.
+- [x] Capability declarations can attach to the chosen public contract type.
+- [x] Capability declarations are exported from the public authoring boundary.
+- [x] Existing apps and examples continue to run without capabilities.
+- [x] Docs state that this slice adds declaration only, not enforcement.
+- [x] Follow-up enforcement work is captured in slice 39.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Decide declaration attachment point.
-- [ ] Add contracts and helpers.
-- [ ] Add tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Decide declaration attachment point.
+- [x] Add contracts and helpers.
+- [x] Add tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
-
-Include:
-
-- final capability API shape
-- declaration attachment point
-- tests added
-- docs updated
-- commands run
-- enforcement gaps left for slice 39
+- Added `CapabilityContract`, `AnyCapabilityContract`, `capability(...)`, and `defineCapability(...)`.
+- Chose tools as the V1 attachment point via optional `ToolContract.capabilities` because tools are the current side-effect boundary.
+- Kept capability declarations inert: they do not change tool execution, credential resolution, gates, or runtime policy behavior.
+- Exported capability helpers from the root package and added public boundary declarations.
+- Added public API smoke coverage for `capability`, `defineCapability`, and tool/app composition.
+- Added replay authoring coverage proving capability metadata does not affect tool planning.
+- Updated `docs/declarative-api.md`, `docs/architecture.md`, `docs/glossary.md`, and `docs/migration/api-refactor.md`.
+- Verified with `npm test` and `npm run typecheck`.
+- Enforcement remains explicitly deferred to slice 39.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/architecture.md`
-- [ ] `docs/glossary.md`
-- [ ] `docs/migration/api-refactor.md` if author guidance changes
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/architecture.md`
+- [x] `docs/glossary.md`
+- [x] `docs/migration/api-refactor.md` if author guidance changes

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {
   agent,
   approvalPolicy,
+  capability,
+  defineCapability,
   defineAgent,
   defineApprovalPolicy,
   defineEvent,
@@ -22,11 +24,29 @@ import { z } from "zod";
 const inputSchema = z.object({ text: z.string().min(1) });
 const outputSchema = z.object({ text: z.string().min(1) });
 
+const githubRead = capability({
+  name: "github.read",
+  description: "Read GitHub issues and pull requests.",
+  scopes: z.object({
+    owner: z.string().min(1),
+    repo: z.string().min(1),
+  }),
+});
+const definedGitHubWrite = defineCapability({
+  name: "github.write",
+  description: "Write GitHub issues and pull requests.",
+  scopes: z.object({
+    owner: z.string().min(1),
+    repo: z.string().min(1),
+  }),
+});
+
 const echoTool = tool({
   name: "public-api.echo",
   description: "Echo input text.",
   input: inputSchema,
   output: outputSchema,
+  capabilities: [githubRead],
   summarize(output) {
     return output.text;
   },
@@ -61,6 +81,9 @@ assert.equal(defineTool(echoTool), echoTool);
 assert.equal(defineAgent(echoAgent), echoAgent);
 assert.equal(defineIntegration(echoIntegration), echoIntegration);
 assert.equal(defineWeaveApp(echoApp), echoApp);
+assert.equal(githubRead.name, "github.read");
+assert.equal(definedGitHubWrite.name, "github.write");
+assert.equal(echoTool.capabilities?.[0], githubRead);
 
 const emitted = event("agent.response.produced", { message: "ok" });
 const defined = defineEvent("agent.response.produced", { message: "ok" });
