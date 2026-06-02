@@ -184,8 +184,35 @@ export class ThreadService {
       parentStepKey,
     });
 
+    const childProjection = await this.engine.getProjection(threadId);
+    validateChildLineageIdempotency(
+      {
+        parentThreadId: input.parentThreadId,
+        rootThreadId,
+        parentScopeKey,
+        parentStepKey,
+        idempotencyKey: input.idempotencyKey,
+      },
+      childProjection,
+      threadId,
+    );
+
     const existingSession = await readExistingSession(this.engine, threadId);
     const correlationId = existingSession?.correlationId ?? generatedCorrelationId;
+
+    if (existingSession) {
+      validateChildSessionIdempotency(
+        {
+          threadId,
+          source,
+          agentName: input.agentName,
+          childInput: input.input,
+          prompt: input.prompt ?? `Child session for ${input.agentName}`,
+          idempotencyKey: input.idempotencyKey,
+        },
+        existingSession,
+      );
+    }
 
     if (!existingSession) {
       const events: ThreadEvent[] = [
@@ -229,6 +256,17 @@ export class ThreadService {
         if (!concurrentSession) {
           throw error;
         }
+        validateChildSessionIdempotency(
+          {
+            threadId,
+            source,
+            agentName: input.agentName,
+            childInput: input.input,
+            prompt: input.prompt ?? `Child session for ${input.agentName}`,
+            idempotencyKey: input.idempotencyKey,
+          },
+          concurrentSession,
+        );
       }
     }
 
@@ -522,7 +560,7 @@ function validateStartSessionIdempotency(input: NormalizedStartSessionInput, exi
   if (sessionPayload?.agentName !== input.agentName) {
     mismatches.push("agentName");
   }
-  if (stableJsonHash(sessionPayload?.metadata) !== stableJsonHash(input.metadata)) {
+  if (stableValueHash(sessionPayload?.metadata) !== stableValueHash(input.metadata)) {
     mismatches.push("metadata");
   }
   if (promptPayload?.prompt !== input.prompt) {
@@ -536,6 +574,81 @@ function validateStartSessionIdempotency(input: NormalizedStartSessionInput, exi
       mismatches,
     });
   }
+}
+
+function validateChildLineageIdempotency(
+  input: {
+    parentThreadId: string;
+    rootThreadId: string;
+    parentScopeKey: string;
+    parentStepKey: string;
+    idempotencyKey?: string;
+  },
+  projection: Awaited<ReturnType<ThreadEngine["getProjection"]>>,
+  childThreadId: string,
+): void {
+  const mismatches: string[] = [];
+  if (projection?.parentThreadId !== input.parentThreadId) {
+    mismatches.push("parentThreadId");
+  }
+  if (projection?.rootThreadId !== input.rootThreadId) {
+    mismatches.push("rootThreadId");
+  }
+  if (projection?.parentScopeKey !== input.parentScopeKey) {
+    mismatches.push("parentScopeKey");
+  }
+  if (projection?.parentStepKey !== input.parentStepKey) {
+    mismatches.push("parentStepKey");
+  }
+
+  if (mismatches.length > 0) {
+    throw new ReplayMismatchError("Idempotent child session lineage does not match the existing child", {
+      childThreadId,
+      idempotencyKey: input.idempotencyKey,
+      mismatches,
+    });
+  }
+}
+
+function validateChildSessionIdempotency(
+  input: {
+    threadId: string;
+    source: SessionSource;
+    agentName: string;
+    childInput: SessionMetadata;
+    prompt: string;
+    idempotencyKey?: string;
+  },
+  existing: ExistingSession,
+): void {
+  const sessionPayload = existing.sessionStarted?.payload;
+  const promptPayload = existing.promptReceived?.payload;
+  const mismatches: string[] = [];
+
+  if (sessionPayload?.source !== input.source) {
+    mismatches.push("source");
+  }
+  if (sessionPayload?.agentName !== input.agentName) {
+    mismatches.push("agentName");
+  }
+  if (stableValueHash(sessionPayload?.metadata) !== stableValueHash(input.childInput)) {
+    mismatches.push("input");
+  }
+  if (promptPayload?.prompt !== input.prompt) {
+    mismatches.push("prompt");
+  }
+
+  if (mismatches.length > 0) {
+    throw new ReplayMismatchError("Idempotent child session request does not match the existing child session", {
+      childThreadId: input.threadId,
+      idempotencyKey: input.idempotencyKey,
+      mismatches,
+    });
+  }
+}
+
+function stableValueHash(value: unknown): string {
+  return stableJsonHash(value ?? null);
 }
 
 function toSessionResult(session: ExistingSession): { threadId: string; correlationId: string } {
@@ -561,10 +674,11 @@ async function ensureChildSpawnedEvent(
   },
 ): Promise<void> {
   const parentEvents = await engine.read(input.parentThreadId);
-  const existing = parentEvents.some((event) => {
+  const existing = parentEvents.find((event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => {
     return event.type === "child_thread.spawned" && event.payload.childThreadId === input.childThreadId;
   });
   if (existing) {
+    validateChildSpawnedIdempotency(input, existing);
     return;
   }
 
@@ -595,14 +709,51 @@ async function ensureChildSpawnedEvent(
     await engine.append([event]);
   } catch (error) {
     const concurrentEvents = await engine.read(input.parentThreadId);
-    const concurrentEvent = concurrentEvents.some((candidate) => {
+    const concurrentEvent = concurrentEvents.find((candidate): candidate is Extract<ThreadEvent, { type: "child_thread.spawned" }> => {
       return candidate.type === "child_thread.spawned" && candidate.payload.childThreadId === input.childThreadId;
     });
     if (concurrentEvent) {
+      validateChildSpawnedIdempotency(input, concurrentEvent);
       return;
     }
 
     throw error;
+  }
+}
+
+function validateChildSpawnedIdempotency(
+  input: Parameters<typeof ensureChildSpawnedEvent>[1],
+  existing: Extract<ThreadEvent, { type: "child_thread.spawned" }>,
+): void {
+  const expected = {
+    childAgentName: input.childAgentName,
+    scopeKey: input.parentScopeKey,
+    stepKey: input.parentStepKey,
+    mode: input.mode,
+    inputHash: input.inputHash,
+    inputSummary: input.inputSummary,
+    metadata: input.metadata,
+  };
+  const actual = {
+    childAgentName: existing.payload.childAgentName,
+    scopeKey: existing.payload.scopeKey,
+    stepKey: existing.payload.stepKey,
+    mode: existing.payload.mode,
+    inputHash: existing.payload.inputHash,
+    inputSummary: existing.payload.inputSummary,
+    metadata: existing.payload.metadata,
+  };
+  const mismatches = Object.keys(expected).filter((key) => {
+    const typedKey = key as keyof typeof expected;
+    return stableValueHash(actual[typedKey]) !== stableValueHash(expected[typedKey]);
+  });
+
+  if (mismatches.length > 0) {
+    throw new ReplayMismatchError("Idempotent child spawn event does not match the existing parent event", {
+      parentThreadId: input.parentThreadId,
+      childThreadId: input.childThreadId,
+      mismatches,
+    });
   }
 }
 

@@ -572,6 +572,8 @@ await service.startChildSession({
 
 The child session stores `input` in `session.started.payload.metadata`, which is the current replay input source for `agent.run`. It also stores the target `agentName` in `session.started.payload.agentName`, so the runtime can dispatch child runner passes to the intended child agent. The parent thread receives a `child_thread.spawned` event.
 
+Child sessions support deterministic idempotency through `idempotencyKey`. Reusing the same key with the same child agent, input, prompt, parent scope/step, mode, and parent metadata returns the existing child. Reusing the same key with changed child work throws `ReplayMismatchError`.
+
 Agents can create child sessions with `ctx.spawn`:
 
 ```ts

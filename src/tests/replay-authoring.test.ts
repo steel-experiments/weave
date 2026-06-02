@@ -1529,6 +1529,37 @@ async function testStartChildSessionIdempotency(): Promise<void> {
   assert.equal((await engine.read(first.threadId)).length, 2);
   const spawnedEvents = (await engine.read(parentThreadId)).filter((event) => event.type === "child_thread.spawned");
   assert.equal(spawnedEvents.length, 1);
+
+  await assert.rejects(
+    async () => {
+      await service.startChildSession({ ...input, input: { query: "changed" } });
+    },
+    ReplayMismatchError,
+  );
+  await assert.rejects(
+    async () => {
+      await service.startChildSession({ ...input, agentName: "different-agent" });
+    },
+    ReplayMismatchError,
+  );
+  await assert.rejects(
+    async () => {
+      await service.startChildSession({ ...input, parentStepKey: "different-step" });
+    },
+    ReplayMismatchError,
+  );
+  await assert.rejects(
+    async () => {
+      await service.startChildSession({ ...input, detached: true });
+    },
+    ReplayMismatchError,
+  );
+  await assert.rejects(
+    async () => {
+      await service.startChildSession({ ...input, metadata: { priority: "high" } });
+    },
+    ReplayMismatchError,
+  );
 }
 
 async function testAgentFailureEvent(): Promise<void> {
