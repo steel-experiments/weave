@@ -112,6 +112,7 @@ interface AgentContext<Tools extends readonly AnyToolContract[] = readonly AnyTo
     input: Input,
     options?: SpawnOptions,
   ): Promise<ThreadRef<Output>>;
+  join<Output>(key: string, thread: ThreadRef<Output>, options?: JoinOptions): Promise<AgentRun<Output>>;
   checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
   uuid(key: string): string;
@@ -365,6 +366,10 @@ type SpawnOptions = {
   metadata?: Record<string, unknown>;
   detached?: boolean;
 };
+type JoinOptions = { throwOnFailure?: boolean };
+type AgentRun<Output = unknown> =
+  | { status: "completed"; thread: ThreadRef<Output>; output?: Output; outputSummary?: string }
+  | { status: "failed"; thread: ThreadRef<Output>; errorCode: string; message: string };
 type GateRequest = { gateType?: "manual-approval"; reason: "tool-result-requires-approval" | "risky-remediation"; relatedToolCallId?: string; proposedAction?: string };
 type GateResolution = { gateId: string; resolution: "approved" | "denied"; comment?: string };
 type AgentEventMetadata = { correlationId?: string; causationId?: string; idempotencyKey?: string };

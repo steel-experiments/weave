@@ -222,7 +222,15 @@ const ChildThreadFailedPayload = z.object({
 
 ```ts
 const RunnerResumedPayload = z.object({
-  reason: z.enum(["new-prompt", "tool-completed", "gate-resolved", "child-spawned", "manual-retry"]),
+  reason: z.enum([
+    "new-prompt",
+    "tool-completed",
+    "gate-resolved",
+    "child-spawned",
+    "child-completed",
+    "child-failed",
+    "manual-retry",
+  ]),
 })
 ```
 

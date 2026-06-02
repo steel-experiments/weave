@@ -40,6 +40,18 @@ export type StartChildSessionResult = {
   rootThreadId: string;
 };
 
+export type MirrorChildTerminalEventInput = {
+  parentThreadId: string;
+  childThreadId: string;
+  childAgentName?: string;
+  parentScopeKey: string;
+  parentStepKey: string;
+};
+
+export type MirrorChildTerminalEventResult =
+  | { mirrored: true; eventType: "child_thread.completed" | "child_thread.failed" }
+  | { mirrored: false; reason: "child-not-terminal" };
+
 export class ThreadService {
   constructor(private readonly engine: ThreadEngine) {}
 
@@ -198,6 +210,72 @@ export class ThreadService {
     };
   }
 
+  async mirrorChildTerminalEvent(input: MirrorChildTerminalEventInput): Promise<MirrorChildTerminalEventResult> {
+    const childProjection = await this.engine.getProjection(input.childThreadId);
+    if (!childProjection || (childProjection.status !== "completed" && childProjection.status !== "failed")) {
+      return { mirrored: false, reason: "child-not-terminal" };
+    }
+
+    const parentEvents = await this.engine.read(input.parentThreadId);
+    const existing = parentEvents.find((event) => {
+      return (
+        (event.type === "child_thread.completed" || event.type === "child_thread.failed") &&
+        event.scopeKey === input.parentScopeKey &&
+        event.stepKey === input.parentStepKey &&
+        event.payload.childThreadId === input.childThreadId
+      );
+    });
+    if (existing?.type === "child_thread.completed" || existing?.type === "child_thread.failed") {
+      return { mirrored: true, eventType: existing.type };
+    }
+
+    const childEvents = await this.engine.read(input.childThreadId);
+    const childTerminal = newestEvent(childEvents);
+    const parentCause = newestEvent(parentEvents);
+    const base = {
+      threadId: input.parentThreadId,
+      occurredAt: nowIso(),
+      correlationId: parentEvents[0]?.correlationId ?? childTerminal?.correlationId,
+      causationId: parentCause?.eventId,
+      scopeKey: input.parentScopeKey,
+      stepKey: input.parentStepKey,
+      actor: { type: "system", id: "thread-service" } as const,
+    };
+
+    if (childProjection.status === "completed") {
+      const response = newestEventOfType(childEvents, "agent.response.produced");
+      const event: Extract<ThreadEvent, { type: "child_thread.completed" }> = {
+        ...base,
+        eventId: deterministicUuid("child-thread-completed", input.parentThreadId, input.parentScopeKey, input.parentStepKey, input.childThreadId),
+        type: "child_thread.completed",
+        idempotencyKey: `child-thread-completed:${input.parentScopeKey}:${input.parentStepKey}:${input.childThreadId}`,
+        payload: {
+          childThreadId: input.childThreadId,
+          ...(input.childAgentName ? { childAgentName: input.childAgentName } : {}),
+          ...(response?.payload.message ? { outputSummary: response.payload.message } : {}),
+        },
+      };
+      await appendChildTerminalEvent(this.engine, event);
+      return { mirrored: true, eventType: "child_thread.completed" };
+    }
+
+    const failed = newestFailedEvent(childEvents);
+    const event: Extract<ThreadEvent, { type: "child_thread.failed" }> = {
+      ...base,
+      eventId: deterministicUuid("child-thread-failed", input.parentThreadId, input.parentScopeKey, input.parentStepKey, input.childThreadId),
+      type: "child_thread.failed",
+      idempotencyKey: `child-thread-failed:${input.parentScopeKey}:${input.parentStepKey}:${input.childThreadId}`,
+      payload: {
+        childThreadId: input.childThreadId,
+        ...(input.childAgentName ? { childAgentName: input.childAgentName } : {}),
+        errorCode: failed?.payload.errorCode ?? "CHILD_THREAD_FAILED",
+        message: failed?.payload.message ?? `Child thread failed: ${input.childThreadId}`,
+      },
+    };
+    await appendChildTerminalEvent(this.engine, event);
+    return { mirrored: true, eventType: "child_thread.failed" };
+  }
+
   async resolveGate(
     threadId: string,
     gateId: string,
@@ -338,4 +416,57 @@ async function ensureChildSpawnedEvent(
 
     throw error;
   }
+}
+
+async function appendChildTerminalEvent(
+  engine: ThreadEngine,
+  event: Extract<ThreadEvent, { type: "child_thread.completed" | "child_thread.failed" }>,
+): Promise<void> {
+  try {
+    await engine.append([event]);
+  } catch (error) {
+    const events = await engine.read(event.threadId);
+    const existing = events.some((candidate) => {
+      return (
+        candidate.type === event.type &&
+        candidate.scopeKey === event.scopeKey &&
+        candidate.stepKey === event.stepKey &&
+        candidate.payload.childThreadId === event.payload.childThreadId
+      );
+    });
+    if (existing) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function newestEvent(events: readonly ThreadEvent[]): ThreadEvent | undefined {
+  return events.at(-1);
+}
+
+function newestEventOfType<Type extends ThreadEvent["type"]>(
+  events: readonly ThreadEvent[],
+  type: Type,
+): Extract<ThreadEvent, { type: Type }> | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === type) {
+      return event as Extract<ThreadEvent, { type: Type }>;
+    }
+  }
+  return undefined;
+}
+
+function newestFailedEvent(
+  events: readonly ThreadEvent[],
+): Extract<ThreadEvent, { type: "agent.failed" | "tool.failed" }> | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === "agent.failed" || event?.type === "tool.failed") {
+      return event;
+    }
+  }
+  return undefined;
 }

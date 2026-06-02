@@ -36,6 +36,24 @@ export type SpawnOptions = {
   detached?: boolean;
 };
 
+export type JoinOptions = {
+  throwOnFailure?: boolean;
+};
+
+export type AgentRun<Output = unknown> =
+  | {
+      status: "completed";
+      thread: ThreadRef<Output>;
+      output?: Output;
+      outputSummary?: string;
+    }
+  | {
+      status: "failed";
+      thread: ThreadRef<Output>;
+      errorCode: string;
+      message: string;
+    };
+
 export type AgentEventMetadata = {
   correlationId?: string;
   causationId?: string;
@@ -78,6 +96,7 @@ export type AgentContext<
     input: Input,
     options?: SpawnOptions,
   ): Promise<ThreadRef<Output>>;
+  join<Output>(key: string, thread: ThreadRef<Output>, options?: JoinOptions): Promise<AgentRun<Output>>;
   checkpoint<Value>(key: string, compute: () => MaybePromise<Value>): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
   uuid(key: string): string;

@@ -136,7 +136,15 @@ export const GateResolvedPayloadSchema = z.object({
 });
 
 export const RunnerResumedPayloadSchema = z.object({
-  reason: z.enum(["new-prompt", "tool-completed", "gate-resolved", "child-spawned", "manual-retry"]),
+  reason: z.enum([
+    "new-prompt",
+    "tool-completed",
+    "gate-resolved",
+    "child-spawned",
+    "child-completed",
+    "child-failed",
+    "manual-retry",
+  ]),
 });
 
 export const AgentResponseProducedPayloadSchema = z.object({

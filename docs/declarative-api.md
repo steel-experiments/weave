@@ -31,7 +31,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.gate` | Current approval effect |
 | `ctx.checkpoint` | Current local durable effect |
 | `ctx.spawn` | Current child-thread effect |
-| `ctx.join` | Planned |
+| `ctx.join` | Current child-thread wait effect |
 | `approvalPolicy` | Current authoring helper |
 | subthread lineage fields | Current storage/read model |
 | capabilities | Planned |
@@ -581,7 +581,24 @@ const child = await ctx.spawn("research-docs", docsResearchAgent, {
 
 `ctx.spawn` is durable and requires a stable key. On first execution it starts the child session through `ThreadService.startChildSession`, appends `child_thread.spawned` to the parent, and suspends the parent runner pass. On replay it returns the existing `ThreadRef`. If the child agent, mode, or input hash changes for the same key, Weave throws `ReplayMismatchError`.
 
-`ctx.spawn` does not wait for the child. Use future `ctx.join` semantics for that.
+`ctx.spawn` does not wait for the child. Use `ctx.join` for that.
+
+```ts
+const child = await ctx.spawn("research-docs", docsResearchAgent, {
+  repo: "acme/docs",
+});
+const result = await ctx.join("wait-research-docs", child);
+
+if (result.status === "failed") {
+  return `Research failed: ${result.message}`;
+}
+
+return result.outputSummary;
+```
+
+`ctx.join` is durable and requires its own stable key. If the parent has a matching `child_thread.completed` event, it returns `{ status: "completed", thread, outputSummary }`. If the parent has a matching `child_thread.failed` event, it returns `{ status: "failed", thread, errorCode, message }`, or throws `ChildThreadFailedError` when `throwOnFailure: true` is set.
+
+When no parent terminal event exists, `ctx.join` asks `ThreadService.mirrorChildTerminalEvent` to mirror a terminal child projection into the parent. If the child is still running, the parent runner pass suspends. Mirrored terminal events wake the parent runner with `child-completed` or `child-failed`.
 
 Parent thread lifecycle events:
 
@@ -666,7 +683,7 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - `ctx.tool`, `ctx.gate`, and `ctx.checkpoint` are implemented durable effects.
 - `ctx.emit` and `ctx.uuid` are provisional replay helpers.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
-- `ctx.join`, capabilities, and richer projections are planned but not implemented in this slice.
+- capabilities and richer projections are planned but not implemented in this slice.
 - Package subpaths are available, but root exports still include runtime internals for compatibility.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.
@@ -674,6 +691,6 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 
 ## Planned Next Primitives
 
-- `ctx.join` for waiting on child thread work.
+- runtime support for dispatching child threads to the intended child agent.
 - policies and capabilities for centralized governance and scoped grants.
 - Effect-backed internals behind the same Promise-first public API.

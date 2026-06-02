@@ -751,6 +751,111 @@ async function testSpawnInputMismatch(): Promise<void> {
   );
 }
 
+async function testJoinMirrorsCompletedChild(): Promise<void> {
+  const parentThreadId = "join-completed-child";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      const child = await ctx.spawn("spawn-child", childAgent, input);
+      const result = await ctx.join("wait-child", child);
+      if (result.status === "failed") {
+        return { finalMessage: result.message };
+      }
+      return { finalMessage: result.outputSummary ?? "child complete" };
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  const spawned = (await engine.read(parentThreadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned",
+  );
+  assert(spawned);
+  await engine.append([
+    {
+      eventId: eventKey(spawned.payload.childThreadId, "agent.response.produced", "done"),
+      threadId: spawned.payload.childThreadId,
+      type: "agent.response.produced",
+      occurredAt: nowIso(),
+      correlationId: spawned.correlationId,
+      actor: { type: "agent", id: "child-agent" },
+      payload: { message: "child finished" },
+    },
+  ]);
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  const completed = (await engine.read(parentThreadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "child_thread.completed" }> => event.type === "child_thread.completed",
+  );
+  assert(completed);
+  assert.equal(completed.scopeKey, "agent:parent-agent");
+  assert.equal(completed.stepKey, "wait-child");
+  assert.deepEqual(completed.payload, {
+    childThreadId: spawned.payload.childThreadId,
+    childAgentName: "child-agent",
+    outputSummary: "child finished",
+  });
+
+  const finalPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
+  assert(finalPlan);
+  assert.equal(finalPlan.resumeReason, "child-completed");
+  assert.equal(finalPlan.events[0]?.type, "agent.response.produced");
+  assert.deepEqual(finalPlan.events[0]?.payload, { message: "child finished" });
+}
+
+async function testJoinFailedChild(): Promise<void> {
+  const parentThreadId = "join-failed-child";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      const child = await ctx.spawn("spawn-child", childAgent, input);
+      const result = await ctx.join("wait-child", child);
+      return { finalMessage: result.status === "failed" ? result.message : "unexpected" };
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  const spawned = (await engine.read(parentThreadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned",
+  );
+  assert(spawned);
+  await engine.append([
+    {
+      eventId: eventKey(spawned.payload.childThreadId, "agent.failed", "boom"),
+      threadId: spawned.payload.childThreadId,
+      type: "agent.failed",
+      occurredAt: nowIso(),
+      correlationId: spawned.correlationId,
+      actor: { type: "system", id: "test" },
+      payload: { errorCode: "CHILD_ERROR", message: "child failed" },
+    },
+  ]);
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  const failed = (await engine.read(parentThreadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "child_thread.failed" }> => event.type === "child_thread.failed",
+  );
+  assert(failed);
+  assert.deepEqual(failed.payload, {
+    childThreadId: spawned.payload.childThreadId,
+    childAgentName: "child-agent",
+    errorCode: "CHILD_ERROR",
+    message: "child failed",
+  });
+
+  const finalPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
+  assert(finalPlan);
+  assert.equal(finalPlan.resumeReason, "child-failed");
+  assert.deepEqual(finalPlan.events[0]?.payload, { message: "child failed" });
+}
+
 async function testStartChildSessionIdempotency(): Promise<void> {
   const parentThreadId = "parent-child-idempotent";
   const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
@@ -947,7 +1052,7 @@ class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
 
     return ThreadProjectionSchema.parse({
       threadId,
-      status: "idle",
+      status: statusForEvents(threadEvents),
       tailSeq: threadEvents.length,
       activeLeaseOwnerId: null,
       pendingGateIds,
@@ -980,6 +1085,26 @@ class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
   async releaseLease(): Promise<void> {}
 }
 
+function statusForEvents(events: readonly ThreadEvent[]): ThreadProjection["status"] {
+  if (events.some((event) => event.type === "tool.failed" || event.type === "agent.failed")) {
+    return "failed";
+  }
+
+  if (events.some((event) => event.type === "agent.response.produced")) {
+    return "completed";
+  }
+
+  if (events.some((event) => event.type === "gate.created")) {
+    return "blocked";
+  }
+
+  if (events.length > 0) {
+    return "waiting";
+  }
+
+  return "idle";
+}
+
 await testDuplicatePrevention();
 await testDecodeFailure();
 await testToolFailedReplayNoPlan();
@@ -1000,6 +1125,8 @@ await testThreadProjectionLineageSchema();
 await testStartChildSessionCreatesLineage();
 await testSpawnCreatesChildSession();
 await testSpawnInputMismatch();
+await testJoinMirrorsCompletedChild();
+await testJoinFailedChild();
 await testStartChildSessionIdempotency();
 await testAgentFailureEvent();
 

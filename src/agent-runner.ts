@@ -2,13 +2,15 @@ import type {
   AgentContract,
   AgentContext,
   AgentEventInput,
+  AgentRun,
   AnyAgentContract,
   GateRequest,
   GateResolution,
+  JoinOptions,
   SpawnOptions,
   ThreadRef,
 } from "./agent-contract.js";
-import { ParallelDurableEffectError, ReplayMismatchError, ToolFailedError, WeaveError } from "./errors.js";
+import { ChildThreadFailedError, ParallelDurableEffectError, ReplayMismatchError, ToolFailedError, WeaveError } from "./errors.js";
 import {
   deterministicUuid,
   eventKey,
@@ -22,7 +24,7 @@ import type { AgentPlan, AgentPlanner } from "./runner.js";
 import type { ThreadService } from "./thread-service.js";
 import type { ToolContract } from "./tool-contract.js";
 
-type SuspensionReason = "tool-requested" | "tool-pending" | "gate-created" | "gate-pending" | "spawn-created";
+type SuspensionReason = "tool-requested" | "tool-pending" | "gate-created" | "gate-pending" | "spawn-created" | "join-pending";
 
 class AgentSuspended extends Error {
   constructor(
@@ -332,6 +334,74 @@ class ReplayAgentContext implements AgentContext {
     this.suspend("spawn", key, "spawn-created", []);
   }
 
+  async join<Output>(key: string, thread: ThreadRef<Output>, options: JoinOptions = {}): Promise<AgentRun<Output>> {
+    const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
+    if (matchingEvent && matchingEvent.type !== "child_thread.completed" && matchingEvent.type !== "child_thread.failed") {
+      throw new ReplayMismatchError("Durable step key was previously used for a different effect kind", {
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        existingType: matchingEvent.type,
+        requestedType: "child_thread.completed|child_thread.failed",
+      });
+    }
+
+    if (matchingEvent?.type === "child_thread.completed") {
+      if (matchingEvent.payload.childThreadId !== thread.threadId) {
+        throw new ReplayMismatchError("Durable join key was previously used for a different child thread", {
+          scopeKey: this.scopeKey,
+          stepKey: key,
+          previousChildThreadId: matchingEvent.payload.childThreadId,
+          nextChildThreadId: thread.threadId,
+        });
+      }
+
+      return {
+        status: "completed",
+        thread,
+        outputSummary: matchingEvent.payload.outputSummary,
+      };
+    }
+
+    if (matchingEvent?.type === "child_thread.failed") {
+      if (matchingEvent.payload.childThreadId !== thread.threadId) {
+        throw new ReplayMismatchError("Durable join key was previously used for a different child thread", {
+          scopeKey: this.scopeKey,
+          stepKey: key,
+          previousChildThreadId: matchingEvent.payload.childThreadId,
+          nextChildThreadId: thread.threadId,
+        });
+      }
+
+      if (options.throwOnFailure) {
+        throw new ChildThreadFailedError(matchingEvent.payload.message, {
+          scopeKey: this.scopeKey,
+          stepKey: key,
+          childThreadId: thread.threadId,
+          errorCode: matchingEvent.payload.errorCode,
+        });
+      }
+
+      return {
+        status: "failed",
+        thread,
+        errorCode: matchingEvent.payload.errorCode,
+        message: matchingEvent.payload.message,
+      };
+    }
+
+    if (this.options.service) {
+      await this.options.service.mirrorChildTerminalEvent({
+        parentThreadId: this.threadId,
+        childThreadId: thread.threadId,
+        childAgentName: thread.agentName,
+        parentScopeKey: this.scopeKey,
+        parentStepKey: key,
+      });
+    }
+
+    this.suspend("join", key, "join-pending", []);
+  }
+
   async checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value> {
     const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
     if (matchingEvent) {
@@ -577,6 +647,14 @@ function resumeReasonFor(event: ThreadEvent | undefined): AgentPlan["resumeReaso
 
   if (event?.type === "child_thread.spawned") {
     return "child-spawned";
+  }
+
+  if (event?.type === "child_thread.completed") {
+    return "child-completed";
+  }
+
+  if (event?.type === "child_thread.failed") {
+    return "child-failed";
   }
 
   return "tool-completed";

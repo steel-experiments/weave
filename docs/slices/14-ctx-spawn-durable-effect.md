@@ -60,6 +60,4 @@ Changed modules:
 Known follow-ups:
 
 - Runtime support for dispatching child threads to the intended child agent.
-- `ctx.join` durable effect.
-- Parent mirroring for `child_thread.completed` and `child_thread.failed`.
 - `ThreadService.listChildren` and `ctx.children`.
