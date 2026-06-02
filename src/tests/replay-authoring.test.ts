@@ -70,6 +70,17 @@ const childAgent = agent({
   },
 });
 
+const childOutputSchema = z.object({ answer: z.number().int() });
+
+const structuredChildAgent = agent({
+  name: "structured-child-agent",
+  input: inputSchema,
+  output: childOutputSchema,
+  async run(_ctx, input) {
+    return { answer: input.query.length };
+  },
+});
+
 async function testDuplicatePrevention(): Promise<void> {
   const planner = createAgentPlanner(lookupAgent);
   const history = initialHistory("duplicate-prevention");
@@ -833,6 +844,111 @@ async function testJoinMirrorsCompletedChild(): Promise<void> {
   });
 }
 
+async function testJoinValidatesStructuredChildOutput(): Promise<void> {
+  const parentThreadId = "join-validates-structured-child-output";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      const child = await ctx.spawn("spawn-child", structuredChildAgent, input);
+      const result = await ctx.join("wait-child", child);
+      if (result.status === "failed") {
+        return { finalMessage: result.message };
+      }
+      return { finalMessage: `answer=${result.output?.answer ?? "missing"}` };
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  const spawned = (await engine.read(parentThreadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned",
+  );
+  assert(spawned);
+  await engine.append([
+    {
+      eventId: eventKey(spawned.payload.childThreadId, "agent.response.produced", "done"),
+      threadId: spawned.payload.childThreadId,
+      type: "agent.response.produced",
+      occurredAt: nowIso(),
+      correlationId: spawned.correlationId,
+      actor: { type: "agent", id: "structured-child-agent" },
+      payload: { message: "child finished" },
+    },
+    {
+      eventId: eventKey(spawned.payload.childThreadId, "agent.output.completed", "done"),
+      threadId: spawned.payload.childThreadId,
+      type: "agent.output.completed",
+      occurredAt: nowIso(),
+      correlationId: spawned.correlationId,
+      actor: { type: "agent", id: "structured-child-agent" },
+      payload: {
+        output: { answer: 42 },
+        summary: "child finished",
+      },
+    },
+  ]);
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  const finalPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
+  assert(finalPlan);
+  assert.deepEqual(finalPlan.events[0]?.payload, { message: "answer=42" });
+}
+
+async function testJoinRejectsInvalidStructuredChildOutput(): Promise<void> {
+  const parentThreadId = "join-invalid-structured-child-output";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      const child = await ctx.spawn("spawn-child", structuredChildAgent, input);
+      await ctx.join("wait-child", child);
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  const spawned = (await engine.read(parentThreadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned",
+  );
+  assert(spawned);
+  await engine.append([
+    {
+      eventId: eventKey(spawned.payload.childThreadId, "agent.response.produced", "done"),
+      threadId: spawned.payload.childThreadId,
+      type: "agent.response.produced",
+      occurredAt: nowIso(),
+      correlationId: spawned.correlationId,
+      actor: { type: "agent", id: "structured-child-agent" },
+      payload: { message: "child finished" },
+    },
+    {
+      eventId: eventKey(spawned.payload.childThreadId, "agent.output.completed", "done"),
+      threadId: spawned.payload.childThreadId,
+      type: "agent.output.completed",
+      occurredAt: nowIso(),
+      correlationId: spawned.correlationId,
+      actor: { type: "agent", id: "structured-child-agent" },
+      payload: {
+        output: { answer: "not a number" },
+        summary: "child finished",
+      },
+    },
+  ]);
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  await assert.rejects(
+    async () => {
+      await planner.plan(parentThreadId, await engine.read(parentThreadId));
+    },
+    ReplayMismatchError,
+  );
+}
+
 async function testJoinFailedChild(): Promise<void> {
   const parentThreadId = "join-failed-child";
   const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
@@ -1350,6 +1466,8 @@ await testStartChildSessionCreatesLineage();
 await testSpawnCreatesChildSession();
 await testSpawnInputMismatch();
 await testJoinMirrorsCompletedChild();
+await testJoinValidatesStructuredChildOutput();
+await testJoinRejectsInvalidStructuredChildOutput();
 await testJoinFailedChild();
 await testListChildren();
 await testContextChildren();

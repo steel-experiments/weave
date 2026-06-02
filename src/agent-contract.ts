@@ -25,6 +25,7 @@ export type ThreadRef<Output = unknown> = {
   rootThreadId?: string;
   parentScopeKey?: string;
   parentStepKey?: string;
+  outputSchema?: z.ZodType<Output>;
   output?: Output;
 };
 

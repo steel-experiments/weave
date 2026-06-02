@@ -359,6 +359,7 @@ type ThreadRef<Output = unknown> = {
   rootThreadId?: string;
   parentScopeKey?: string;
   parentStepKey?: string;
+  outputSchema?: Schema<Output>;
   output?: Output;
 };
 type SpawnOptions = {

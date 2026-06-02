@@ -312,6 +312,7 @@ class ReplayAgentContext implements AgentContext {
         parentThreadId: this.threadId,
         parentScopeKey: this.scopeKey,
         parentStepKey: key,
+        ...(childAgent.output ? { outputSchema: childAgent.output } : {}),
       };
     }
 
@@ -360,10 +361,29 @@ class ReplayAgentContext implements AgentContext {
         });
       }
 
+      let output: Output | undefined;
+      if ("output" in matchingEvent.payload) {
+        if (thread.outputSchema) {
+          const outputResult = thread.outputSchema.safeParse(matchingEvent.payload.output);
+          if (!outputResult.success) {
+            throw new ReplayMismatchError("Joined child output failed the child agent output schema", {
+              scopeKey: this.scopeKey,
+              stepKey: key,
+              childThreadId: thread.threadId,
+              childAgentName: thread.agentName,
+              error: outputResult.error,
+            });
+          }
+          output = outputResult.data;
+        } else {
+          output = matchingEvent.payload.output as Output;
+        }
+      }
+
       return {
         status: "completed",
         thread,
-        ...("output" in matchingEvent.payload ? { output: matchingEvent.payload.output as Output } : {}),
+        ...(output !== undefined ? { output } : {}),
         outputSummary: matchingEvent.payload.outputSummary,
       };
     }
