@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -50,37 +50,53 @@ As a parent agent author, I can spawn, inspect, join, and cancel child work with
 
 ## Acceptance Criteria
 
-- [ ] Spawned child projections contain correct parent and root lineage.
-- [ ] Parent scope and step keys identify the parent durable spawn effect.
-- [ ] Parents cannot join or mirror unrelated child threads.
-- [ ] Detached children retain lineage and do not block parent completion.
-- [ ] Cancellation rejects unrelated children and handles repeated requests safely.
-- [ ] Child terminal mirroring is idempotent.
-- [ ] Child listing filters still work after status changes.
+- [x] Spawned child projections contain correct parent and root lineage.
+- [x] Parent scope and step keys identify the parent durable spawn effect.
+- [x] Parents cannot join or mirror unrelated child threads.
+- [x] Detached children retain lineage and do not block parent completion.
+- [x] Cancellation rejects unrelated children and handles repeated requests safely.
+- [x] Child terminal mirroring is idempotent.
+- [x] Child listing filters still work after status changes.
 
 ## Progress
 
-- [ ] Inventory existing child-thread coverage.
-- [ ] Add missing lineage and ownership tests.
-- [ ] Add missing detached and cancellation tests.
-- [ ] Add mirroring idempotency tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Inventory existing child-thread coverage.
+- [x] Add missing lineage and ownership tests.
+- [x] Add missing detached and cancellation tests.
+- [x] Add mirroring idempotency tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+Shipped behavior:
 
-Include:
+- Confirmed existing coverage for root child lineage, parent scope/step identity, unrelated child join rejection, listing filters, basic cancellation, and failed/completed joins.
+- Added nested child session coverage proving descendants retain the original root thread.
+- Added detached spawn coverage proving detached children retain lineage and do not block parent completion.
+- Added terminal mirroring idempotency coverage proving repeated mirroring does not duplicate `child_thread.completed`.
+- Added cancellation edge coverage proving unrelated child cancellation is rejected, repeated cancellation is idempotent, and already completed children cannot be cancelled.
+- Updated declarative API docs with the verified child-thread integrity rules.
 
-- integrity behavior proven
-- tests added or confirmed existing
-- commands run
-- known child-thread limitations
+Changed modules:
+
+- `src/tests/replay-authoring.test.ts`: adds nested lineage, detached completion, terminal mirroring idempotency, and cancellation edge tests.
+- `docs/declarative-api.md`: documents nested lineage, detached behavior, mirroring idempotency, and cancellation rejection/idempotency.
+
+Commands run:
+
+- `npm test`
+- `npm run typecheck`
+
+Known limitations:
+
+- Cancellation still does not interrupt currently executing JavaScript or external tool processes.
+- Cancelled children still use failed thread semantics; there is no separate `cancelled` thread status.
+- Descendant cancellation is not cascaded.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`

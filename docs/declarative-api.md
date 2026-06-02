@@ -559,7 +559,7 @@ The storage and projection model can now represent parent-child thread relations
 }
 ```
 
-Root sessions use their own `threadId` as `rootThreadId`. Child-thread authoring helpers are still planned, but runtime callers can now start child sessions through `ThreadService.startChildSession`.
+Root sessions use their own `threadId` as `rootThreadId`. Child threads preserve the root thread across nested descendants. Runtime callers can start child sessions through `ThreadService.startChildSession`, and run-first agents can create them with `ctx.spawn`.
 
 ```ts
 await service.startChildSession({
@@ -586,7 +586,7 @@ const child = await ctx.spawn("research-docs", docsResearchAgent, {
 
 `ctx.spawn` is durable and requires a stable key. On first execution it starts the child session through `ThreadService.startChildSession`, appends `child_thread.spawned` to the parent, and suspends the parent runner pass. On replay it returns the existing `ThreadRef`. If the child agent, mode, or input hash changes for the same key, Weave throws `ReplayMismatchError`.
 
-`ctx.spawn` does not wait for the child. Use `ctx.join` for that.
+`ctx.spawn` does not wait for the child. Detached children keep lineage but do not block parent completion unless the parent explicitly joins them. Use `ctx.join` when the parent needs a child terminal result.
 
 ```ts
 const child = await ctx.spawn("research-docs", docsResearchAgent, {
@@ -605,7 +605,7 @@ return result.output ?? result.outputSummary;
 
 Run-first agents store raw non-`undefined` return values in `agent.output.completed`. If the agent declares an `output` schema, Weave validates the returned value before emitting `agent.response.produced` or `agent.output.completed`. Invalid output raises `AGENT_OUTPUT_INVALID`, which the runner records as `agent.failed`. The raw output is canonical replay data; `agent.response.produced` remains the timeline/display message. Child completion mirroring copies `agent.output.completed.payload.output` into `child_thread.completed.payload.output`, making it available as `AgentRun.output` from `ctx.join`.
 
-When no parent terminal event exists, `ctx.join` asks `ThreadService.mirrorChildTerminalEvent` to mirror a terminal child projection into the parent. If the child is still running, the parent runner pass suspends. Mirrored terminal events wake the parent runner with `child-completed` or `child-failed`.
+When no parent terminal event exists, `ctx.join` asks `ThreadService.mirrorChildTerminalEvent` to mirror a terminal child projection into the parent. If the child is still running, the parent runner pass suspends. Mirrored terminal events wake the parent runner with `child-completed` or `child-failed`. Mirroring is idempotent for a parent scope/step and child thread.
 
 Parents can cancel child work they no longer need with `ctx.cancelChild`:
 
@@ -619,7 +619,7 @@ await ctx.cancelChild("cancel-research-docs", child, {
 });
 ```
 
-`ctx.cancelChild` is durable and requires a stable key. Cancellation records terminal `agent.failed` on the child with `errorCode: "CHILD_CANCELLED"`, mirrors `child_thread.failed` into the parent for the cancellation key, and then replays as a no-op. A later `ctx.join` on the same child returns a failed result with `CHILD_CANCELLED`. Runtime callers can cancel through `ThreadService.cancelChildThread`.
+`ctx.cancelChild` is durable and requires a stable key. Cancellation records terminal `agent.failed` on the child with `errorCode: "CHILD_CANCELLED"`, mirrors `child_thread.failed` into the parent for the cancellation key, and then replays as a no-op. Repeated cancellation of the same child is idempotent. Cancelling an unrelated child or an already completed child is rejected. A later `ctx.join` on the same child returns a failed result with `CHILD_CANCELLED`. Runtime callers can cancel through `ThreadService.cancelChildThread`.
 
 Parents can list known child threads with `ctx.children()`:
 

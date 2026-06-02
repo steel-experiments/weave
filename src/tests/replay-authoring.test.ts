@@ -990,6 +990,40 @@ async function testStartChildSessionCreatesLineage(): Promise<void> {
   });
 }
 
+async function testNestedChildSessionPreservesRootLineage(): Promise<void> {
+  const rootThreadId = "nested-child-root";
+  const engine = new MemoryThreadEngine(initialHistory(rootThreadId));
+  const service = new ThreadService(engine);
+
+  const child = await service.startChildSession({
+    parentThreadId: rootThreadId,
+    agentName: "child-agent",
+    input: { query: "child" },
+    source: "test",
+    parentScopeKey: "agent:root-agent",
+    parentStepKey: "spawn-child",
+    idempotencyKey: "spawn-child",
+  });
+  const grandchild = await service.startChildSession({
+    parentThreadId: child.threadId,
+    agentName: "grandchild-agent",
+    input: { query: "grandchild" },
+    source: "test",
+    parentScopeKey: "agent:child-agent",
+    parentStepKey: "spawn-grandchild",
+    idempotencyKey: "spawn-grandchild",
+  });
+
+  assert.equal(child.rootThreadId, rootThreadId);
+  assert.equal(grandchild.rootThreadId, rootThreadId);
+  const grandchildProjection = await engine.getProjection(grandchild.threadId);
+  assert(grandchildProjection);
+  assert.equal(grandchildProjection.parentThreadId, child.threadId);
+  assert.equal(grandchildProjection.rootThreadId, rootThreadId);
+  assert.equal(grandchildProjection.parentScopeKey, "agent:child-agent");
+  assert.equal(grandchildProjection.parentStepKey, "spawn-grandchild");
+}
+
 async function testSpawnCreatesChildSession(): Promise<void> {
   const parentThreadId = "spawn-child-session";
   const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
@@ -1034,6 +1068,38 @@ async function testSpawnCreatesChildSession(): Promise<void> {
   assert.equal(replayPlan.events[0]?.type, "agent.response.produced");
   const spawnedAgain = (await engine.read(parentThreadId)).filter((event) => event.type === "child_thread.spawned");
   assert.equal(spawnedAgain.length, 1);
+}
+
+async function testDetachedSpawnDoesNotBlockParentCompletion(): Promise<void> {
+  const parentThreadId = "detached-spawn-parent-completion";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      const child = await ctx.spawn("spawn-detached", childAgent, input, { detached: true });
+      return { finalMessage: `detached ${child.agentName}` };
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
+  const spawned = (await engine.read(parentThreadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned",
+  );
+  assert(spawned);
+  assert.equal(spawned.payload.mode, "detached");
+  const childProjection = await engine.getProjection(spawned.payload.childThreadId);
+  assert(childProjection);
+  assert.equal(childProjection.status, "waiting");
+  assert.equal(childProjection.parentThreadId, parentThreadId);
+
+  const finalPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
+  assert(finalPlan);
+  assert.equal(finalPlan.resumeReason, "child-spawned");
+  assert.deepEqual(finalPlan.events[0]?.payload, { message: "detached child-agent" });
+  assert.equal((await engine.getProjection(spawned.payload.childThreadId))?.status, "waiting");
 }
 
 async function testSpawnInputMismatch(): Promise<void> {
@@ -1204,6 +1270,51 @@ async function testJoinMirrorsCompletedChild(): Promise<void> {
   });
 }
 
+async function testChildTerminalMirroringIdempotency(): Promise<void> {
+  const parentThreadId = "child-terminal-mirroring-idempotency";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const child = await service.startChildSession({
+    parentThreadId,
+    agentName: "child-agent",
+    input: { query: "child" },
+    source: "test",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-child",
+    idempotencyKey: "spawn-child",
+  });
+  await engine.append([
+    {
+      eventId: eventKey(child.threadId, "agent.response.produced", "done"),
+      threadId: child.threadId,
+      type: "agent.response.produced",
+      occurredAt: nowIso(),
+      actor: { type: "agent", id: "child-agent" },
+      payload: { message: "child done" },
+    },
+  ]);
+
+  const firstMirror = await service.mirrorChildTerminalEvent({
+    parentThreadId,
+    childThreadId: child.threadId,
+    childAgentName: "child-agent",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "wait-child",
+  });
+  const secondMirror = await service.mirrorChildTerminalEvent({
+    parentThreadId,
+    childThreadId: child.threadId,
+    childAgentName: "child-agent",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "wait-child",
+  });
+
+  assert.deepEqual(firstMirror, { mirrored: true, eventType: "child_thread.completed" });
+  assert.deepEqual(secondMirror, { mirrored: true, eventType: "child_thread.completed" });
+  const mirrored = (await engine.read(parentThreadId)).filter((event) => event.type === "child_thread.completed");
+  assert.equal(mirrored.length, 1);
+}
+
 async function testJoinValidatesStructuredChildOutput(): Promise<void> {
   const parentThreadId = "join-validates-structured-child-output";
   const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
@@ -1353,6 +1464,78 @@ async function testCancelChildRecordsTerminalFailure(): Promise<void> {
   assert.deepEqual(finalPlan.events[0]?.payload, { message: "cancelled" });
   const childFailures = (await engine.read(spawned.payload.childThreadId)).filter((event) => event.type === "agent.failed");
   assert.equal(childFailures.length, 1);
+}
+
+async function testCancelChildThreadIdempotencyAndTerminalRejection(): Promise<void> {
+  const parentThreadId = "cancel-child-idempotency";
+  const otherParentThreadId = "cancel-child-other-parent";
+  const engine = new MemoryThreadEngine([...initialHistory(parentThreadId), ...initialHistory(otherParentThreadId)]);
+  const service = new ThreadService(engine);
+  const child = await service.startChildSession({
+    parentThreadId,
+    agentName: "child-agent",
+    input: { query: "child" },
+    source: "test",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-child",
+    idempotencyKey: "spawn-child",
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.cancelChildThread({ parentThreadId: otherParentThreadId, childThreadId: child.threadId });
+    },
+    /Child thread not found for parent/,
+  );
+
+  const firstCancel = await service.cancelChildThread({
+    parentThreadId,
+    childThreadId: child.threadId,
+    childAgentName: "child-agent",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "cancel-child",
+    reason: "No longer needed.",
+  });
+  const secondCancel = await service.cancelChildThread({
+    parentThreadId,
+    childThreadId: child.threadId,
+    childAgentName: "child-agent",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "cancel-child",
+    reason: "No longer needed.",
+  });
+
+  assert.deepEqual(firstCancel, { childThreadId: child.threadId, cancelled: true, errorCode: "CHILD_CANCELLED" });
+  assert.deepEqual(secondCancel, { childThreadId: child.threadId, cancelled: true, errorCode: "CHILD_CANCELLED" });
+  assert.equal((await engine.read(child.threadId)).filter((event) => event.type === "agent.failed").length, 1);
+  assert.equal((await engine.read(parentThreadId)).filter((event) => event.type === "child_thread.failed").length, 1);
+
+  const completedChild = await service.startChildSession({
+    parentThreadId,
+    agentName: "completed-child-agent",
+    input: { query: "completed" },
+    source: "test",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-completed-child",
+    idempotencyKey: "spawn-completed-child",
+  });
+  await engine.append([
+    {
+      eventId: eventKey(completedChild.threadId, "agent.response.produced", "done"),
+      threadId: completedChild.threadId,
+      type: "agent.response.produced",
+      occurredAt: nowIso(),
+      actor: { type: "agent", id: "completed-child-agent" },
+      payload: { message: "done" },
+    },
+  ]);
+
+  await assert.rejects(
+    async () => {
+      await service.cancelChildThread({ parentThreadId, childThreadId: completedChild.threadId });
+    },
+    /Child thread is already completed/,
+  );
 }
 
 async function testJoinCancelledChild(): Promise<void> {
@@ -2230,14 +2413,18 @@ await testTypedEventFactory();
 await testChildThreadEventSchemas();
 await testThreadProjectionLineageSchema();
 await testStartChildSessionCreatesLineage();
+await testNestedChildSessionPreservesRootLineage();
 await testSpawnCreatesChildSession();
+await testDetachedSpawnDoesNotBlockParentCompletion();
 await testSpawnInputMismatch();
 await testSpawnPromptMismatch();
 await testSpawnMetadataMismatch();
 await testJoinMirrorsCompletedChild();
+await testChildTerminalMirroringIdempotency();
 await testJoinValidatesStructuredChildOutput();
 await testJoinRejectsInvalidStructuredChildOutput();
 await testCancelChildRecordsTerminalFailure();
+await testCancelChildThreadIdempotencyAndTerminalRejection();
 await testJoinCancelledChild();
 await testJoinFailedChild();
 await testJoinRejectsUnrelatedChild();
