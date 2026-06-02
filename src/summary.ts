@@ -29,7 +29,7 @@ export function buildThreadSummary(projection: ThreadProjection, events: ThreadE
       continue;
     }
 
-    if (event.type === "tool.failed") {
+    if (event.type === "tool.failed" || event.type === "agent.failed") {
       executionErrorCode = event.payload.errorCode;
       executionMessage = event.payload.message;
     }

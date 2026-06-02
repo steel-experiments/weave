@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import type {
   AppendOptions,
   AppendResult,
+  CreateThreadOptions,
   FollowCursor,
   InboxConsumer,
   InboxWorkItem,
@@ -22,12 +23,26 @@ import {
 export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
   constructor(private readonly pool: Pool) {}
 
-  async createThread(threadId: string): Promise<void> {
+  async createThread(threadId: string, options: CreateThreadOptions = {}): Promise<void> {
     await this.pool.query(
-      `insert into weave.thread(id, status, next_seq)
-       values ($1, 'idle', 0)
+      `insert into weave.thread(
+         id,
+         status,
+         next_seq,
+         parent_thread_id,
+         root_thread_id,
+         parent_scope_key,
+         parent_step_key
+       )
+       values ($1, 'idle', 0, $2, $3, $4, $5)
        on conflict (id) do nothing`,
-      [threadId],
+      [
+        threadId,
+        options.parentThreadId ?? null,
+        options.rootThreadId ?? threadId,
+        options.parentScopeKey ?? null,
+        options.parentStepKey ?? null,
+      ],
     );
   }
 
@@ -81,13 +96,15 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
              event_id,
              type,
              occurred_at,
-             correlation_id,
-             causation_id,
-             idempotency_key,
-             actor_type,
-             actor_id,
-             payload_json
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+              correlation_id,
+              causation_id,
+              idempotency_key,
+              scope_key,
+              step_key,
+              actor_type,
+              actor_id,
+              payload_json
+            ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
           [
             threadId,
             seq,
@@ -97,6 +114,8 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
             event.correlationId ?? null,
             event.causationId ?? null,
             event.idempotencyKey ?? null,
+            event.scopeKey ?? null,
+            event.stepKey ?? null,
             event.actor.type,
             event.actor.id,
             JSON.stringify(event.payload),
@@ -187,13 +206,21 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       active_lease_owner_id: string | null;
       updated_at: Date;
       pending_gate_ids: string[] | null;
+      parent_thread_id: string | null;
+      root_thread_id: string | null;
+      parent_scope_key: string | null;
+      parent_step_key: string | null;
     }>(
       `select
-         m.id,
-         m.status,
-         m.next_seq,
-         m.active_lease_owner_id,
-         m.updated_at,
+          m.id,
+          m.status,
+          m.next_seq,
+          m.active_lease_owner_id,
+          m.parent_thread_id,
+          m.root_thread_id,
+          m.parent_scope_key,
+          m.parent_step_key,
+          m.updated_at,
          coalesce(array_agg(g.gate_id::text) filter (where g.gate_id is not null), '{}') as pending_gate_ids
        from weave.thread m
        left join weave.thread_gate g
@@ -217,6 +244,10 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       tailSeq: row.next_seq,
       activeLeaseOwnerId: row.active_lease_owner_id,
       pendingGateIds: row.pending_gate_ids ?? [],
+      parentThreadId: row.parent_thread_id,
+      rootThreadId: row.root_thread_id,
+      parentScopeKey: row.parent_scope_key,
+      parentStepKey: row.parent_step_key,
       updatedAt: row.updated_at.toISOString(),
     });
   }
@@ -464,6 +495,9 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       case "tool.requested":
       case "tool.completed":
       case "gate.resolved":
+      case "child_thread.spawned":
+      case "child_thread.completed":
+      case "child_thread.failed":
         if (event.type === "gate.resolved") {
           await client.query(
             `update weave.thread_gate
@@ -483,6 +517,7 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
         );
         return "blocked";
       case "tool.failed":
+      case "agent.failed":
         return "failed";
       case "agent.response.produced":
         return "completed";
@@ -493,6 +528,8 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       case "credential.failed":
       case "agent.step.started":
       case "agent.step.completed":
+      case "checkpoint.completed":
+      case "agent.output.completed":
       case "agent.finding.produced":
       case "agent.remediation.proposed":
       case "agent.incident_report.produced":
@@ -529,6 +566,8 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       correlationId: row.correlation_id ?? undefined,
       causationId: row.causation_id ?? undefined,
       idempotencyKey: row.idempotency_key ?? undefined,
+      scopeKey: row.scope_key ?? undefined,
+      stepKey: row.step_key ?? undefined,
       actor: {
         type: row.actor_type,
         id: row.actor_id,
@@ -542,8 +581,10 @@ function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
   switch (event.type) {
     case "prompt.received":
     case "tool.completed":
-    case "tool.failed":
     case "gate.resolved":
+    case "child_thread.spawned":
+    case "child_thread.completed":
+    case "child_thread.failed":
       return ["runner"];
     case "tool.requested":
       return ["tool-worker"];
@@ -551,13 +592,18 @@ function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
     case "runner.resumed":
     case "agent.step.started":
     case "agent.step.completed":
+    case "agent.failed":
+    case "checkpoint.completed":
     case "tool.started":
     case "tool.progress":
     case "credential.requested":
     case "credential.resolved":
     case "credential.failed":
+    case "tool.failed":
     case "gate.created":
     case "agent.response.produced":
+    case "agent.output.completed":
+    case "agent.failed":
     case "agent.finding.produced":
     case "agent.remediation.proposed":
     case "agent.incident_report.produced":

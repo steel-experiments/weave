@@ -1,5 +1,6 @@
 import type { ThreadEngine, ThreadLeaseStore } from "./contracts.js";
 import { eventKey, nowIso, type ThreadEvent } from "./events.js";
+import { WeaveError } from "./errors.js";
 import { DeterministicMockAgent } from "./mock-agent.js";
 import {
   NoopObservabilitySink,
@@ -10,6 +11,7 @@ import {
   safeEmitSpan,
   type ObservabilitySink,
 } from "./observability.js";
+import type { MaybePromise } from "./types.js";
 
 export type RunnerStepResult = {
   acted: boolean;
@@ -18,12 +20,12 @@ export type RunnerStepResult = {
 };
 
 export type AgentPlan = {
-  resumeReason: "new-prompt" | "tool-completed" | "gate-resolved";
+  resumeReason: "new-prompt" | "tool-completed" | "gate-resolved" | "child-spawned" | "child-completed" | "child-failed";
   events: ThreadEvent[];
 };
 
 export type AgentPlanner = {
-  plan(threadId: string, events: ThreadEvent[]): AgentPlan | null;
+  plan(threadId: string, events: ThreadEvent[]): MaybePromise<AgentPlan | null>;
 };
 
 export class ThreadRunner {
@@ -52,11 +54,11 @@ export class ThreadRunner {
     }
 
     try {
-      const history = await this.engine.read(threadId);
+      const history = await readFullThread(this.engine, threadId);
       const planStartedAt = new Date();
       let plan: AgentPlan | null;
       try {
-        plan = this.agent.plan(threadId, history);
+        plan = await this.agent.plan(threadId, history);
         await safeEmitSpan(this.observability, {
           ...context,
           spanId: newSpanId(),
@@ -82,7 +84,21 @@ export class ThreadRunner {
           durationMs: elapsedMs(planStartedAt),
           attributes: { eventCount: history.length, error: errorMessage(error) },
         });
-        throw error;
+        const failed = agentFailedEvent(threadId, history, this.ownerId, error);
+        await this.engine.append([failed]);
+        await safeEmitLog(this.observability, {
+          ...context,
+          timestamp: nowIso(),
+          level: "error",
+          message: "Agent failed",
+          attributes: { errorCode: failed.payload.errorCode, error: failed.payload.message },
+        });
+        await this.emitRunnerSpan(context, startedAt, "ok", {
+          acted: true,
+          reason: "agent-failed",
+          appendedEvents: 1,
+        });
+        return { acted: true, appendedEvents: 1, reason: "agent-failed" };
       }
       if (!plan) {
         await safeEmitLog(this.observability, {
@@ -160,6 +176,56 @@ function newestEvent(events: ThreadEvent[]): ThreadEvent | undefined {
   return events.at(-1);
 }
 
+async function readFullThread(engine: ThreadEngine, threadId: string, pageSize = 1000): Promise<ThreadEvent[]> {
+  const events: ThreadEvent[] = [];
+  let fromSeq = 0;
+
+  while (true) {
+    const page = await engine.read(threadId, { fromSeq, limit: pageSize });
+    if (page.length === 0) {
+      return events;
+    }
+
+    events.push(...page);
+    const last = page.at(-1);
+    if (last?.seq === undefined) {
+      throw new Error("Thread event missing seq during replay read");
+    }
+
+    fromSeq = last.seq + 1;
+    if (page.length < pageSize) {
+      return events;
+    }
+  }
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function errorCode(error: unknown): string {
+  return error instanceof WeaveError ? error.code : "AGENT_FAILED";
+}
+
+function agentFailedEvent(
+  threadId: string,
+  history: ThreadEvent[],
+  ownerId: string,
+  error: unknown,
+): Extract<ThreadEvent, { type: "agent.failed" }> {
+  const cause = newestEvent(history);
+  const code = errorCode(error);
+  return {
+    eventId: eventKey(threadId, "agent.failed", `${code}:${cause?.eventId ?? history.length}`),
+    threadId,
+    type: "agent.failed",
+    occurredAt: nowIso(),
+    correlationId: cause?.correlationId,
+    causationId: cause?.eventId,
+    actor: { type: "system", id: ownerId },
+    payload: {
+      errorCode: code,
+      message: errorMessage(error),
+    },
+  };
 }

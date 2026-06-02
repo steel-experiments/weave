@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { ThreadArtifactSchema, RetryableToolError, defineTool } from "weave";
+import { ThreadArtifactSchema, RetryableToolError, tool } from "weave";
 import { z } from "zod";
 
 const SteelDocsAuditFindingSchema = z.object({
@@ -38,7 +38,7 @@ export const SteelDocsModelReviewDataSchema = z.object({
 
 export const SteelDocsModelReviewInputSchema = SteelDocsAuditDataSchema;
 
-export const steelAuditTool = defineTool({
+export const steelAuditTool = tool({
   name: "steel.auditDocsSync",
   description: "Fetch Steel docs sources and audit sync drift with bounded network reads.",
   input: z.object({
@@ -50,11 +50,10 @@ export const steelAuditTool = defineTool({
     llmsTxtUrl: z.string().url(),
     openApiSpecUrl: z.string().url().optional(),
   }),
-  output: z.object({
-    summary: z.string().min(1),
-    requiresManualApproval: z.literal(false),
-    data: SteelDocsAuditDataSchema,
-  }),
+  output: SteelDocsAuditDataSchema,
+  summarize(output) {
+    return summarizeAudit(output);
+  },
   async run({ artifactStore, threadId, progress, input, toolCallId }) {
     await progress({ percent: 15, message: "Fetching docs landing page." });
     const docs = await fetchBoundedText(input.docsBaseUrl);
@@ -113,52 +112,38 @@ export const steelAuditTool = defineTool({
         };
       }),
     );
-    const outcome = findings.some((finding) => finding.severity === "critical")
+    const outcome: z.output<typeof SteelDocsAuditDataSchema>["outcome"] = findings.some((finding) => finding.severity === "critical")
       ? "failed"
       : findings.some((finding) => finding.severity === "warning")
         ? "warning"
         : "passed";
-    const summary =
-      findings.length === 0
-        ? "Steel docs sync audit passed with no drift warnings."
-        : `Steel docs sync audit found ${findings.length} ${findings.length === 1 ? "warning" : "warnings"} across llms.txt and API reference coverage.`;
-
-    return {
-      summary,
-      requiresManualApproval: false,
-      data: {
-        repository: input.repository,
-        mode: input.mode,
-        outcome,
-        checkedUrls: [input.docsBaseUrl, input.llmsTxtUrl, openApiUrl],
-        artifacts,
-        baselines,
-        findings,
-      },
-    };
+    return SteelDocsAuditDataSchema.parse({
+      repository: input.repository,
+      mode: input.mode,
+      outcome,
+      checkedUrls: [input.docsBaseUrl, input.llmsTxtUrl, openApiUrl],
+      artifacts,
+      baselines,
+      findings,
+    });
   },
 });
 
-const steelModelReviewTool = defineTool({
+export const steelModelReviewTool = tool({
   name: "steel.modelReview",
   description: "Run an async model-backed review over compact Steel docs audit summaries.",
   input: SteelDocsModelReviewInputSchema,
-  output: z.object({
-    summary: z.string().min(1),
-    requiresManualApproval: z.literal(false),
-    data: SteelDocsModelReviewDataSchema,
-  }),
+  output: SteelDocsModelReviewDataSchema,
+  summarize(output) {
+    return output.finalMessage;
+  },
   async run({ input, progress }) {
     await progress({ percent: 50, message: "Submitting compact docs audit summary to model review." });
     const review = await new DeterministicSteelDocsReviewModel().review(input);
     const data = SteelDocsModelReviewDataSchema.parse(review);
     await progress({ percent: 100, message: "Validated structured model review output." });
 
-    return {
-      summary: data.finalMessage,
-      requiresManualApproval: false,
-      data,
-    };
+    return data;
   },
 });
 
@@ -270,6 +255,12 @@ function readOpenApiPaths(value: unknown): string[] {
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function summarizeAudit(output: z.output<typeof SteelDocsAuditDataSchema>): string {
+  return output.findings.length === 0
+    ? "Steel docs sync audit passed with no drift warnings."
+    : `Steel docs sync audit found ${output.findings.length} ${output.findings.length === 1 ? "warning" : "warnings"} across llms.txt and API reference coverage.`;
 }
 
 type FetchedSource = {

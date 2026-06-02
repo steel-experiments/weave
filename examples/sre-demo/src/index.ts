@@ -1,23 +1,27 @@
 import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import {
-  CompositeObservabilitySink,
-  ContractToolWorker,
-  ThreadRunner,
-  createWeaveRuntime,
-  ThreadService,
-  PostgresObservabilitySink,
-  PostgresThreadEngine,
-  createApiServer,
-  createPool,
   getAgent,
-  migrate,
-  otlpFromEnv,
   toMermaidTimeline,
   toTextTimeline,
   type ThreadEvent,
   type ThreadProjection,
 } from "weave";
+import {
+  CompositeObservabilitySink,
+  ContractToolWorker,
+  ThreadRunner,
+  createWeaveRuntime,
+  ThreadService,
+  otlpFromEnv,
+} from "weave/runtime";
+import {
+  PostgresObservabilitySink,
+  PostgresThreadEngine,
+  createPool,
+  migrate,
+} from "weave/postgres";
+import { createApiServer } from "weave/server";
 import { sreDemoApp } from "./app.js";
 
 const pool = createPool();
@@ -81,14 +85,9 @@ try {
     ]);
     assert(beforeApprovalEvents.some((event) => event.type === "agent.finding.produced"));
     assert(beforeApprovalEvents.some((event) => event.type === "agent.remediation.proposed"));
-    const rebuildNode = activeAgent.tools.find((tool) => tool.name === "infra.rebuildNode");
-    assert(rebuildNode?.gate?.({
-      input: {
-        environment: "production",
-        nodeId: "nats-prod-1",
-        reason: "demo",
-      },
-    }));
+    const approvalGate = beforeApprovalEvents.find((event) => event.type === "gate.created");
+    assert.equal(approvalGate?.payload.reason, "risky-remediation");
+    assert.equal(approvalGate?.payload.proposedAction, "Approve rebuilding nats-prod-1 in production.");
 
     const gateId = blockedProjection.pendingGateIds[0];
     assert(gateId);
@@ -114,6 +113,7 @@ try {
       "deploy.inspectRecentChanges",
       "infra.rebuildNode",
     ]);
+    assertDomainToolOutputs(events);
 
     const report = events.find((event) => event.type === "agent.incident_report.produced");
     const finalResponse = events.find((event) => event.type === "agent.response.produced");
@@ -139,9 +139,8 @@ try {
       console.log(`app=${runtimeApp.name}`);
       console.log(`agent=${activeAgent.name}`);
       console.log("registeredTools:");
-      for (const tool of activeAgent.tools) {
-        const gate = tool.gate ? " gate=manual-approval" : "";
-        console.log(`- ${tool.name}${gate}`);
+      for (const tool of activeAgent.tools ?? []) {
+        console.log(`- ${tool.name}`);
       }
       console.log("credentialEvents:");
       for (const event of events) {
@@ -189,6 +188,20 @@ function assertToolSequence(events: ThreadEvent[], expected: string[]): void {
   assert.deepEqual(actual, expected);
 }
 
+function assertDomainToolOutputs(events: ThreadEvent[]): void {
+  const completed = events.filter((event) => event.type === "tool.completed");
+  assert(completed.length > 0);
+  for (const event of completed) {
+    assert.equal(hasObjectKey(event.payload.output, "summary"), false);
+    assert.equal(hasObjectKey(event.payload.output, "requiresManualApproval"), false);
+    assert.equal(typeof event.payload.summary, "string");
+  }
+}
+
+function hasObjectKey(value: unknown, key: string): boolean {
+  return Boolean(value && typeof value === "object" && key in value);
+}
+
 async function logConversation(events: ThreadEvent[], finalProjection: ThreadProjection): Promise<void> {
   const toolNamesByCallId = new Map<string, string>();
 
@@ -220,7 +233,7 @@ async function logConversation(events: ThreadEvent[], finalProjection: ThreadPro
 
       case "tool.completed": {
         const toolName = toolNamesByCallId.get(event.payload.toolCallId) ?? "tool";
-        await say("system", `${friendlyToolName(toolName)} complete - ${event.payload.output.summary}`);
+        await say("system", `${friendlyToolName(toolName)} complete - ${toolSummary(event.payload)}`);
         break;
       }
 
@@ -304,6 +317,22 @@ function friendlyToolAction(toolName: string): string {
 
 function friendlyToolName(toolName: string): string {
   return toolName;
+}
+
+function toolSummary(payload: Extract<ThreadEvent, { type: "tool.completed" }>["payload"]): string {
+  if (payload.summary) {
+    return payload.summary;
+  }
+
+  const output = payload.output;
+  if (output && typeof output === "object") {
+    const summary = Reflect.get(output, "summary");
+    if (typeof summary === "string") {
+      return summary;
+    }
+  }
+
+  return "completed";
 }
 
 function listen(server: ReturnType<typeof createApiServer>): Promise<void> {

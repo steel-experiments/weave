@@ -102,6 +102,7 @@ export class MockAsyncToolWorker {
           summary: "mock async tool completed successfully",
           requiresManualApproval: true,
         },
+        summary: "mock async tool completed successfully",
       },
     };
   }

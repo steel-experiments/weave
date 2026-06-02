@@ -144,6 +144,8 @@ type ThreadEvent = {
   causationId?: string
   correlationId?: string
   idempotencyKey?: string
+  scopeKey?: string
+  stepKey?: string
   actor: {
     type: "user" | "agent" | "worker" | "human" | "system"
     id: string
@@ -158,6 +160,7 @@ Notes:
 - `type` should be intention-revealing
 - `correlationId` groups a logical request or session
 - `causationId` links an event to the event that caused it
+- `scopeKey` and `stepKey` identify durable replay effects, such as `ctx.tool("stable-key", ...)`
 
 ## Thread State View
 
@@ -212,6 +215,8 @@ Workers later emit:
 - `tool.progress`
 - `tool.completed`
 - `tool.failed`
+
+`tool.completed.payload.output` is the canonical raw tool result. `tool.completed.payload.summary` is optional display metadata. Legacy approval flags may appear inside old tool output envelopes, but new approval flows should use gates or future first-class approval events.
 
 ### Create a gate
 

@@ -4,7 +4,7 @@
 
 - Vertical: docs-sync
 - Status: Shipped
-- Last updated: 2026-05-29
+- Last updated: 2026-06-02
 - Source rollup: `../../steel-docs-sync-missing-work.md`
 
 ## Goal
@@ -26,7 +26,7 @@ Important requirements:
 - Zod payload validation
 - repository allowlist
 - URL host allowlist
-- thread creation through `ThreadService`
+- thread creation through `ThreadService.startSession`
 - existing inbox wake routing
 
 ## Test Plan
@@ -44,13 +44,36 @@ Important requirements:
 - [x] Invalid repository or URL hosts are rejected.
 - [x] Valid webhook requests create a thread and return status/events URLs.
 - [x] Webhook-created threads wake the runner through existing inbox routing.
-- [ ] Backfill exact code paths and test evidence from the implementation.
+- [x] Backfill exact code paths and test evidence from the implementation.
 
 ## Completion Notes
 
-The original rollup marks this slice complete. This document still needs code-path and test-evidence backfill.
+Shipped and aligned with the current Weave architecture.
+
+Implemented modules:
+
+- `examples/steel-docs-sync/src/server.ts`: defines `createSteelDocsSyncApiServer`, HMAC verification, timestamp freshness checks, Zod payload validation, repository allowlist, URL host allowlist, and custom route registration through `createApiServer(..., { beforeRoutes })`.
+- `examples/steel-docs-sync/src/webhook-demo.ts`: exercises signed webhook ingress against a real HTTP server, Postgres engine, `ThreadService`, runner daemon, and tool daemon.
+
+Architecture alignment:
+
+- Ingress is app-level server wiring, not a docs-sync-specific core primitive.
+- Valid ingress creates durable sessions through `ThreadService.startSession` and wakes the runner via normal `prompt.received` inbox routing.
+- Status, event, summary, stream, artifact, and diagnostics URLs are served by reusable Weave API routes.
+
+Test evidence:
+
+- Invalid signatures return `403` without creating a thread.
+- Invalid URL hosts return `400`.
+- Valid signed payloads return `202` with `threadId`, `statusUrl`, and `eventsUrl`.
+- Webhook-created threads complete through the real runtime in `webhook-demo.ts`.
+
+Commands run during this review:
+
+- `npm test`
+- `npm run typecheck`
 
 ## Docs To Update On Completion
 
-- [ ] `../../steel-docs-sync-example.md` if payload shape changed
-- [ ] this slice with exact implementation evidence
+- [x] `../../steel-docs-sync-example.md` if payload shape changed
+- [x] this slice with exact implementation evidence

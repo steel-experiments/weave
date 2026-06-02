@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: docs-sync
-- Status: In Progress
-- Last updated: 2026-05-29
+- Status: Shipped
+- Last updated: 2026-06-02
 - Source rollup: `../../steel-docs-sync-missing-work.md`
 
 ## Goal
@@ -25,11 +25,18 @@ Implemented according to the rollup:
 - fetch timeouts
 - content-size limits
 
-Still open:
+Now implemented:
 
-- policy tuning
-- broader operator surfaces
-- completion notes and test evidence backfill
+- bounded tool retries for `RetryableToolError`
+- dead-letter inbox state for terminal tool failures
+- inbox diagnostics endpoint
+- fetch timeouts and content-size limits in the Steel audit tool
+- SSE summary/completion stream for webhook-triggered runs
+
+Still open as follow-up work:
+
+- configurable retry policy
+- broader operator UI beyond JSON diagnostics and SSE
 
 ## Architecture Impact
 
@@ -56,16 +63,46 @@ These should not collapse into one ambiguous failed state.
 - [x] Transient network failures are visible and bounded.
 - [x] Permanent audit findings do not look like worker infrastructure failures.
 - [x] Operators can inspect why a webhook-triggered thread stopped.
-- [ ] Retry and dead-letter policy is tuned and documented.
-- [ ] Backfill exact code paths and test evidence from the implementation.
+- [x] Retry and dead-letter policy is tuned and documented.
+- [x] Backfill exact code paths and test evidence from the implementation.
 
 ## Completion Notes
 
-Partially shipped. This slice remains open for policy tuning, operator surfaces, and evidence backfill.
+Shipped and aligned with current worker/inbox architecture.
+
+Implemented modules:
+
+- `src/tool-worker.ts`: retries `RetryableToolError` up to three attempts, emits retry progress, appends `tool.failed` for terminal execution failures, and returns error metadata for dead-lettering.
+- `src/postgres-engine.ts`: supports `dead-letter` inbox state and `listInbox` diagnostics.
+- `src/api-server.ts`: exposes `GET /threads/:id/diagnostics/inbox` and SSE stream summaries.
+- `examples/steel-docs-sync/src/tools.ts`: uses bounded fetch timeouts, converts transient network failures to `RetryableToolError`, and enforces response size limits.
+- `examples/steel-docs-sync/src/webhook-demo.ts`: covers retry success, terminal failure, dead-letter diagnostics, and no lingering claimed inbox rows.
+
+Architecture alignment:
+
+- Worker reliability is generic Weave runtime behavior, not docs-sync-only retry logic.
+- Audit findings remain successful product results; infrastructure/tool execution failures become `tool.failed` and failed thread summaries.
+- Diagnostics are read from inbox state, not inferred from arbitrary event scans.
+
+Test evidence:
+
+- Flaky `llms.txt` fixture returns transient `503` twice and then succeeds; `webhook-demo.ts` asserts retry progress events and completed thread status.
+- Missing `llms.txt` fixture produces failed summary with `execution_failed` and a dead-letter inbox item.
+- `webhook-demo.ts` asserts no inbox item remains `claimed` after terminal failure.
+
+Commands run during this review:
+
+- `npm test`
+- `npm run typecheck`
+
+Known gaps:
+
+- Retry count is fixed in code rather than externally configurable.
+- Operator surfaces are currently HTTP JSON/SSE endpoints, not a dashboard.
 
 ## Docs To Update On Completion
 
-- [ ] `../../runnable-inbox.md`
-- [ ] `../../architecture.md` if worker reliability semantics changed
-- [ ] `../../steel-docs-sync-example.md` if operational behavior changed
-- [ ] this slice with exact implementation evidence
+- [x] `../../runnable-inbox.md`
+- [x] `../../architecture.md` if worker reliability semantics changed
+- [x] `../../steel-docs-sync-example.md` if operational behavior changed
+- [x] this slice with exact implementation evidence

@@ -21,11 +21,14 @@ export const EventEnvelopeBaseSchema = z.object({
   correlationId: z.string().uuid().optional(),
   causationId: z.string().uuid().optional(),
   idempotencyKey: z.string().min(1).optional(),
+  scopeKey: z.string().min(1).optional(),
+  stepKey: z.string().min(1).optional(),
   actor: ActorSchema,
 });
 
 export const SessionStartedPayloadSchema = z.object({
   source: SessionSourceSchema,
+  agentName: z.string().min(1).optional(),
   metadata: SessionMetadataSchema.optional(),
 });
 
@@ -50,6 +53,11 @@ export const AgentStepCompletedPayloadSchema = z.object({
   ]),
 });
 
+export const AgentFailedPayloadSchema = z.object({
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
+});
+
 export const EnvironmentSchema = z.enum(["staging", "production"]);
 
 export const ToolNameSchema = z.string().min(1);
@@ -58,6 +66,8 @@ export const ToolRequestedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),
   toolName: ToolNameSchema,
   args: z.unknown(),
+  scopeKey: z.string().min(1).optional(),
+  stepKey: z.string().min(1).optional(),
 });
 
 export const ToolStartedPayloadSchema = z.object({
@@ -71,14 +81,25 @@ export const ToolProgressPayloadSchema = z.object({
   message: z.string().min(1),
 });
 
-export const ToolCompletedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
-  output: z.object({
-    summary: z.string().min(1),
-    requiresManualApproval: z.boolean(),
-    data: z.unknown().optional(),
+export const ToolCompletedPayloadSchema = z.union([
+  z.object({
+    toolCallId: z.string().uuid(),
+    output: z.unknown(),
+    summary: z.string().min(1).optional(),
   }),
-});
+  z
+    .object({
+      toolCallId: z.string().uuid(),
+      summary: z.string().min(1),
+      requiresManualApproval: z.boolean(),
+      data: z.unknown().optional(),
+    })
+    .transform(({ toolCallId, summary, requiresManualApproval, data }) => ({
+      toolCallId,
+      output: data === undefined ? { summary, requiresManualApproval } : { summary, requiresManualApproval, data },
+      summary,
+    })),
+]);
 
 export const ToolFailedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),
@@ -130,11 +151,24 @@ export const GateResolvedPayloadSchema = z.object({
 });
 
 export const RunnerResumedPayloadSchema = z.object({
-  reason: z.enum(["new-prompt", "tool-completed", "gate-resolved", "manual-retry"]),
+  reason: z.enum([
+    "new-prompt",
+    "tool-completed",
+    "gate-resolved",
+    "child-spawned",
+    "child-completed",
+    "child-failed",
+    "manual-retry",
+  ]),
 });
 
 export const AgentResponseProducedPayloadSchema = z.object({
   message: z.string().min(1),
+});
+
+export const AgentOutputCompletedPayloadSchema = z.object({
+  output: z.unknown(),
+  summary: z.string().min(1).optional(),
 });
 
 export const AgentFindingProducedPayloadSchema = z.object({
@@ -165,6 +199,37 @@ export const AgentIncidentReportProducedPayloadSchema = z.object({
   evidence: z.array(z.string().min(1)),
 });
 
+export const CheckpointCompletedPayloadSchema = z.object({
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  value: z.unknown(),
+});
+
+export const ChildThreadSpawnedPayloadSchema = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  mode: z.enum(["attached", "detached"]),
+  inputHash: z.string().min(1).optional(),
+  inputSummary: z.string().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const ChildThreadCompletedPayloadSchema = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1).optional(),
+  output: z.unknown().optional(),
+  outputSummary: z.string().min(1).optional(),
+});
+
+export const ChildThreadFailedPayloadSchema = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1).optional(),
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
+});
+
 const SessionStartedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("session.started"),
   payload: SessionStartedPayloadSchema,
@@ -183,6 +248,11 @@ const AgentStepStartedEventSchema = EventEnvelopeBaseSchema.extend({
 const AgentStepCompletedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("agent.step.completed"),
   payload: AgentStepCompletedPayloadSchema,
+});
+
+const AgentFailedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("agent.failed"),
+  payload: AgentFailedPayloadSchema,
 });
 
 const ToolRequestedEventSchema = EventEnvelopeBaseSchema.extend({
@@ -245,6 +315,11 @@ const AgentResponseProducedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: AgentResponseProducedPayloadSchema,
 });
 
+const AgentOutputCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("agent.output.completed"),
+  payload: AgentOutputCompletedPayloadSchema,
+});
+
 const AgentFindingProducedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("agent.finding.produced"),
   payload: AgentFindingProducedPayloadSchema,
@@ -260,11 +335,32 @@ const AgentIncidentReportProducedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: AgentIncidentReportProducedPayloadSchema,
 });
 
+const CheckpointCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("checkpoint.completed"),
+  payload: CheckpointCompletedPayloadSchema,
+});
+
+const ChildThreadSpawnedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("child_thread.spawned"),
+  payload: ChildThreadSpawnedPayloadSchema,
+});
+
+const ChildThreadCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("child_thread.completed"),
+  payload: ChildThreadCompletedPayloadSchema,
+});
+
+const ChildThreadFailedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("child_thread.failed"),
+  payload: ChildThreadFailedPayloadSchema,
+});
+
 export const ThreadEventSchema = z.discriminatedUnion("type", [
   SessionStartedEventSchema,
   PromptReceivedEventSchema,
   AgentStepStartedEventSchema,
   AgentStepCompletedEventSchema,
+  AgentFailedEventSchema,
   ToolRequestedEventSchema,
   ToolStartedEventSchema,
   ToolProgressEventSchema,
@@ -277,9 +373,14 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   GateResolvedEventSchema,
   RunnerResumedEventSchema,
   AgentResponseProducedEventSchema,
+  AgentOutputCompletedEventSchema,
   AgentFindingProducedEventSchema,
   AgentRemediationProposedEventSchema,
   AgentIncidentReportProducedEventSchema,
+  CheckpointCompletedEventSchema,
+  ChildThreadSpawnedEventSchema,
+  ChildThreadCompletedEventSchema,
+  ChildThreadFailedEventSchema,
 ]);
 
 export type ThreadEvent = z.infer<typeof ThreadEventSchema>;
@@ -301,6 +402,10 @@ export const ThreadProjectionSchema = z.object({
   tailSeq: z.number().int().nonnegative(),
   activeLeaseOwnerId: z.string().min(1).nullable(),
   pendingGateIds: z.array(z.string().uuid()),
+  parentThreadId: z.string().min(1).nullable().default(null),
+  rootThreadId: z.string().min(1).nullable().default(null),
+  parentScopeKey: z.string().min(1).nullable().default(null),
+  parentStepKey: z.string().min(1).nullable().default(null),
   updatedAt: z.string().datetime(),
 });
 export type ThreadProjection = z.infer<typeof ThreadProjectionSchema>;
@@ -351,4 +456,24 @@ export function newEventId(): string {
 
 export function eventKey(threadId: string, type: string, semanticKey: string): string {
   return deterministicUuid("event", threadId, type, semanticKey);
+}
+
+export function stableJsonHash(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(sortForStableJson(value))).digest("hex");
+}
+
+function sortForStableJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortForStableJson);
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, sortForStableJson(nested)]),
+  );
 }

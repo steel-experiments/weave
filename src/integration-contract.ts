@@ -35,6 +35,8 @@ export function defineIntegration<
   return contract;
 }
 
+export const integration = defineIntegration;
+
 export function collectIntegrationTools(
   integrations: readonly AnyIntegrationContract[] | undefined,
 ): AnyToolContract[] {

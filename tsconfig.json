@@ -8,6 +8,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,
+    "rootDir": ".",
     "outDir": "dist"
   },
   "include": ["src/**/*.ts"]

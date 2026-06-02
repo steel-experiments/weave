@@ -44,26 +44,29 @@ export type ToolRunContext<Input> = {
 export type ToolContract<
   Name extends string = string,
   Input = unknown,
-  Output extends ToolCompletionOutput = ToolCompletionOutput,
+  Output = unknown,
 > = {
   name: Name;
   description: string;
   input: z.ZodType<Input>;
   output: z.ZodType<Output>;
+  summarize?: (output: Output) => string;
   gate?: (context: { input: Input }) => ManualToolGate | undefined;
   credentials?: (context: { input: Input }) => CredentialRequest | readonly CredentialRequest[] | undefined;
   run(context: ToolRunContext<Input>): Promise<Output> | Output;
 };
 
-export type AnyToolContract = ToolContract<string, any, ToolCompletionOutput>;
+export type AnyToolContract = ToolContract<string, any, any>;
 
 export function defineTool<
   const Name extends string,
   Input,
-  Output extends ToolCompletionOutput,
+  Output,
 >(contract: ToolContract<Name, Input, Output>): ToolContract<Name, Input, Output> {
   return contract;
 }
+
+export const tool = defineTool;
 
 export class ToolRegistry {
   private readonly tools: Map<string, AnyToolContract>;
@@ -89,4 +92,13 @@ export class ToolRegistry {
 
 export function createToolRegistry(tools: readonly AnyToolContract[]): ToolRegistry {
   return new ToolRegistry(tools);
+}
+
+export function isLegacyToolCompletionOutput(output: unknown): output is ToolCompletionOutput {
+  return Boolean(
+    output &&
+      typeof output === "object" &&
+      typeof Reflect.get(output, "summary") === "string" &&
+      typeof Reflect.get(output, "requiresManualApproval") === "boolean",
+  );
 }

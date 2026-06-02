@@ -8,9 +8,36 @@ create table if not exists weave.thread (
   status text not null check (status in ('idle', 'running', 'waiting', 'blocked', 'completed', 'failed')),
   next_seq integer not null default 0,
   active_lease_owner_id text,
+  parent_thread_id text,
+  root_thread_id text,
+  parent_scope_key text,
+  parent_step_key text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table weave.thread
+  add column if not exists parent_thread_id text;
+
+alter table weave.thread
+  add column if not exists root_thread_id text;
+
+alter table weave.thread
+  add column if not exists parent_scope_key text;
+
+alter table weave.thread
+  add column if not exists parent_step_key text;
+
+update weave.thread
+  set root_thread_id = id
+  where root_thread_id is null;
+
+create index if not exists thread_parent_thread_idx
+  on weave.thread(parent_thread_id)
+  where parent_thread_id is not null;
+
+create index if not exists thread_root_thread_idx
+  on weave.thread(root_thread_id);
 
 create table if not exists weave.thread_event (
   thread_id text not null references weave.thread(id) on delete cascade,
@@ -21,6 +48,8 @@ create table if not exists weave.thread_event (
   correlation_id uuid,
   causation_id uuid,
   idempotency_key text,
+  scope_key text,
+  step_key text,
   actor_type text not null,
   actor_id text not null,
   payload_json jsonb not null,
@@ -28,12 +57,22 @@ create table if not exists weave.thread_event (
   unique (event_id)
 );
 
+alter table weave.thread_event
+  add column if not exists scope_key text;
+
+alter table weave.thread_event
+  add column if not exists step_key text;
+
 create unique index if not exists thread_event_idempotency_key_unique
   on weave.thread_event(thread_id, idempotency_key)
   where idempotency_key is not null;
 
 create index if not exists thread_event_type_idx
   on weave.thread_event(thread_id, type, seq);
+
+create index if not exists thread_event_step_idx
+  on weave.thread_event(thread_id, scope_key, step_key, seq)
+  where scope_key is not null and step_key is not null;
 
 create table if not exists weave.thread_lease (
   thread_id text primary key references weave.thread(id) on delete cascade,

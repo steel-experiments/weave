@@ -1,0 +1,110 @@
+# V1 Authoring API Stabilization Slice
+
+## Status
+
+- Vertical: `weave-core`
+- Status: `Shipped`
+- Last updated: `2026-06-02`
+- Owner: `weave-core`
+
+## Goal
+
+Stabilize the run-first authoring and runtime boundary so `api-refactor` can merge safely and become the new baseline.
+
+## Non-goals
+
+- Do not add the full capabilities model.
+- Do not add a full policy engine beyond existing approval policy helpers.
+- Do not rewrite runtime internals around Effect.
+- Do not add workflow, cluster, or external integration features.
+- Do not add more demos before the existing examples are hardened.
+
+## User Outcome
+
+As a Weave app author, I can adopt the new V1 authoring model with clear public imports, predictable replay semantics, documented limitations, and confidence that existing data and examples still work.
+
+## Architecture Impact
+
+- No new public primitive is expected from this umbrella slice.
+- Locks down the intended package boundary across `weave`, `weave/runtime`, `weave/postgres`, `weave/server`, and `weave/testing`.
+- Adds compatibility and invariant tests around the event log, replay runtime, child threads, and examples.
+- Produces upgrade documentation for planner-first and legacy tool-output users.
+
+## Implementation Plan
+
+1. Ship the public API export audit slice.
+2. Ship the migration and legacy compatibility slice.
+3. Ship the replay invariant hardening slice.
+4. Ship the child-thread integrity audit slice.
+5. Ship the documentation conformance slice.
+6. Ship the example quality audit slice.
+7. Ship the upgrade guide slice.
+8. Run the merge gate commands and capture completion notes.
+
+## Test Plan
+
+- Run `npm test` for replay and runtime invariants.
+- Run `npm run typecheck` across the root package and all workspaces.
+- Add public API smoke coverage for root and subpath exports.
+- Add compatibility coverage for legacy and new event shapes.
+- Add or verify child-thread integrity tests.
+- Run example-specific smoke commands where they do not require external credentials.
+
+## Acceptance Criteria
+
+- [x] Public package exports are tested and documented.
+- [x] Legacy event and tool-output compatibility is tested.
+- [x] Replay invariants are captured as regression tests.
+- [x] Child-thread lineage, ownership, cancellation, and terminal mirroring are covered.
+- [x] Docs accurately describe implemented V1 behavior and limitations.
+- [x] Examples have clear roles and remain trustworthy.
+- [x] Upgrade guidance exists for authors moving from planner-first and enveloped tool outputs.
+- [x] `npm test` and `npm run typecheck` pass after all stabilization changes.
+
+## Progress
+
+- [x] `30-public-api-export-audit.md`
+- [x] `31-migration-legacy-compatibility.md`
+- [x] `32-replay-invariant-hardening.md`
+- [x] `33-child-thread-integrity-audit.md`
+- [x] `34-documentation-conformance-pass.md`
+- [x] `35-example-quality-audit.md`
+- [x] `36-api-refactor-upgrade-guide.md`
+
+## Completion Notes
+
+Shipped behavior:
+
+- Public API exports are covered by `src/tests/public-api-exports.test.ts` through package self-reference imports.
+- Legacy and new event compatibility is covered by replay tests and a real Postgres migration compatibility harness.
+- Replay invariants are covered for terminal idempotency, durable effect mismatch behavior, long histories, and parallel durable effect rejection.
+- Child-thread lineage, detached behavior, ownership rejection, cancellation, and terminal mirroring idempotency are covered.
+- Docs, examples, and the upgrade guide now describe the implemented V1 authoring/runtime boundary.
+
+Public API decisions:
+
+- Root `weave` remains the authoring boundary and keeps compatibility exports.
+- Runtime, Postgres, server, and testing subpaths are tested and documented.
+- `weave/testing` remains limited to deterministic mock utilities for now.
+
+Commands run:
+
+- `npm test`
+- `npm run typecheck`
+
+Known remaining limitations:
+
+- Arbitrary parallel durable effects are still unsupported.
+- `ctx.emit` and `ctx.uuid` remain provisional replay helpers.
+- Capabilities and stronger policy enforcement remain future work.
+- Effect-backed internals are not part of the public V1 authoring requirement.
+- Migration coverage uses a representative main-era schema fixture, not every historical schema variant.
+
+## Docs To Update On Completion
+
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/architecture.md`
+- [x] `docs/migration/api-refactor.md` or `docs/upgrade-guide.md`

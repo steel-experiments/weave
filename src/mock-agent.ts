@@ -4,6 +4,7 @@ import {
   nowIso,
   type ThreadEvent,
 } from "./events.js";
+import { isLegacyToolCompletionOutput } from "./tool-contract.js";
 
 type PromptReceivedEvent = Extract<ThreadEvent, { type: "prompt.received" }>;
 type ToolRequestedEvent = Extract<ThreadEvent, { type: "tool.requested" }>;
@@ -33,7 +34,7 @@ export class DeterministicMockAgent {
         event.type === "tool.completed" && event.payload.toolCallId === toolRequested.payload.toolCallId,
     );
 
-    if (toolCompleted?.payload.output.requiresManualApproval) {
+    if (isLegacyToolCompletionOutput(toolCompleted?.payload.output) && toolCompleted.payload.output.requiresManualApproval) {
       const gateCreated = events.find(
         (event): event is GateCreatedEvent =>
           event.type === "gate.created" && event.payload.relatedToolCallId === toolRequested.payload.toolCallId,
@@ -156,8 +157,9 @@ export class DeterministicMockAgent {
   ): MockAgentPlan {
     const stepId = deterministicUuid("step", threadId, "produce-response");
     const approved = gateResolved.payload.resolution === "approved";
+    const summary = toolCompleted.payload.summary ?? legacySummary(toolCompleted.payload.output) ?? "tool completed";
     const message = approved
-      ? `Approved result: ${toolCompleted.payload.output.summary}`
+      ? `Approved result: ${summary}`
       : "The manual approval gate was denied, so the session was cancelled.";
 
     return {
@@ -196,6 +198,10 @@ export class DeterministicMockAgent {
       ],
     };
   }
+}
+
+function legacySummary(output: unknown): string | undefined {
+  return isLegacyToolCompletionOutput(output) ? output.summary : undefined;
 }
 
 function isPromptReceivedEvent(event: ThreadEvent): event is PromptReceivedEvent {

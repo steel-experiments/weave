@@ -1,6 +1,7 @@
 {
   "name": "weave-steel-docs-sync",
   "version": "0.0.0",
+  "description": "Deterministic run-first Weave docs sync example with domain-shaped outputs.",
   "private": true,
   "type": "module",
   "scripts": {

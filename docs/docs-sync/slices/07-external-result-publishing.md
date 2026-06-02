@@ -4,7 +4,7 @@
 
 - Vertical: docs-sync
 - Status: Planned
-- Last updated: 2026-05-29
+- Last updated: 2026-06-02
 - Source rollup: `../../steel-docs-sync-missing-work.md`
 
 ## Goal
@@ -18,6 +18,8 @@ Docs maintainers can see check runs, PR comments, issues, or audit artifacts lin
 ## Architecture Impact
 
 This is app-level egress using reusable credential and tool semantics.
+
+This slice remains aligned with the current architecture but is still not implemented. It should be a normal app-level tool, not a hidden GitHub Action side effect.
 
 Expected tool:
 
@@ -34,6 +36,8 @@ Credential rule:
 
 - GitHub token is resolved through credential provider
 - raw token is never stored in events or artifacts
+- credential lifecycle should use existing `credential.requested`, `credential.resolved`, and `credential.failed` events
+- publishing output should be returned as raw typed `tool.completed.payload.output`
 
 ## Test Plan
 
@@ -61,6 +65,13 @@ Credential rule:
 ## Completion Notes
 
 Not started.
+
+Architecture alignment notes:
+
+- Implement as `github.publishAuditResult` tool declared by the docs-sync app.
+- Use `ToolContract.credentials` and the runtime credential provider rather than reading environment variables inside the agent.
+- Preserve replay safety by making publishing idempotent via stable external keys and tool input.
+- Do not publish from the webhook handler or GitHub Action directly if the action should remain auditable through Weave.
 
 ## Docs To Update On Completion
 

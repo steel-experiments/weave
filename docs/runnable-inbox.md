@@ -30,17 +30,18 @@ Fields include:
 - thread ID
 - consumer name
 - event sequence number
-- state: `pending`, `claimed`, or `done`
+- state: `pending`, `claimed`, `done`, or `dead-letter`
 - claim owner
 - claim expiry
 - attempt count
+- last error code and message for dead-lettered work
 
 ## Current Consumers
 
 The PoC has two consumers:
 
 - `runner`
-- `mock-tool-worker`
+- `tool-worker`
 
 ## Routing Rules
 
@@ -50,8 +51,12 @@ The append path routes events into the inbox transactionally.
 
 - `prompt.received`
 - `tool.completed`
-- `tool.failed`
 - `gate.resolved`
+- `child_thread.spawned`
+- `child_thread.completed`
+- `child_thread.failed`
+
+`tool.failed` and `agent.failed` are terminal events in V1. They mark thread projection state as failed instead of waking the runner.
 
 ### Tool worker wake events
 
@@ -63,10 +68,20 @@ The append path routes events into the inbox transactionally.
 - `runner.resumed`
 - `agent.step.started`
 - `agent.step.completed`
+- `agent.failed`
 - `tool.started`
 - `tool.progress`
+- `credential.requested`
+- `credential.resolved`
+- `credential.failed`
+- `tool.failed`
 - `gate.created`
 - `agent.response.produced`
+- `agent.output.completed`
+- `agent.finding.produced`
+- `agent.remediation.proposed`
+- `agent.incident_report.produced`
+- `checkpoint.completed`
 
 ## Claim Flow
 
@@ -81,6 +96,8 @@ consumer polls inbox
 
 If a consumer crashes after claiming work, the claim expires and another attempt can claim it later.
 
+If a worker reaches a terminal execution failure, the inbox item is marked `dead-letter` with error metadata. Thread events remain the durable domain history; inbox rows describe delivery state only.
+
 ## Why This Is Better
 
 - runner and worker loops do not infer work from broad state
@@ -89,23 +106,23 @@ If a consumer crashes after claiming work, the claim expires and another attempt
 - the event log remains the source of truth
 - inbox rows are delivery state, not domain history
 
-## Current Limitation
+## Current Reliability Behavior
 
-The tool worker currently processes a mock tool lifecycle to completion after claiming a `tool.requested` inbox row.
+The contract tool worker processes typed tool contracts after claiming `tool.requested` inbox rows.
 
-That is fine for the PoC.
+Current bounded behavior:
 
-For real long-running tools, the worker model should evolve toward:
+- `RetryableToolError` retries up to three attempts
+- retry attempts emit `tool.progress`
+- terminal tool failures append `tool.failed`
+- failed tool-worker inbox items are dead-lettered with error code and message
+- `/threads/:id/diagnostics/inbox` exposes inbox item state and attempts when backed by Postgres
 
-- durable tool execution state
-- heartbeats or progress cursor
-- retry limits
-- dead-letter behavior
+Future long-running tools may still need richer durable execution state, heartbeats, or progress cursors.
 
 ## Next Improvements
 
-- expose inbox state in diagnostics
-- add retry/dead-letter policy
+- make retry/dead-letter policy configurable
 - add consumer cursors for projections
 - move from polling to Postgres `LISTEN/NOTIFY` wake hints
 - support multiple consumer groups or worker types

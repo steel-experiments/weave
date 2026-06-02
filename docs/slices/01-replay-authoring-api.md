@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
-- Last updated: `2026-06-01`
+- Status: `Shipped`
+- Last updated: `2026-06-02`
 - Owner: `weave-core`
 
 ## Goal
@@ -59,42 +59,66 @@ As a Weave app author, I can write an agent as ordinary async TypeScript and req
 
 ## Acceptance Criteria
 
-- [ ] Existing examples still typecheck.
-- [ ] Existing planner-first agents still run.
-- [ ] Existing tool-worker flow still works.
-- [ ] Existing gate resolution still works.
-- [ ] Existing Postgres migration still works.
-- [ ] One example uses `agent({ async run(ctx, input) { ... } })`.
-- [ ] The migrated example does not manually import `ThreadEvent`, `AgentPlan`, `eventKey`, `deterministicUuid`, or tool request event constructors.
-- [ ] `ctx.tool("some-key", tool, input)` appends exactly one `tool.requested` event when missing.
-- [ ] Re-running the runner before tool completion appends no duplicate `tool.requested` event.
-- [ ] A pending tool request exits the runner pass and does not hold a Promise open waiting for the worker.
-- [ ] After `tool.completed`, the same `ctx.tool()` returns decoded output.
-- [ ] If stored output fails the tool output schema, the runner records or throws a structured replay/decode error.
-- [ ] Changing a durable effect kind while reusing the same key throws `ReplayMismatchError`.
+- [x] Existing examples still typecheck.
+- [x] Existing planner-first agents still run.
+- [x] Existing tool-worker flow still works.
+- [x] Existing gate resolution still works.
+- [x] Existing Postgres migration still works.
+- [x] One example uses `agent({ async run(ctx, input) { ... } })`.
+- [x] The migrated example does not manually import `ThreadEvent`, `AgentPlan`, `eventKey`, `deterministicUuid`, or tool request event constructors.
+- [x] `ctx.tool("some-key", tool, input)` appends exactly one `tool.requested` event when missing.
+- [x] Re-running the runner before tool completion appends no duplicate `tool.requested` event.
+- [x] A pending tool request exits the runner pass and does not hold a Promise open waiting for the worker.
+- [x] After `tool.completed`, the same `ctx.tool()` returns decoded output.
+- [x] If stored output fails the tool output schema, the runner records or throws a structured replay/decode error.
+- [x] Changing a durable effect kind while reusing the same key throws `ReplayMismatchError`.
 
 ## Progress
 
-- [ ] Add authoring aliases and types.
-- [ ] Add optional `scopeKey` and `stepKey` fields.
-- [ ] Make planner execution async-compatible.
-- [ ] Implement run-to-planner adapter.
-- [ ] Implement replay-based `ctx.tool`.
-- [ ] Verify tool waits are durable thread suspension, not in-memory waiting.
-- [ ] Migrate Steel docs sync agent.
-- [ ] Add replay and compatibility tests.
-- [ ] Run typecheck and relevant demos/tests.
+- [x] Add authoring aliases and types.
+- [x] Add optional `scopeKey` and `stepKey` fields.
+- [x] Make planner execution async-compatible.
+- [x] Implement run-to-planner adapter.
+- [x] Implement replay-based `ctx.tool`.
+- [x] Verify tool waits are durable thread suspension, not in-memory waiting.
+- [x] Migrate Steel docs sync agent.
+- [x] Add replay and compatibility tests.
+- [x] Run typecheck and relevant demos/tests.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+Initial implementation landed.
+
+Changed modules:
+
+- `src/agent-contract.ts`: adds run-first `AgentContract`, `AgentContext`, aliases, and validation.
+- `src/agent-runner.ts`: adds replay-based run-to-planner adapter, `ctx.tool`, `ctx.checkpoint`, `ctx.emit`, and deterministic `ctx.uuid` helper.
+- `src/events.ts`: adds optional `scopeKey` and `stepKey` event fields, tool request payload fields, and `checkpoint.completed`.
+- `src/migrate.ts`: adds nullable `scope_key` and `step_key` columns plus a durable step lookup index.
+- `src/postgres-engine.ts`: persists and reads top-level `scopeKey` and `stepKey` fields.
+- `src/tool-worker.ts`: propagates durable step identity from `tool.requested` to worker lifecycle events.
+- `src/tests/replay-authoring.test.ts`: covers duplicate prevention, decode failure, replay mismatch, emit payload mismatch, and checkpoint replay.
+- `src/runner.ts`: supports async planners.
+- `src/runtime.ts`: wraps run-first agents with the adapter and keeps planner-first agents compatible.
+- `examples/steel-docs-sync/src/agent.ts`: migrates Steel docs sync to `agent({ async run(ctx, input) { ... } })`.
+
+Commands run:
+
+- `npm run typecheck`
+- `npm test`
+- `npm run steel:demo`
+- `npm run sre:demo`
+
+Known gaps:
+
+- `ctx.emit` and `ctx.uuid` are documented as provisional public helpers. A future typed events slice should decide whether they stay as-is or are replaced by `event()` factories and a renamed stable ID helper.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/interface.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/engine-contracts.md` if storage contracts changed
-- [ ] `docs/glossary.md` if terminology changed during implementation
-- [ ] `docs/README.md` if status or doc links changed
+- [x] this slice document
+- [x] `docs/declarative-api.md`
+- [x] `docs/interface.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/engine-contracts.md` if storage contracts changed
+- [x] `docs/glossary.md` if terminology changed during implementation
+- [x] `docs/README.md` if status or doc links changed

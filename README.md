@@ -44,6 +44,40 @@ Run the mock SRE north-star demo:
 npm run sre:demo
 ```
 
+Run the simple model-backed assistant demo with Kimi K2.6 through OpenCode Zen:
+
+```sh
+npm run assistant:demo -- "Explain what Weave does in one sentence"
+```
+
+Set `OPENCODE_API_KEY` in your shell or in `examples/simple-assistant/.env` first.
+
+Run the same assistant as a local API:
+
+```sh
+npm run assistant:server
+```
+
+The server starts on port `3000` by default. If that port is busy and `PORT` is not set, it tries the next available port and prints the URL. Set `PORT=3100` to choose a specific port.
+
+Then call the convenience route:
+
+```sh
+curl -X POST http://127.0.0.1:3000/assistant \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"Write me a poem about steel weaves"}'
+```
+
+The server also exposes the raw Weave thread API at `/threads`, `/threads/<threadId>/events`, and `/threads/<threadId>/stream`.
+
+## Examples
+
+- `examples/sre-demo`: gate-heavy runtime semantics demo. It is deterministic and mocked, exercises domain-shaped tool outputs, approval gates, credentials, observability, and a gated remediation flow. Run with `npm run sre:demo`.
+- `examples/steel-docs-sync`: run-first/domain-output authoring demo. It uses deterministic local fixtures, artifact storage, `ctx.tool`, and `ctx.emit` facts to model a docs audit workflow. Run with `npm run steel:demo`.
+- `examples/simple-assistant`: model-backed run-first demo. It routes the external model call through `zenChatCompletionTool`; no raw network or model side effect happens inside `agent.run`. It requires `OPENCODE_API_KEY` and is optional for using Weave. Run with `npm run assistant:demo -- "your prompt"` or `npm run assistant:server`.
+
+The deterministic examples double as regression assets. The simple assistant demonstrates how to put a real model behind a tool boundary, not a required provider dependency for Weave itself.
+
 The PoC script resets only the dedicated `weave` schema, then verifies:
 
 - thread creation
@@ -59,18 +93,17 @@ Do not run `npm run poc` and `npm run system:poc` at the same time because both 
 ## Current Implementation
 
 - `src/events.ts`: Zod event schemas and typed event union
-- `src/postgres-engine.ts`: Postgres event log, projection, lease, and gate persistence
-- `src/thread-service.ts`: session start and gate resolution service
-- `src/mock-agent.ts`: deterministic mock agent adapter
-- `src/mock-tool-worker.ts`: async mock tool worker with progress events
-- `src/runner.ts`: one-step thread runner
+- `src/agent-contract.ts`: run-first agent authoring contracts and durable context API
+- `src/agent-runner.ts`: replay adapter for `agent.run`, durable effects, gates, checkpoints, and child threads
+- `src/postgres-engine.ts`: Postgres event log, projection, lease, lineage, gate, and inbox persistence
+- `src/thread-service.ts`: session start, child session, gate resolution, child listing, and child cancellation service
+- `src/runner.ts`: one-step thread runner with durable agent failure events
+- `src/tool-worker.ts`: contract tool worker with credentials, artifacts, progress, retries, and output summaries
 - `src/daemons.ts`: runner and tool worker daemons backed by explicit inbox claims
-- `src/scripts/poc.ts`: end-to-end verification script
-- `src/api-server.ts`: minimal HTTP API for thread sessions, events, projections, and gate resolution
-- `src/scripts/system-poc.ts`: API-driven verification with background daemons
-- `src/sre-agent.ts`: deterministic SRE investigation agent for the north-star demo
-- `src/sre-tool-worker.ts`: mock SRE observability and remediation tools
-- `src/scripts/sre-demo.ts`: API-driven SRE demo using the thread service and daemons
+- `src/api-server.ts`: HTTP API for thread sessions, events, projections, summaries, streams, diagnostics, and gates
+- `examples/sre-demo`: deterministic SRE demo using gates and domain-shaped outputs
+- `examples/steel-docs-sync`: docs-sync demo using run-first authoring patterns
+- `examples/simple-assistant`: model-backed assistant demo using tool-routed model calls
 
 The service milestone uses an explicit `weave.thread_inbox` table. Event appends route wake events into per-consumer inbox rows, and daemons claim those rows before processing work.
 
@@ -94,3 +127,5 @@ npm run daemon:tool
 ## Docs
 
 Start with `docs/README.md` for project direction and planning docs.
+
+For migration from planner-first agents and legacy tool output envelopes, see `docs/migration/api-refactor.md`.

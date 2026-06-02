@@ -6,7 +6,7 @@ import {
   type ApiRouteHandler,
   type ThreadEngine,
   type ThreadService,
-} from "weave";
+} from "weave/server";
 import { z } from "zod";
 
 const webhookPath = "/webhooks/github/steel-docs-sync";

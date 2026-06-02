@@ -1,21 +1,15 @@
 import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import {
-  ContractToolWorker,
   ThreadArtifactSchema,
-  ThreadRunner,
-  createWeaveRuntime,
-  ThreadService,
-  PostgresThreadEngine,
-  createApiServer,
-  PostgresThreadArtifactStore,
-  createPool,
   getAgent,
-  migrate,
   type ThreadEvent,
   type ThreadProjection,
   type ThreadSummary,
 } from "weave";
+import { ContractToolWorker, ThreadRunner, ThreadService, createWeaveRuntime } from "weave/runtime";
+import { PostgresThreadArtifactStore, PostgresThreadEngine, createPool, migrate } from "weave/postgres";
+import { createApiServer } from "weave/server";
 import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";
 import { startSteelFixtureServer } from "./fixtures.js";
@@ -90,6 +84,13 @@ try {
       events.filter((event) => event.type === "tool.requested").map((event) => event.payload.toolName),
       ["steel.auditDocsSync", "steel.modelReview"],
     );
+    assert.deepEqual(
+      events.filter((event) => event.type === "tool.requested").map((event) => [event.scopeKey, event.stepKey]),
+      [
+        ["agent:steel-docs", "audit-docs"],
+        ["agent:steel-docs", "model-review"],
+      ],
+    );
     assert.equal(finalProjection.status, "completed");
     assert.equal(summary.outcome, "warning");
     assert.equal(summary.execution.status, "succeeded");
@@ -103,7 +104,7 @@ try {
     const finalResponse = events.find((event) => event.type === "agent.response.produced");
     assert(toolCompleted);
     assert(finalResponse);
-    const artifacts = readArtifacts(toolCompleted.payload.output.data);
+    const artifacts = readArtifacts(toolCompleted.payload.output);
     assert.equal(artifacts.length, 3);
     assert.deepEqual(artifacts.map((artifact) => artifact.kind), ["docs-page", "llms-txt", "openapi-spec"]);
     assert.deepEqual(
@@ -116,11 +117,11 @@ try {
     console.log(`threadId=${created.threadId}`);
     console.log(`app=${runtimeApp.name}`);
     console.log(`agent=${activeAgent.name}`);
-    console.log(`tool=${activeAgent.tools[0]?.name ?? "unknown"}`);
+    console.log(`tool=${activeAgent.tools?.[0]?.name ?? "unknown"}`);
     console.log(`outcome=${summary.outcome}`);
     console.log(`execution=${summary.execution.status}`);
     console.log(`artifacts=${artifacts.length}`);
-    console.log(`auditSummary=${toolCompleted.payload.output.summary}`);
+    console.log(`auditSummary=${toolCompleted.payload.summary ?? "unknown"}`);
     console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
   } finally {
     await runnerDaemon.stop();

@@ -33,9 +33,13 @@ const EventEnvelopeBase = z.object({
   correlationId: z.string().uuid().optional(),
   causationId: z.string().uuid().optional(),
   idempotencyKey: z.string().min(1).optional(),
+  scopeKey: z.string().min(1).optional(),
+  stepKey: z.string().min(1).optional(),
   actor: Actor,
 })
 ```
+
+`scopeKey` and `stepKey` identify durable effects for replay. For `ctx.tool`, the default scope is `agent:<agentName>` and the agent author supplies the stable step key.
 
 ## Event Set
 
@@ -45,13 +49,25 @@ The PoC uses this event set.
 - `prompt.received`
 - `agent.step.started`
 - `agent.step.completed`
+- `agent.failed`
+- `agent.finding.produced`
+- `agent.incident_report.produced`
+- `agent.output.completed`
+- `agent.remediation.proposed`
 - `tool.requested`
 - `tool.started`
 - `tool.progress`
 - `tool.completed`
 - `tool.failed`
+- `credential.requested`
+- `credential.resolved`
+- `credential.failed`
 - `gate.created`
 - `gate.resolved`
+- `checkpoint.completed`
+- `child_thread.spawned`
+- `child_thread.completed`
+- `child_thread.failed`
 - `runner.resumed`
 - `agent.response.produced`
 
@@ -61,7 +77,9 @@ The PoC uses this event set.
 
 ```ts
 const SessionStartedPayload = z.object({
-  source: z.enum(["api", "test", "system"]),
+  source: z.enum(["api", "test", "system", "github-action"]),
+  agentName: z.string().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 ```
 
@@ -87,7 +105,14 @@ const AgentStepStartedPayload = z.object({
 ```ts
 const AgentStepCompletedPayload = z.object({
   stepId: z.string().uuid(),
-  outcome: z.enum(["requested-tool", "created-gate", "produced-response", "no-op"]),
+  outcome: z.enum([
+    "requested-tool",
+    "created-gate",
+    "produced-finding",
+    "proposed-remediation",
+    "produced-response",
+    "no-op",
+  ]),
 })
 ```
 
@@ -96,10 +121,19 @@ const AgentStepCompletedPayload = z.object({
 ```ts
 const ToolRequestedPayload = z.object({
   toolCallId: z.string().uuid(),
-  toolName: z.literal("mock.async-progress"),
-  args: z.object({
-    jobLabel: z.string().min(1),
-  }),
+  toolName: z.string().min(1),
+  args: z.unknown(),
+  scopeKey: z.string().min(1).optional(),
+  stepKey: z.string().min(1).optional(),
+})
+```
+
+### Agent failed
+
+```ts
+const AgentFailedPayload = z.object({
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
 })
 ```
 
@@ -108,7 +142,7 @@ const ToolRequestedPayload = z.object({
 ```ts
 const ToolStartedPayload = z.object({
   toolCallId: z.string().uuid(),
-  toolName: z.literal("mock.async-progress"),
+  toolName: z.string().min(1),
 })
 ```
 
@@ -125,14 +159,22 @@ const ToolProgressPayload = z.object({
 ### Tool completed
 
 ```ts
-const ToolCompletedPayload = z.object({
-  toolCallId: z.string().uuid(),
-  output: z.object({
+const ToolCompletedPayload = z.union([
+  z.object({
+    toolCallId: z.string().uuid(),
+    output: z.unknown(),
+    summary: z.string().min(1).optional(),
+  }),
+  z.object({
+    toolCallId: z.string().uuid(),
     summary: z.string().min(1),
     requiresManualApproval: z.boolean(),
+    data: z.unknown().optional(),
   }),
-})
+])
 ```
+
+`output` is the canonical raw tool result used for replay. `summary` is optional display metadata. Legacy `ToolCompletionOutput` envelopes may still carry `requiresManualApproval`, but that is compatibility-only and not the future approval model. Older top-level `summary`/`requiresManualApproval`/`data` payloads are normalized into the current `output` shape when events are decoded.
 
 ### Tool failed
 
@@ -144,14 +186,56 @@ const ToolFailedPayload = z.object({
 })
 ```
 
+### Credential requested
+
+```ts
+const CredentialKind = z.enum(["secret", "delegated-identity", "scoped-token", "browser-session"])
+
+const CredentialRequestedPayload = z.object({
+  toolCallId: z.string().uuid(),
+  credentialName: z.string().min(1),
+  kind: CredentialKind,
+  provider: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+  scopes: z.array(z.string().min(1)).optional(),
+  scope: z.record(z.string(), z.string()).optional(),
+})
+```
+
+### Credential resolved
+
+```ts
+const CredentialResolvedPayload = z.object({
+  toolCallId: z.string().uuid(),
+  credentialName: z.string().min(1),
+  kind: CredentialKind,
+  source: z.string().min(1),
+  subject: z.string().min(1).optional(),
+  expiresAt: z.string().datetime().optional(),
+})
+```
+
+### Credential failed
+
+```ts
+const CredentialFailedPayload = z.object({
+  toolCallId: z.string().uuid(),
+  credentialName: z.string().min(1),
+  kind: CredentialKind,
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
+})
+```
+
 ### Gate created
 
 ```ts
 const GateCreatedPayload = z.object({
   gateId: z.string().uuid(),
   gateType: z.literal("manual-approval"),
-  reason: z.literal("tool-result-requires-approval"),
-  relatedToolCallId: z.string().uuid(),
+  reason: z.enum(["tool-result-requires-approval", "risky-remediation"]),
+  relatedToolCallId: z.string().uuid().optional(),
+  proposedAction: z.string().optional(),
 })
 ```
 
@@ -165,11 +249,56 @@ const GateResolvedPayload = z.object({
 })
 ```
 
+### Child thread spawned
+
+```ts
+const ChildThreadSpawnedPayload = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  mode: z.enum(["attached", "detached"]),
+  inputHash: z.string().min(1).optional(),
+  inputSummary: z.string().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+})
+```
+
+### Child thread completed
+
+```ts
+const ChildThreadCompletedPayload = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1).optional(),
+  output: z.unknown().optional(),
+  outputSummary: z.string().min(1).optional(),
+})
+```
+
+### Child thread failed
+
+```ts
+const ChildThreadFailedPayload = z.object({
+  childThreadId: z.string().min(1),
+  childAgentName: z.string().min(1).optional(),
+  errorCode: z.string().min(1),
+  message: z.string().min(1),
+})
+```
+
 ### Runner resumed
 
 ```ts
 const RunnerResumedPayload = z.object({
-  reason: z.enum(["new-prompt", "tool-completed", "gate-resolved", "manual-retry"]),
+  reason: z.enum([
+    "new-prompt",
+    "tool-completed",
+    "gate-resolved",
+    "child-spawned",
+    "child-completed",
+    "child-failed",
+    "manual-retry",
+  ]),
 })
 ```
 
@@ -178,6 +307,67 @@ const RunnerResumedPayload = z.object({
 ```ts
 const AgentResponseProducedPayload = z.object({
   message: z.string().min(1),
+})
+```
+
+### Agent output completed
+
+```ts
+const AgentOutputCompletedPayload = z.object({
+  output: z.unknown(),
+  summary: z.string().min(1).optional(),
+})
+```
+
+`output` is the canonical raw return value from `agent.run`. `summary` is optional display metadata and usually matches the response message.
+
+### Agent finding produced
+
+```ts
+const AgentFindingProducedPayload = z.object({
+  findingId: z.string().uuid(),
+  severity: z.enum(["info", "warning", "critical"]),
+  summary: z.string().min(1),
+  evidence: z.array(
+    z.object({
+      source: z.string().min(1),
+      summary: z.string().min(1),
+    }),
+  ),
+})
+```
+
+### Agent remediation proposed
+
+```ts
+const AgentRemediationProposedPayload = z.object({
+  remediationId: z.string().uuid(),
+  actionToolName: z.string().min(1),
+  summary: z.string().min(1),
+  risk: z.enum(["low", "medium", "high"]),
+  requiresApproval: z.boolean(),
+})
+```
+
+### Agent incident report produced
+
+```ts
+const AgentIncidentReportProducedPayload = z.object({
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  rootCause: z.string().min(1),
+  actions: z.array(z.string().min(1)),
+  evidence: z.array(z.string().min(1)),
+})
+```
+
+### Checkpoint completed
+
+```ts
+const CheckpointCompletedPayload = z.object({
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  value: z.unknown(),
 })
 ```
 
@@ -202,6 +392,11 @@ const AgentStepStartedEvent = EventEnvelopeBase.extend({
 const AgentStepCompletedEvent = EventEnvelopeBase.extend({
   type: z.literal("agent.step.completed"),
   payload: AgentStepCompletedPayload,
+})
+
+const AgentFailedEvent = EventEnvelopeBase.extend({
+  type: z.literal("agent.failed"),
+  payload: AgentFailedPayload,
 })
 
 const ToolRequestedEvent = EventEnvelopeBase.extend({
@@ -229,6 +424,21 @@ const ToolFailedEvent = EventEnvelopeBase.extend({
   payload: ToolFailedPayload,
 })
 
+const CredentialRequestedEvent = EventEnvelopeBase.extend({
+  type: z.literal("credential.requested"),
+  payload: CredentialRequestedPayload,
+})
+
+const CredentialResolvedEvent = EventEnvelopeBase.extend({
+  type: z.literal("credential.resolved"),
+  payload: CredentialResolvedPayload,
+})
+
+const CredentialFailedEvent = EventEnvelopeBase.extend({
+  type: z.literal("credential.failed"),
+  payload: CredentialFailedPayload,
+})
+
 const GateCreatedEvent = EventEnvelopeBase.extend({
   type: z.literal("gate.created"),
   payload: GateCreatedPayload,
@@ -249,20 +459,72 @@ const AgentResponseProducedEvent = EventEnvelopeBase.extend({
   payload: AgentResponseProducedPayload,
 })
 
+const AgentOutputCompletedEvent = EventEnvelopeBase.extend({
+  type: z.literal("agent.output.completed"),
+  payload: AgentOutputCompletedPayload,
+})
+
+const AgentFindingProducedEvent = EventEnvelopeBase.extend({
+  type: z.literal("agent.finding.produced"),
+  payload: AgentFindingProducedPayload,
+})
+
+const AgentRemediationProposedEvent = EventEnvelopeBase.extend({
+  type: z.literal("agent.remediation.proposed"),
+  payload: AgentRemediationProposedPayload,
+})
+
+const AgentIncidentReportProducedEvent = EventEnvelopeBase.extend({
+  type: z.literal("agent.incident_report.produced"),
+  payload: AgentIncidentReportProducedPayload,
+})
+
+const CheckpointCompletedEvent = EventEnvelopeBase.extend({
+  type: z.literal("checkpoint.completed"),
+  payload: CheckpointCompletedPayload,
+})
+
+const ChildThreadSpawnedEvent = EventEnvelopeBase.extend({
+  type: z.literal("child_thread.spawned"),
+  payload: ChildThreadSpawnedPayload,
+})
+
+const ChildThreadCompletedEvent = EventEnvelopeBase.extend({
+  type: z.literal("child_thread.completed"),
+  payload: ChildThreadCompletedPayload,
+})
+
+const ChildThreadFailedEvent = EventEnvelopeBase.extend({
+  type: z.literal("child_thread.failed"),
+  payload: ChildThreadFailedPayload,
+})
+
 export const ThreadEvent = z.discriminatedUnion("type", [
   SessionStartedEvent,
   PromptReceivedEvent,
   AgentStepStartedEvent,
   AgentStepCompletedEvent,
+  AgentFailedEvent,
   ToolRequestedEvent,
   ToolStartedEvent,
   ToolProgressEvent,
   ToolCompletedEvent,
   ToolFailedEvent,
+  CredentialRequestedEvent,
+  CredentialResolvedEvent,
+  CredentialFailedEvent,
   GateCreatedEvent,
   GateResolvedEvent,
   RunnerResumedEvent,
   AgentResponseProducedEvent,
+  AgentOutputCompletedEvent,
+  AgentFindingProducedEvent,
+  AgentRemediationProposedEvent,
+  AgentIncidentReportProducedEvent,
+  CheckpointCompletedEvent,
+  ChildThreadSpawnedEvent,
+  ChildThreadCompletedEvent,
+  ChildThreadFailedEvent,
 ])
 ```
 
@@ -274,21 +536,33 @@ Not every durable event needs to wake the runner.
 
 - `prompt.received`
 - `tool.completed`
-- `tool.failed`
 - `gate.resolved`
+- `child_thread.spawned`
+- `child_thread.completed`
+- `child_thread.failed`
 
 ### History-only events for the PoC
 
 - `session.started`
 - `agent.step.started`
 - `agent.step.completed`
+- `agent.failed`
 - `tool.started`
 - `tool.progress`
+- `tool.failed`
+- `credential.requested`
+- `credential.resolved`
+- `credential.failed`
 - `gate.created`
 - `runner.resumed`
 - `agent.response.produced`
+- `agent.output.completed`
+- `agent.finding.produced`
+- `agent.remediation.proposed`
+- `agent.incident_report.produced`
+- `checkpoint.completed`
 
-This separation keeps the durable history rich while the runner wake logic stays simple.
+This separation keeps the durable history rich while the runner wake logic stays simple. In V1, `tool.failed` and `agent.failed` mark the thread failed immediately; they are terminal rather than runner wakes.
 
 ## Deterministic Mock Agent Rules
 
@@ -300,7 +574,7 @@ If the thread has a prompt but no `tool.requested`, emit a tool request.
 
 ### Rule 2
 
-If the thread has a `tool.completed` event whose output has `requiresManualApproval = true` and no open gate exists, create a gate.
+If the thread has a legacy `tool.completed` event whose output has `requiresManualApproval = true` and no open gate exists, create a gate.
 
 ### Rule 3
 

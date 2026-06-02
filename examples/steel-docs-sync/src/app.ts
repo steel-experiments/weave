@@ -1,15 +1,7 @@
-import { defineAgent, defineWeaveApp } from "weave";
-import { DeterministicSteelDocsAgent } from "./agent.js";
-import { steelTools } from "./tools.js";
+import { weave } from "weave";
+import { steelDocsAgent } from "./agent.js";
 
-export const steelDocsAgent = defineAgent({
-  name: "steel-docs",
-  description: "Deterministic Steel docs sync audit agent.",
-  planner: new DeterministicSteelDocsAgent(),
-  tools: steelTools,
-});
-
-export const steelDocsSyncApp = defineWeaveApp({
+export const steelDocsSyncApp = weave({
   name: "steel-docs-sync",
   agents: [steelDocsAgent],
 });

@@ -2,20 +2,14 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { AddressInfo } from "node:net";
 import {
-  ContractToolWorker,
   ThreadArtifactSchema,
-  ThreadRunner,
-  createWeaveRuntime,
-  ThreadService,
-  PostgresThreadArtifactStore,
-  PostgresThreadEngine,
-  createPool,
   getAgent,
-  migrate,
   type ThreadEvent,
   type ThreadProjection,
   type ThreadSummary,
 } from "weave";
+import { ContractToolWorker, ThreadRunner, ThreadService, createWeaveRuntime } from "weave/runtime";
+import { PostgresThreadArtifactStore, PostgresThreadEngine, createPool, migrate } from "weave/postgres";
 import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";
 import { startSteelFixtureServer } from "./fixtures.js";
@@ -174,14 +168,14 @@ try {
       ["steel.auditDocsSync", "steel.modelReview"],
     );
     assert(toolCompleted?.type === "tool.completed");
-    const artifacts = readArtifacts(toolCompleted.payload.output.data);
+    const artifacts = readArtifacts(toolCompleted.payload.output);
     assert.equal(artifacts.length, 3);
     assert.deepEqual(artifacts.map((artifact) => artifact.sourceUrl), [payload.docsBaseUrl, payload.llmsTxtUrl, payload.openApiSpecUrl]);
     assert.deepEqual(
       artifactListing.artifacts.map((artifact) => artifact.artifactId),
       artifacts.map((artifact) => artifact.artifactId),
     );
-    const baselines = readBaselines(toolCompleted.payload.output.data);
+    const baselines = readBaselines(toolCompleted.payload.output);
     assert(baselines.every((baseline) => baseline.previousArtifactId === null));
     assert(finalResponse?.type === "agent.response.produced");
 
@@ -214,7 +208,7 @@ try {
     const baselineEvents = await getEvents(baseUrl, baselineSuccessCreated.body.threadId);
     const baselineToolCompleted = baselineEvents.find((event) => event.type === "tool.completed");
     assert(baselineToolCompleted?.type === "tool.completed");
-    const baselineComparisons = readBaselines(baselineToolCompleted.payload.output.data);
+    const baselineComparisons = readBaselines(baselineToolCompleted.payload.output);
     assert(baselineComparisons.every((baseline) => baseline.previousArtifactId !== null));
     assert(baselineComparisons.every((baseline) => baseline.changed === false));
 
@@ -249,6 +243,11 @@ try {
         (item) => item.state === "dead-letter" && item.lastErrorCode === "execution_failed",
       ),
     );
+    assert(failedInboxDiagnostics.items.every((item) => item.state !== "claimed"));
+    const failedToolInbox = failedInboxDiagnostics.items.find(
+      (item) => item.state === "dead-letter" && item.lastErrorCode === "execution_failed",
+    );
+    assert(failedToolInbox);
 
     console.log("Steel webhook demo verified");
     console.log(`api=${baseUrl}`);
@@ -266,7 +265,7 @@ try {
     console.log(`finalMessage=${summary.finalMessage ?? finalResponse.payload.message}`);
     console.log(`failedThreadId=${executionFailureCreated.body.threadId}`);
     console.log(`failedExecution=${failedSummary.execution.status}`);
-    console.log(`failedInboxState=${failedInboxDiagnostics.items.at(-1)?.state ?? "unknown"}`);
+    console.log(`failedInboxState=${failedToolInbox.state}`);
   } finally {
     await runnerDaemon.stop();
     await toolDaemon.stop();

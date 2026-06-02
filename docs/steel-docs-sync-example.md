@@ -77,14 +77,14 @@ GitHub Action in steel-dev/docs
 
 Create a new example app under `examples/steel-docs-sync`.
 
-The app should use the existing authoring primitives:
+The app should use the current authoring and runtime primitives:
 
-- `defineWeaveApp` for app composition
-- `defineAgent` for the Steel docs sync agent
-- `defineTool` for fetch, compare, and publishing side effects
-- `ThreadRunner` for bounded agent turns
-- `ContractToolWorker` for typed tool execution
-- `RunnerDaemon` and `ToolWorkerDaemon` for inbox-claim-driven execution
+- `weave` for app composition
+- `agent` for the Steel docs sync agent
+- `tool` for fetch, compare, review, and publishing side effects
+- `createWeaveRuntime` for app-aware runner and tool worker wiring
+- `weave/runtime`, `weave/postgres`, and `weave/server` package subpaths for runtime, storage, and HTTP concerns
+- `ThreadService.startSession` metadata and idempotency for webhook-triggered sessions
 
 The first implementation can be deterministic. A later implementation can add an LLM review tool.
 
@@ -179,7 +179,7 @@ Inputs should be compact summaries and excerpts, not full raw docs.
 
 Outputs should be schema-validated findings.
 
-This tool is the right place for LLM calls while `AgentPlanner.plan` remains synchronous.
+This tool is the right place for LLM calls while `agent.run` remains replay-based and deterministic over thread events.
 
 ### `github.publishAuditResult`
 

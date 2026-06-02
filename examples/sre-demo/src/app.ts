@@ -1,15 +1,7 @@
-import { StaticCredentialProvider, defineAgent, defineWeaveApp } from "weave";
-import { DeterministicSreAgent } from "./agent.js";
-import { sreTools } from "./tools.js";
+import { StaticCredentialProvider, weave } from "weave";
+import { sreAgent } from "./agent.js";
 
-export const sreAgent = defineAgent({
-  name: "sre",
-  description: "Deterministic SRE agent for the north-star incident demo.",
-  planner: new DeterministicSreAgent(),
-  tools: sreTools,
-});
-
-export const sreDemoApp = defineWeaveApp({
+export const sreDemoApp = weave({
   name: "sre-demo",
   agents: [sreAgent],
   credentialProvider: new StaticCredentialProvider(

@@ -27,7 +27,7 @@ Examples:
 
 Responsibilities:
 
-- consume allowed tools and capabilities
+- consume allowed tools and, in future slices, scoped capabilities
 - process thread-visible events
 - emit decisions or effect requests back into the thread
 
@@ -42,6 +42,7 @@ Responsibilities:
 - durable append-only event log
 - ordered thread-local event streams
 - runnable inbox semantics
+- artifact and snapshot references for large external data
 - trace and correlation metadata
 - wake and resume mechanics
 - stream-to-stream routing or linking
@@ -68,7 +69,10 @@ Responsibilities:
 - receive explicit work requests
 - emit structured lifecycle events
 - support progress and long-running execution
+- surface bounded retries, terminal failures, and dead-letter diagnostics
 - avoid opaque fire-and-forget behavior
+
+Tool workers should keep large raw payloads out of thread events. Events should contain durable facts, summaries, hashes, and artifact references; artifact storage owns raw bodies.
 
 ### 4. Policy and Credential Layer
 
@@ -76,7 +80,7 @@ Responsibilities:
 
 - determine what an agent is allowed to do
 - enforce approval or gate requirements
-- mediate capability-based secret use
+- mediate credential use today and capability-based secret use in future slices
 - keep raw secret material out of normal agent execution paths where possible
 
 ### 5. Integration Layer
@@ -120,6 +124,8 @@ A thread-native object representing work paused on approval, human input, or ano
 
 ### Capability
 
+Planned, not part of the current V1 authoring surface.
+
 A scoped permission or secret reference granted to a worker or integration without exposing raw secret values more broadly than necessary.
 
 ### Stream Link
@@ -154,7 +160,7 @@ The initial architecture should be simple and narrow.
 
 Over time it can grow to support:
 
-- child threads and subagents
+- child threads and subagents with richer orchestration
 - filtered stream routing
 - richer policy engines
 - pluggable storage backends

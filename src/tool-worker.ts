@@ -24,6 +24,7 @@ import {
   RetryableToolError,
   ToolRegistry,
   createToolRegistry,
+  isLegacyToolCompletionOutput,
   type AnyToolContract,
   type ToolProgressUpdate,
 } from "./tool-contract.js";
@@ -150,25 +151,25 @@ export class ContractToolWorker {
             }),
           { kind: "tool", attributes: { toolName: request.payload.toolName, attempt } },
         );
-      const outputResult = tool.output.safeParse(output);
-      if (!outputResult.success) {
-        const event = this.failedEvent(
-          threadId,
-          request,
-          "output_validation_failed",
-          formatZodError(outputResult.error),
-        );
-        await this.emitToolLog(spanContext, "error", "Tool output validation failed", {
-          errorCode: "output_validation_failed",
-        });
-        await this.emitToolSpan(spanContext, rootStartedAt, "error", {
-          errorCode: "output_validation_failed",
-        });
-        await this.engine.append([...credentialEvents, ...progressEvents, event]);
-        return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
-      }
+        const outputResult = tool.output.safeParse(output);
+        if (!outputResult.success) {
+          const event = this.failedEvent(
+            threadId,
+            request,
+            "output_validation_failed",
+            formatZodError(outputResult.error),
+          );
+          await this.emitToolLog(spanContext, "error", "Tool output validation failed", {
+            errorCode: "output_validation_failed",
+          });
+          await this.emitToolSpan(spanContext, rootStartedAt, "error", {
+            errorCode: "output_validation_failed",
+          });
+          await this.engine.append([...credentialEvents, ...progressEvents, event]);
+          return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
+        }
 
-      const event = this.completedEvent(threadId, request, outputResult.data);
+        const event = this.completedEvent(threadId, request, outputResult.data, summarizeToolOutput(tool, outputResult.data));
         await this.emitToolLog(spanContext, "info", "Tool execution completed", {
           attempt,
           progressEvents: progressEvents.length,
@@ -362,6 +363,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: { toolCallId: request.payload.toolCallId, toolName: request.payload.toolName },
     };
@@ -380,6 +383,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
@@ -393,6 +398,7 @@ export class ContractToolWorker {
     threadId: string,
     request: ToolRequestedEvent,
     output: Extract<ThreadEvent, { type: "tool.completed" }>["payload"]["output"],
+    summary: string | undefined,
   ): Extract<ThreadEvent, { type: "tool.completed" }> {
     return {
       eventId: eventKey(threadId, "tool.completed", request.payload.toolCallId),
@@ -401,10 +407,13 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
         output,
+        summary,
       },
     };
   }
@@ -421,6 +430,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
@@ -446,6 +457,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
@@ -472,6 +485,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
@@ -496,6 +511,8 @@ export class ContractToolWorker {
       occurredAt: nowIso(),
       correlationId: request.correlationId,
       causationId: request.eventId,
+      scopeKey: request.scopeKey ?? request.payload.scopeKey,
+      stepKey: request.stepKey ?? request.payload.stepKey,
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
@@ -526,6 +543,14 @@ function normalizeCredentialRequests(
     return [...requests];
   }
   return [requests as CredentialRequest];
+}
+
+function summarizeToolOutput(tool: AnyToolContract, output: unknown): string | undefined {
+  if (tool.summarize) {
+    return tool.summarize(output);
+  }
+
+  return isLegacyToolCompletionOutput(output) ? output.summary : undefined;
 }
 
 function errorMessage(error: unknown): string {
