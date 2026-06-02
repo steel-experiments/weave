@@ -32,6 +32,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.checkpoint` | Current local durable effect |
 | `ctx.spawn` | Current child-thread effect |
 | `ctx.join` | Current child-thread wait effect |
+| `ctx.children` | Current child listing helper |
 | `approvalPolicy` | Current authoring helper |
 | subthread lineage fields | Current storage/read model |
 | capabilities | Planned |
@@ -600,6 +601,14 @@ return result.outputSummary;
 
 When no parent terminal event exists, `ctx.join` asks `ThreadService.mirrorChildTerminalEvent` to mirror a terminal child projection into the parent. If the child is still running, the parent runner pass suspends. Mirrored terminal events wake the parent runner with `child-completed` or `child-failed`.
 
+Parents can list known child threads with `ctx.children()`:
+
+```ts
+const children = await ctx.children();
+```
+
+`ctx.children()` returns attached children by default. Pass `{ includeDetached: true }` to include detached children. Runtime callers can use the same behavior through `ThreadService.listChildren(parentThreadId, options)`.
+
 Parent thread lifecycle events:
 
 - `child_thread.spawned`
@@ -683,7 +692,7 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - `ctx.tool`, `ctx.gate`, and `ctx.checkpoint` are implemented durable effects.
 - `ctx.emit` and `ctx.uuid` are provisional replay helpers.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
-- capabilities and richer projections are planned but not implemented in this slice.
+- capabilities, child runtime dispatch, and richer projections are planned but not implemented in this slice.
 - Package subpaths are available, but root exports still include runtime internals for compatibility.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.

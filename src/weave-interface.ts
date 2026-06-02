@@ -113,6 +113,7 @@ interface AgentContext<Tools extends readonly AnyToolContract[] = readonly AnyTo
     options?: SpawnOptions,
   ): Promise<ThreadRef<Output>>;
   join<Output>(key: string, thread: ThreadRef<Output>, options?: JoinOptions): Promise<AgentRun<Output>>;
+  children(options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
   checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
   uuid(key: string): string;
@@ -179,6 +180,7 @@ interface ThreadLeaseStore {
 interface ThreadService {
   startSession(input: string | StartSessionInput): Promise<{ threadId: string; correlationId: string }>;
   startChildSession(input: StartChildSessionInput): Promise<StartChildSessionResult>;
+  listChildren(parentThreadId: string, options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
   resolveGate(threadId: string, gateId: string, resolution: "approved" | "denied", comment?: string): Promise<void>;
 }
 
@@ -367,6 +369,7 @@ type SpawnOptions = {
   detached?: boolean;
 };
 type JoinOptions = { throwOnFailure?: boolean };
+type ChildrenOptions = { includeDetached?: boolean };
 type AgentRun<Output = unknown> =
   | { status: "completed"; thread: ThreadRef<Output>; output?: Output; outputSummary?: string }
   | { status: "failed"; thread: ThreadRef<Output>; errorCode: string; message: string };

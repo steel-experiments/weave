@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ThreadEngine } from "./contracts.js";
+import type { ThreadRef } from "./agent-contract.js";
 import {
   deterministicUuid,
   newEventId,
@@ -51,6 +52,10 @@ export type MirrorChildTerminalEventInput = {
 export type MirrorChildTerminalEventResult =
   | { mirrored: true; eventType: "child_thread.completed" | "child_thread.failed" }
   | { mirrored: false; reason: "child-not-terminal" };
+
+export type ListChildrenOptions = {
+  includeDetached?: boolean;
+};
 
 export class ThreadService {
   constructor(private readonly engine: ThreadEngine) {}
@@ -274,6 +279,38 @@ export class ThreadService {
     };
     await appendChildTerminalEvent(this.engine, event);
     return { mirrored: true, eventType: "child_thread.failed" };
+  }
+
+  async listChildren(parentThreadId: string, options: ListChildrenOptions = {}): Promise<readonly ThreadRef[]> {
+    const parentEvents = await this.engine.read(parentThreadId);
+    const spawnedEvents = parentEvents.filter(
+      (event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned",
+    );
+    const refs: ThreadRef[] = [];
+    const seen = new Set<string>();
+
+    for (const event of spawnedEvents) {
+      if (seen.has(event.payload.childThreadId)) {
+        continue;
+      }
+      seen.add(event.payload.childThreadId);
+
+      if (!options.includeDetached && event.payload.mode === "detached") {
+        continue;
+      }
+
+      const projection = await this.engine.getProjection(event.payload.childThreadId);
+      refs.push({
+        threadId: event.payload.childThreadId,
+        agentName: event.payload.childAgentName,
+        parentThreadId,
+        rootThreadId: projection?.rootThreadId ?? undefined,
+        parentScopeKey: event.payload.scopeKey,
+        parentStepKey: event.payload.stepKey,
+      });
+    }
+
+    return refs;
   }
 
   async resolveGate(

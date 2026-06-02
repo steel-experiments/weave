@@ -4,6 +4,7 @@ import type {
   AgentEventInput,
   AgentRun,
   AnyAgentContract,
+  ChildrenOptions,
   GateRequest,
   GateResolution,
   JoinOptions,
@@ -400,6 +401,17 @@ class ReplayAgentContext implements AgentContext {
     }
 
     this.suspend("join", key, "join-pending", []);
+  }
+
+  async children(options: ChildrenOptions = {}): Promise<readonly ThreadRef[]> {
+    if (!this.options.service) {
+      throw new WeaveError("CHILDREN_SERVICE_UNAVAILABLE", "ctx.children requires ThreadService runtime binding", {
+        threadId: this.threadId,
+        scopeKey: this.scopeKey,
+      });
+    }
+
+    return this.options.service.listChildren(this.threadId, options);
   }
 
   async checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value> {

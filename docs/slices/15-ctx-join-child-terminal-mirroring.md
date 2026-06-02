@@ -64,5 +64,4 @@ Known follow-ups:
 
 - Runtime support for dispatching child threads to the intended child agent.
 - Raw child output event support for typed `AgentRun.output`.
-- `ThreadService.listChildren` and `ctx.children`.
 - Cancellation and detached-child policy semantics.

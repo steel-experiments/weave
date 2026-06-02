@@ -856,6 +856,79 @@ async function testJoinFailedChild(): Promise<void> {
   assert.deepEqual(finalPlan.events[0]?.payload, { message: "child failed" });
 }
 
+async function testListChildren(): Promise<void> {
+  const parentThreadId = "list-children-service";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+
+  const attached = await service.startChildSession({
+    parentThreadId,
+    agentName: "attached-agent",
+    input: { query: "attached" },
+    source: "test",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-attached",
+    idempotencyKey: "spawn-attached",
+  });
+  await service.startChildSession({
+    parentThreadId,
+    agentName: "detached-agent",
+    input: { query: "detached" },
+    source: "test",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-detached",
+    detached: true,
+    idempotencyKey: "spawn-detached",
+  });
+
+  const defaultChildren = await service.listChildren(parentThreadId);
+  assert.deepEqual(defaultChildren, [
+    {
+      threadId: attached.threadId,
+      agentName: "attached-agent",
+      parentThreadId,
+      rootThreadId: parentThreadId,
+      parentScopeKey: "agent:parent-agent",
+      parentStepKey: "spawn-attached",
+    },
+  ]);
+
+  const allChildren = await service.listChildren(parentThreadId, { includeDetached: true });
+  assert.equal(allChildren.length, 2);
+  assert.deepEqual(
+    allChildren.map((child) => child.agentName),
+    ["attached-agent", "detached-agent"],
+  );
+}
+
+async function testContextChildren(): Promise<void> {
+  const parentThreadId = "context-children";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  await service.startChildSession({
+    parentThreadId,
+    agentName: "child-agent",
+    input: { query: "existing" },
+    source: "test",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-existing",
+    idempotencyKey: "spawn-existing",
+  });
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx) {
+      const children = await ctx.children();
+      return { finalMessage: `children=${children.map((child) => child.agentName).join(",")}` };
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+
+  const plan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
+  assert(plan);
+  assert.deepEqual(plan.events[0]?.payload, { message: "children=child-agent" });
+}
+
 async function testStartChildSessionIdempotency(): Promise<void> {
   const parentThreadId = "parent-child-idempotent";
   const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
@@ -1127,6 +1200,8 @@ await testSpawnCreatesChildSession();
 await testSpawnInputMismatch();
 await testJoinMirrorsCompletedChild();
 await testJoinFailedChild();
+await testListChildren();
+await testContextChildren();
 await testStartChildSessionIdempotency();
 await testAgentFailureEvent();
 

@@ -60,4 +60,3 @@ Changed modules:
 Known follow-ups:
 
 - Runtime support for dispatching child threads to the intended child agent.
-- `ThreadService.listChildren` and `ctx.children`.

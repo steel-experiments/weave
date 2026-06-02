@@ -40,6 +40,10 @@ export type JoinOptions = {
   throwOnFailure?: boolean;
 };
 
+export type ChildrenOptions = {
+  includeDetached?: boolean;
+};
+
 export type AgentRun<Output = unknown> =
   | {
       status: "completed";
@@ -97,6 +101,7 @@ export type AgentContext<
     options?: SpawnOptions,
   ): Promise<ThreadRef<Output>>;
   join<Output>(key: string, thread: ThreadRef<Output>, options?: JoinOptions): Promise<AgentRun<Output>>;
+  children(options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
   checkpoint<Value>(key: string, compute: () => MaybePromise<Value>): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
   uuid(key: string): string;
