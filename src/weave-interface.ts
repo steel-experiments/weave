@@ -333,7 +333,7 @@ interface InboxStore {
 }
 
 type Actor = { type: "user" | "agent" | "worker" | "human" | "system"; id: string };
-type StartSessionInput = { prompt: string; source?: string; actor?: Actor; metadata?: Record<string, unknown>; idempotencyKey?: string };
+type StartSessionInput = { prompt: string; source?: string; agentName?: string; actor?: Actor; metadata?: Record<string, unknown>; idempotencyKey?: string };
 type StartChildSessionInput = {
   parentThreadId: string;
   agentName: string;

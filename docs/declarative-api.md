@@ -671,6 +671,18 @@ const runtime = createWeaveRuntime({
 
 The runtime owns runners, workers, leases, inbox claiming, credentials, artifacts, and observability wiring.
 
+Root sessions can target a specific app agent by passing `agentName` to `ThreadService.startSession`:
+
+```ts
+await service.startSession({
+  prompt: "Review this PR.",
+  agentName: "coding.reviewPullRequest",
+  metadata: { repo: "acme/app", pullRequestNumber: 42 },
+});
+```
+
+When `session.started.payload.agentName` is present, the runtime dispatches that thread to the named agent. Threads without `agentName` use the runtime's configured default agent.
+
 ## Failure Semantics
 
 Failed tools append `tool.failed`, mark the thread failed, and dead-letter the tool-worker inbox item. `tool.failed` is terminal in V1 and does not wake the runner.

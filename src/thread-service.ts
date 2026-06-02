@@ -16,6 +16,7 @@ import {
 export type StartSessionInput = {
   prompt: string;
   source?: SessionSource;
+  agentName?: string;
   actor?: Actor;
   metadata?: SessionMetadata;
   idempotencyKey?: string;
@@ -108,6 +109,7 @@ export class ThreadService {
         actor: { type: "system", id: "thread-service" },
         payload: {
           source: normalized.source,
+          agentName: normalized.agentName,
           metadata: normalized.metadata,
         },
       },
@@ -449,6 +451,7 @@ function matchesFilter<Value extends string>(value: Value | undefined, filter: V
 }
 
 function normalizeStartSessionInput(input: string | StartSessionInput): Required<Pick<StartSessionInput, "prompt" | "source" | "actor">> & {
+  agentName?: string;
   metadata?: SessionMetadata;
   idempotencyKey?: string;
 } {
@@ -463,6 +466,7 @@ function normalizeStartSessionInput(input: string | StartSessionInput): Required
   return {
     prompt: input.prompt,
     source: input.source ?? "test",
+    agentName: input.agentName,
     actor: input.actor ?? { type: "user", id: "demo-user" },
     metadata: input.metadata,
     idempotencyKey: input.idempotencyKey,

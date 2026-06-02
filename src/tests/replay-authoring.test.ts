@@ -1334,6 +1334,44 @@ async function testRuntimePlannerFallsBackToDefaultAgent(): Promise<void> {
   assert.deepEqual(plan.events[0]?.payload, { message: "default ran hello" });
 }
 
+async function testStartSessionAgentNameDispatchesRootSession(): Promise<void> {
+  const engine = new MemoryThreadEngine();
+  const service = new ThreadService(engine);
+  const defaultAgent = agent({
+    name: "default-agent",
+    input: inputSchema,
+    async run() {
+      return { finalMessage: "default ran" };
+    },
+  });
+  const targetAgent = agent({
+    name: "target-root-agent",
+    input: inputSchema,
+    async run(_ctx, input) {
+      return { finalMessage: `target ran ${input.query}` };
+    },
+  });
+  const app = weave({ agents: [defaultAgent, targetAgent] });
+  const session = await service.startSession({
+    prompt: "Run target agent.",
+    source: "test",
+    agentName: targetAgent.name,
+    metadata: { query: "root-input" },
+    idempotencyKey: "target-root-agent-session",
+  });
+  const events = await engine.read(session.threadId);
+  const started = events.find(
+    (event): event is Extract<ThreadEvent, { type: "session.started" }> => event.type === "session.started",
+  );
+  assert(started);
+  assert.equal(started.payload.agentName, targetAgent.name);
+
+  const planner = createRuntimeAgentPlanner(app, defaultAgent.name, service);
+  const plan = await planner.plan(session.threadId, events);
+  assert(plan);
+  assert.deepEqual(plan.events[0]?.payload, { message: "target ran root-input" });
+}
+
 async function testRuntimeRegistersToolsFromAllAgents(): Promise<void> {
   const threadId = "runtime-all-agent-tools";
   const childOnlyTool = tool({
@@ -1679,6 +1717,7 @@ await testContextChildren();
 await testContextChildrenFilters();
 await testRuntimePlannerDispatchesChildAgent();
 await testRuntimePlannerFallsBackToDefaultAgent();
+await testStartSessionAgentNameDispatchesRootSession();
 await testRuntimeRegistersToolsFromAllAgents();
 await testStartChildSessionIdempotency();
 await testAgentFailureEvent();
