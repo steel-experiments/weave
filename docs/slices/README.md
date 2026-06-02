@@ -41,3 +41,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `19-join-output-schema-validation.md`: shipped slice validating raw joined child output against child agent output schemas.
 - `20-child-listing-filters.md`: shipped slice adding child listing filters by agent name and status.
 - `21-child-cancellation.md`: shipped slice adding durable child cancellation through `ctx.cancelChild` and `ThreadService.cancelChildThread`.
+- `22-agent-output-schema-validation.md`: shipped slice validating run-first agent outputs against declared output schemas.

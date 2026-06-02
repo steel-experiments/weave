@@ -90,7 +90,8 @@ class RunAgentPlanner implements AgentPlanner {
     });
 
     try {
-      const output = await this.agent.run(context, input);
+      const rawOutput = await this.agent.run(context, input);
+      const output = validateAgentOutput(this.agent, rawOutput);
       const plannedEvents = context.drainEvents();
       const outputSummary = formatAgentOutput(output);
       if (!plannedEvents.some((event) => event.type === "agent.response.produced")) {
@@ -689,6 +690,19 @@ function readAgentInput(agent: AgentContract, events: readonly ThreadEvent[]): u
 
   const rawInput = sessionStarted?.payload.metadata ?? { prompt: promptReceived.payload.prompt };
   return agent.input ? agent.input.parse(rawInput) : rawInput;
+}
+
+function validateAgentOutput(agent: AgentContract, output: unknown): unknown {
+  if (!agent.output) {
+    return output;
+  }
+
+  const outputResult = agent.output.safeParse(output);
+  if (!outputResult.success) {
+    throw new WeaveError("AGENT_OUTPUT_INVALID", `Invalid output for agent ${agent.name}`, outputResult.error);
+  }
+
+  return outputResult.data;
 }
 
 function findEventByDurableIdentity(

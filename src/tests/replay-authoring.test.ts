@@ -389,6 +389,29 @@ async function testDomainToolOutputReplay(): Promise<void> {
   });
 }
 
+async function testInvalidAgentOutputRecordsFailure(): Promise<void> {
+  const threadId = "invalid-agent-output";
+  const invalidOutputAgent = agent({
+    name: "invalid-output-agent",
+    input: inputSchema,
+    output: z.object({ answer: z.number().int() }),
+    async run() {
+      return { answer: "not a number" } as unknown as { answer: number };
+    },
+  });
+  const engine = new MemoryThreadEngine(initialHistory(threadId));
+  const runner = new ThreadRunner(engine, engine, createAgentPlanner(invalidOutputAgent), "test-runner");
+
+  const result = await runner.runOnce(threadId);
+  assert.deepEqual(result, { acted: true, appendedEvents: 1, reason: "agent-failed" });
+  const failed = (await engine.read(threadId)).find(
+    (event): event is Extract<ThreadEvent, { type: "agent.failed" }> => event.type === "agent.failed",
+  );
+  assert(failed);
+  assert.equal(failed.payload.errorCode, "AGENT_OUTPUT_INVALID");
+  assert.equal((await engine.read(threadId)).some((event) => event.type === "agent.output.completed"), false);
+}
+
 async function testToolWorkerOutputSummaries(): Promise<void> {
   const domainTool = tool({
     name: "test.workerDomain",
@@ -1596,6 +1619,7 @@ await testEmitPayloadMismatch();
 await testCheckpointReplay();
 await testCheckpointMismatch();
 await testDomainToolOutputReplay();
+await testInvalidAgentOutputRecordsFailure();
 await testToolWorkerOutputSummaries();
 await testGateReplay();
 await testGatePayloadMismatch();
