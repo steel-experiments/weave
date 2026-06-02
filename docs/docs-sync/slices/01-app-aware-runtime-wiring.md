@@ -4,7 +4,7 @@
 
 - Vertical: docs-sync
 - Status: Shipped
-- Last updated: 2026-05-29
+- Last updated: 2026-06-02
 - Source rollup: `../../steel-docs-sync-missing-work.md`
 
 ## Goal
@@ -21,13 +21,15 @@ This slice belongs in reusable Weave runtime support, not docs-sync-only code.
 
 Expected reusable concepts:
 
-- `defineWeaveApp`
-- active agent selection
+- `weave` / `agent` / `tool` app composition
+- active agent selection through `createWeaveRuntime({ app, agentName, ... })`
 - `ThreadRunner`
 - `ContractToolWorker`
 - app credential provider
+- app artifact store
 - app observability sink
-- route extension or app-owned HTTP server pattern
+- package subpaths for runtime, storage, and server wiring
+- route extension through `beforeRoutes` or integrations
 
 ## Test Plan
 
@@ -44,14 +46,37 @@ Tests should prove the real runtime wiring works.
 - [x] Example apps can boot app-specific agents and tools.
 - [x] Core generic scripts remain simple.
 - [x] Docs sync no longer needs to duplicate all daemon setup.
-- [ ] Backfill exact code paths and test evidence from the implementation.
+- [x] Backfill exact code paths and test evidence from the implementation.
 
 ## Completion Notes
 
-The original rollup marks this slice complete. This document still needs code-path and test-evidence backfill.
+Shipped and aligned with the current Weave architecture.
+
+Implemented modules:
+
+- `examples/steel-docs-sync/src/app.ts`: defines the Steel docs app with `weave({ agents: [steelDocsAgent] })`.
+- `examples/steel-docs-sync/src/agent.ts`: defines a run-first `steel-docs` agent using typed `ctx.tool` and `ctx.emit` calls.
+- `examples/steel-docs-sync/src/index.ts`: boots `createWeaveRuntime` with app-specific agent, tools, artifact store, runner daemon, and tool daemon.
+- `examples/steel-docs-sync/src/webhook-demo.ts`: boots the same runtime through the webhook server path.
+
+Architecture alignment:
+
+- Uses root `weave` for authoring and `weave/runtime`, `weave/postgres`, and `weave/server` package subpaths for runtime/storage/server concerns.
+- Uses app-scoped tools collected by `createWeaveRuntime`, not a docs-sync-specific runner.
+- Uses current run-first replay architecture instead of planner-first event construction.
+
+Test evidence:
+
+- `examples/steel-docs-sync/src/index.ts` asserts tool requests for `steel.auditDocsSync` and `steel.modelReview`, stable step keys, completed projection, summary outcome, and artifact references.
+- `examples/steel-docs-sync/src/webhook-demo.ts` exercises the app-specific runtime through signed webhook ingress.
+
+Commands run during this review:
+
+- `npm test`
+- `npm run typecheck`
 
 ## Docs To Update On Completion
 
-- [ ] `../../declarative-api.md` if app authoring changed
-- [ ] `../../architecture.md` if runtime boundaries changed
-- [ ] this slice with exact implementation evidence
+- [x] `../../declarative-api.md` if app authoring changed
+- [x] `../../architecture.md` if runtime boundaries changed
+- [x] this slice with exact implementation evidence

@@ -42,6 +42,7 @@ Responsibilities:
 - durable append-only event log
 - ordered thread-local event streams
 - runnable inbox semantics
+- artifact and snapshot references for large external data
 - trace and correlation metadata
 - wake and resume mechanics
 - stream-to-stream routing or linking
@@ -68,7 +69,10 @@ Responsibilities:
 - receive explicit work requests
 - emit structured lifecycle events
 - support progress and long-running execution
+- surface bounded retries, terminal failures, and dead-letter diagnostics
 - avoid opaque fire-and-forget behavior
+
+Tool workers should keep large raw payloads out of thread events. Events should contain durable facts, summaries, hashes, and artifact references; artifact storage owns raw bodies.
 
 ### 4. Policy and Credential Layer
 

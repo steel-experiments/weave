@@ -4,7 +4,7 @@
 
 - Vertical: docs-sync
 - Status: Shipped
-- Last updated: 2026-05-29
+- Last updated: 2026-06-02
 - Source rollup: `../../steel-docs-sync-missing-work.md`
 
 ## Goal
@@ -21,7 +21,7 @@ This slice should start with generic finding semantics rather than docs-specific
 
 Expected behavior:
 
-- use `agent.finding.produced` or structured tool output for docs findings
+- use `agent.finding.produced` plus structured tool output for docs findings
 - expose finding counts by severity
 - expose final outcome such as `passed`, `warning`, or `failed`
 - keep full evidence inspectable in event history and artifacts
@@ -39,14 +39,37 @@ Expected behavior:
 - [x] GitHub Actions can decide pass or fail from a stable API or event shape.
 - [x] Humans can inspect full event history for evidence.
 - [x] No docs-specific event is added until the generic finding path proves insufficient.
-- [ ] Backfill exact code paths and test evidence from the implementation.
+- [x] Backfill exact code paths and test evidence from the implementation.
 
 ## Completion Notes
 
-The original rollup marks this slice complete. This document still needs code-path and test-evidence backfill.
+Shipped and aligned with the current Weave architecture.
+
+Implemented modules:
+
+- `examples/steel-docs-sync/src/tools.ts`: defines `SteelDocsAuditDataSchema` and `SteelDocsModelReviewDataSchema` with stable `outcome`, `findings`, and evidence fields.
+- `examples/steel-docs-sync/src/agent.ts`: emits generic `agent.finding.produced` events through typed `event(...)` factories.
+- `src/summary.ts`: builds generic `ThreadSummary` with finding counts by severity and CI-readable outcome.
+- `src/api-server.ts`: exposes `GET /threads/:id/summary` and SSE `thread.summary` / `thread.completed` events.
+
+Architecture alignment:
+
+- Uses generic event taxonomy (`agent.finding.produced`) instead of docs-specific event types.
+- Uses raw typed tool outputs plus `agent.output.completed` from current core architecture.
+- CI can read `ThreadSummary.execution` and `ThreadSummary.outcome` without parsing all events.
+
+Test evidence:
+
+- `examples/steel-docs-sync/src/index.ts` asserts warning outcome, succeeded execution, and warning finding counts.
+- `examples/steel-docs-sync/src/webhook-demo.ts` asserts summary, streamed summary, completion status, and two `agent.finding.produced` events.
+
+Commands run during this review:
+
+- `npm test`
+- `npm run typecheck`
 
 ## Docs To Update On Completion
 
-- [ ] `../../event-taxonomy.md` if finding events changed
-- [ ] `../../steel-docs-sync-example.md` if summary shape changed
-- [ ] this slice with exact implementation evidence
+- [x] `../../event-taxonomy.md` if finding events changed
+- [x] `../../steel-docs-sync-example.md` if summary shape changed
+- [x] this slice with exact implementation evidence

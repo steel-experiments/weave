@@ -4,7 +4,7 @@
 
 - Vertical: docs-sync
 - Status: Shipped
-- Last updated: 2026-05-29
+- Last updated: 2026-06-02
 - Source rollup: `../../steel-docs-sync-missing-work.md`
 
 ## Goal
@@ -22,8 +22,9 @@ This slice affects reusable session creation semantics.
 Expected API shape:
 
 - `ThreadService.startSession` accepts structured input, not only a prompt string
-- `session.started` or adjacent metadata records source and integration context
+- `session.started` metadata records source and integration context
 - idempotency keys are accepted for webhook-triggered starts
+- changed root session inputs for a reused idempotency key are rejected by the current core mismatch semantics
 - metadata excludes secrets
 
 ## Test Plan
@@ -40,14 +41,37 @@ Expected API shape:
 - [x] Webhook metadata is durable in the event stream.
 - [x] Duplicate GitHub Action deliveries are safe.
 - [x] No secret values are stored in metadata.
-- [ ] Backfill exact code paths and test evidence from the implementation.
+- [x] Backfill exact code paths and test evidence from the implementation.
 
 ## Completion Notes
 
-The original rollup marks this slice complete. This document still needs code-path and test-evidence backfill.
+Shipped and aligned with the current Weave architecture.
+
+Implemented modules:
+
+- `examples/steel-docs-sync/src/server.ts`: passes webhook payload metadata, `source: "github-action"`, actor identity, and deterministic idempotency key into `ThreadService.startSession`.
+- `src/thread-service.ts`: stores root session metadata in `session.started.payload.metadata`, supports deterministic idempotency, and rejects mismatched idempotent retries with `ReplayMismatchError`.
+- `examples/steel-docs-sync/src/webhook-demo.ts`: asserts webhook metadata is durable and duplicate deliveries return the same thread id.
+
+Architecture alignment:
+
+- Uses current root session metadata and idempotency semantics from Weave core slices 24 and 26.
+- Does not store webhook secrets in events; only signed payload metadata is persisted.
+- Duplicate deliveries reuse the existing thread instead of duplicating reviews.
+
+Test evidence:
+
+- `webhook-demo.ts` asserts `session.started.payload.source === "github-action"` and `session.started.payload.metadata` equals the webhook payload.
+- `webhook-demo.ts` posts a duplicate payload and asserts the same `threadId` is returned.
+- Core replay tests cover idempotency mismatch rejection for changed root session input.
+
+Commands run during this review:
+
+- `npm test`
+- `npm run typecheck`
 
 ## Docs To Update On Completion
 
-- [ ] `../../event-taxonomy.md` if `session.started` shape changed
-- [ ] `../../interface.md` if `ThreadService` shape changed
-- [ ] this slice with exact implementation evidence
+- [x] `../../event-taxonomy.md` if `session.started` shape changed
+- [x] `../../interface.md` if `ThreadService` shape changed
+- [x] this slice with exact implementation evidence
