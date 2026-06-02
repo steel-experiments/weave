@@ -28,7 +28,9 @@ import {
 import { approvalPolicy } from "../policy-contract.js";
 import { ThreadRunner } from "../runner.js";
 import { createRuntimeAgentPlanner, createWeaveRuntime } from "../runtime.js";
+import { buildThreadSummary } from "../summary.js";
 import { ThreadService } from "../thread-service.js";
+import { toMermaidTimeline, toTextTimeline } from "../timeline.js";
 import { tool, type AnyToolContract } from "../tool-contract.js";
 import { ContractToolWorker } from "../tool-worker.js";
 
@@ -433,6 +435,127 @@ async function testDomainToolOutputReplay(): Promise<void> {
     output: "ok:1",
     summary: "ok:1",
   });
+}
+
+async function testLegacyTopLevelToolCompletionCompatibility(): Promise<void> {
+  const threadId = "legacy-top-level-tool-completion";
+  const history = initialHistory(threadId);
+  const request = requestedEvent(threadId);
+  const parsed = ThreadEventSchema.parse({
+    eventId: eventKey(threadId, "tool.completed", "legacy-top-level"),
+    threadId,
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    causationId: request.eventId,
+    actor: { type: "worker", id: "legacy-worker" },
+    payload: {
+      toolCallId: request.payload.toolCallId,
+      summary: "Old tool completed",
+      requiresManualApproval: false,
+      data: { result: "Legacy output" },
+    },
+  });
+
+  assert.equal(parsed.type, "tool.completed");
+  assert.deepEqual(parsed.payload, {
+    toolCallId: request.payload.toolCallId,
+    output: {
+      summary: "Old tool completed",
+      requiresManualApproval: false,
+      data: { result: "Legacy output" },
+    },
+    summary: "Old tool completed",
+  });
+}
+
+async function testLegacyToolCompletionPlannerGateCompatibility(): Promise<void> {
+  const threadId = "legacy-tool-completion-planner-gate";
+  const history = initialHistory(threadId);
+  const request = requestedEvent(threadId);
+  const legacyCompletion = ThreadEventSchema.parse({
+    eventId: eventKey(threadId, "tool.completed", "legacy-gated-completion"),
+    threadId,
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    causationId: request.eventId,
+    actor: { type: "worker", id: "legacy-worker" },
+    payload: {
+      toolCallId: request.payload.toolCallId,
+      summary: "Legacy gated output",
+      requiresManualApproval: true,
+      data: { result: "requires approval" },
+    },
+  });
+  const engine = new MemoryThreadEngine([...history, request, legacyCompletion]);
+  const runner = new ThreadRunner(engine, engine, undefined, "legacy-runner");
+
+  const result = await runner.runOnce(threadId);
+  assert.equal(result.reason, "tool-completed");
+  const events = await engine.read(threadId);
+  const gateCreated = events.find((event): event is Extract<ThreadEvent, { type: "gate.created" }> => {
+    return event.type === "gate.created";
+  });
+  assert(gateCreated);
+  assert.equal(gateCreated.payload.relatedToolCallId, request.payload.toolCallId);
+}
+
+async function testLegacyEventsWithoutDurableIdentityRemainReadable(): Promise<void> {
+  const threadId = "legacy-events-without-durable-identity";
+  const history = initialHistory(threadId);
+  const legacyRequest: Extract<ThreadEvent, { type: "tool.requested" }> = {
+    eventId: eventKey(threadId, "tool.requested", "legacy-unscoped-request"),
+    threadId,
+    type: "tool.requested",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    causationId: history.at(-1)?.eventId,
+    actor: { type: "agent", id: "legacy-agent" },
+    payload: {
+      toolCallId: deterministicUuid("tool-call", threadId, "legacy-unscoped-request"),
+      toolName: "test.lookup",
+      args: { query: "hello" },
+    },
+  };
+  const legacyCompletion = ThreadEventSchema.parse({
+    eventId: eventKey(threadId, "tool.completed", "legacy-unscoped-completion"),
+    threadId,
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    causationId: legacyRequest.eventId,
+    actor: { type: "worker", id: "legacy-worker" },
+    payload: {
+      toolCallId: legacyRequest.payload.toolCallId,
+      summary: "Legacy unscoped output",
+      requiresManualApproval: false,
+      data: { result: "legacy" },
+    },
+  });
+  const finalResponse: Extract<ThreadEvent, { type: "agent.response.produced" }> = {
+    eventId: eventKey(threadId, "agent.response.produced", "legacy-final-response"),
+    threadId,
+    type: "agent.response.produced",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    causationId: legacyCompletion.eventId,
+    actor: { type: "agent", id: "legacy-agent" },
+    payload: { message: "Legacy final response" },
+  };
+  const events = [...history, legacyRequest, legacyCompletion, finalResponse];
+  const engine = new MemoryThreadEngine(events);
+  const projection = await engine.getProjection(threadId);
+  assert(projection);
+
+  const summary = buildThreadSummary(projection, await engine.read(threadId));
+  assert.equal(summary.finalMessage, "Legacy final response");
+  assert.match(toTextTimeline(events), /tool.completed/);
+  assert.match(toMermaidTimeline(events), /agent.response.produced/);
+
+  const planner = createAgentPlanner(lookupAgent);
+  const plan = await planner.plan(threadId, await engine.read(threadId));
+  assert.equal(plan, null);
 }
 
 async function testInvalidAgentOutputRecordsFailure(): Promise<void> {
@@ -2026,6 +2149,9 @@ await testEmitPayloadMismatch();
 await testCheckpointReplay();
 await testCheckpointMismatch();
 await testDomainToolOutputReplay();
+await testLegacyTopLevelToolCompletionCompatibility();
+await testLegacyToolCompletionPlannerGateCompatibility();
+await testLegacyEventsWithoutDurableIdentityRemainReadable();
 await testInvalidAgentOutputRecordsFailure();
 await testInvalidAgentInputRecordsFailure();
 await testToolWorkerOutputSummaries();

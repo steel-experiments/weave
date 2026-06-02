@@ -53,7 +53,7 @@ As a Weave app author, I can adopt the new V1 authoring model with clear public 
 ## Acceptance Criteria
 
 - [x] Public package exports are tested and documented.
-- [ ] Legacy event and tool-output compatibility is tested.
+- [x] Legacy event and tool-output compatibility is tested.
 - [ ] Replay invariants are captured as regression tests.
 - [ ] Child-thread lineage, ownership, cancellation, and terminal mirroring are covered.
 - [ ] Docs accurately describe implemented V1 behavior and limitations.

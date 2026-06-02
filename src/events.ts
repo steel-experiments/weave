@@ -81,11 +81,25 @@ export const ToolProgressPayloadSchema = z.object({
   message: z.string().min(1),
 });
 
-export const ToolCompletedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
-  output: z.unknown(),
-  summary: z.string().min(1).optional(),
-});
+export const ToolCompletedPayloadSchema = z.union([
+  z.object({
+    toolCallId: z.string().uuid(),
+    output: z.unknown(),
+    summary: z.string().min(1).optional(),
+  }),
+  z
+    .object({
+      toolCallId: z.string().uuid(),
+      summary: z.string().min(1),
+      requiresManualApproval: z.boolean(),
+      data: z.unknown().optional(),
+    })
+    .transform(({ toolCallId, summary, requiresManualApproval, data }) => ({
+      toolCallId,
+      output: data === undefined ? { summary, requiresManualApproval } : { summary, requiresManualApproval, data },
+      summary,
+    })),
+]);
 
 export const ToolFailedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),

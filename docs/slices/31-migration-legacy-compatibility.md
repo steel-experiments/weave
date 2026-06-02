@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `In Progress`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -51,38 +51,50 @@ As an operator with existing threads, I can migrate to the refactored runtime wi
 
 ## Acceptance Criteria
 
-- [ ] Old tool completion envelopes remain readable in summaries and timelines.
-- [ ] New domain-shaped tool outputs replay through `ctx.tool` without `.data`.
-- [ ] Missing `scopeKey`, `stepKey`, and lineage fields do not crash readers or projections.
-- [ ] Legacy planner-authored flows still work where supported.
-- [ ] Run-first replay does not treat unrelated legacy events as durable effect matches.
+- [x] Old tool completion envelopes remain readable in summaries and timelines.
+- [x] New domain-shaped tool outputs replay through `ctx.tool` without `.data`.
+- [x] Missing `scopeKey`, `stepKey`, and lineage fields do not crash readers or projections.
+- [x] Legacy planner-authored flows still work where supported.
+- [x] Run-first replay does not treat unrelated legacy events as durable effect matches.
 - [ ] Fresh and non-reset migration paths are verified.
 
 ## Progress
 
-- [ ] Add legacy completion fixtures.
-- [ ] Add new completion fixtures.
-- [ ] Add missing-field fixtures.
+- [x] Add legacy completion fixtures.
+- [x] Add new completion fixtures.
+- [x] Add missing-field fixtures.
 - [ ] Add migration smoke coverage.
-- [ ] Update docs with compatibility notes.
-- [ ] Run verification.
+- [x] Update docs with compatibility notes.
+- [x] Run verification.
 
-## Completion Notes
+## Progress Notes
 
-Fill this in when shipped.
+Completed behavior:
 
-Include:
+- `tool.completed` now accepts and normalizes the older top-level `summary`, `requiresManualApproval`, and `data` envelope shape into the current `payload.output` shape.
+- Legacy completion envelopes remain compatible with the old planner gate-heavy flow.
+- Legacy events without `scopeKey` or `stepKey` remain readable by projection, summary, and timeline paths.
+- Run-first replay does not accidentally match unrelated legacy events that lack durable identity fields.
+- Existing domain-shaped tool output replay coverage continues to prove new tools return raw outputs without `.data`.
 
-- compatibility behavior proven
-- migration commands or harness used
-- event shapes covered
-- commands run
-- known compatibility gaps
+Changed modules:
+
+- `src/events.ts`: broadens `ToolCompletedPayloadSchema` to normalize legacy top-level tool completion envelopes.
+- `src/tests/replay-authoring.test.ts`: adds legacy top-level completion, legacy planner gate compatibility, and missing durable identity compatibility tests.
+
+Commands run:
+
+- `npm test`
+- `npm run typecheck`
+
+Remaining gap:
+
+- Fresh and non-reset database migration coverage is still not automated in this repo. The migration SQL is idempotent through `create table if not exists` and `alter table ... add column if not exists`, but a representative pre-refactor database harness is still needed before this slice can be marked shipped.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`
 - [ ] upgrade or migration guide
