@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { z } from "zod";
 import { agent, event } from "../agent-contract.js";
 import { createAgentPlanner } from "../agent-runner.js";
+import { createApiServer } from "../api-server.js";
 import { weave } from "../app-contract.js";
 import type {
   AppendOptions,
@@ -94,6 +95,51 @@ async function testDuplicatePrevention(): Promise<void> {
 
   const secondPlan = await planner.plan("duplicate-prevention", [...history, ...firstPlan.events]);
   assert.equal(secondPlan, null);
+}
+
+async function testRunnerReadsFullReplayHistory(): Promise<void> {
+  const threadId = "full-replay-history";
+  const history = initialHistory(threadId);
+  const fillerEvents = Array.from({ length: 1000 }, (_, index): Extract<ThreadEvent, { type: "checkpoint.completed" }> => ({
+    eventId: eventKey(threadId, "checkpoint.completed", `filler:${index}`),
+    threadId,
+    type: "checkpoint.completed",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    actor: { type: "agent", id: "filler" },
+    scopeKey: "agent:filler",
+    stepKey: `filler:${index}`,
+    payload: {
+      scopeKey: "agent:filler",
+      stepKey: `filler:${index}`,
+      value: index,
+    },
+  }));
+  const request = requestedEvent(threadId);
+  const completion: Extract<ThreadEvent, { type: "tool.completed" }> = {
+    eventId: eventKey(threadId, "tool.completed", "lookup"),
+    threadId,
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    causationId: request.eventId,
+    scopeKey: "agent:test-agent",
+    stepKey: "lookup",
+    actor: { type: "worker", id: "test-worker" },
+    payload: {
+      toolCallId: request.payload.toolCallId,
+      output: { summary: "looked up", requiresManualApproval: false, data: { result: "ok" } },
+    },
+  };
+  const engine = new MemoryThreadEngine([...history, ...fillerEvents, request, completion]);
+  const runner = new ThreadRunner(engine, engine, createAgentPlanner(lookupAgent), "test-runner");
+
+  const result = await runner.runOnce(threadId);
+
+  assert.equal(result.reason, "tool-completed");
+  const events = await engine.read(threadId, { limit: 2000 });
+  assert.equal(events.filter((event) => event.type === "tool.requested").length, 1);
+  assert(events.some((event) => event.type === "agent.response.produced"));
 }
 
 async function testDecodeFailure(): Promise<void> {
@@ -765,6 +811,7 @@ async function testSpawnCreatesChildSession(): Promise<void> {
     async run(ctx, input) {
       const child = await ctx.spawn("spawn-child", childAgent, input, {
         prompt: "Run child agent.",
+        metadata: { priority: "high" },
       });
       return { finalMessage: `spawned ${child.threadId}` };
     },
@@ -783,6 +830,8 @@ async function testSpawnCreatesChildSession(): Promise<void> {
   assert.equal(spawned.stepKey, "spawn-child");
   assert.equal(spawned.payload.childAgentName, "child-agent");
   assert.equal(spawned.payload.inputHash, stableJsonHash({ query: "hello" }));
+  assert.equal(spawned.payload.inputSummary, "Run child agent.");
+  assert.deepEqual(spawned.payload.metadata, { priority: "high" });
 
   const childProjection = await engine.getProjection(spawned.payload.childThreadId);
   assert(childProjection);
@@ -818,6 +867,68 @@ async function testSpawnInputMismatch(): Promise<void> {
     input: inputSchema,
     async run(ctx) {
       await ctx.spawn("spawn-child", childAgent, { query: "changed" });
+    },
+  });
+  const mismatchPlanner = createAgentPlanner(mismatchAgent, mismatchAgent.name, { service });
+
+  await assert.rejects(
+    async () => {
+      await mismatchPlanner.plan(parentThreadId, await engine.read(parentThreadId));
+    },
+    ReplayMismatchError,
+  );
+}
+
+async function testSpawnPromptMismatch(): Promise<void> {
+  const parentThreadId = "spawn-prompt-mismatch";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      await ctx.spawn("spawn-child", childAgent, input, { prompt: "Run original prompt." });
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+  await planner.plan(parentThreadId, await engine.read(parentThreadId));
+
+  const mismatchAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      await ctx.spawn("spawn-child", childAgent, input, { prompt: "Run changed prompt." });
+    },
+  });
+  const mismatchPlanner = createAgentPlanner(mismatchAgent, mismatchAgent.name, { service });
+
+  await assert.rejects(
+    async () => {
+      await mismatchPlanner.plan(parentThreadId, await engine.read(parentThreadId));
+    },
+    ReplayMismatchError,
+  );
+}
+
+async function testSpawnMetadataMismatch(): Promise<void> {
+  const parentThreadId = "spawn-metadata-mismatch";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      await ctx.spawn("spawn-child", childAgent, input, { metadata: { region: "us" } });
+    },
+  });
+  const planner = createAgentPlanner(parentAgent, parentAgent.name, { service });
+  await planner.plan(parentThreadId, await engine.read(parentThreadId));
+
+  const mismatchAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run(ctx, input) {
+      await ctx.spawn("spawn-child", childAgent, input, { metadata: { region: "eu" } });
     },
   });
   const mismatchPlanner = createAgentPlanner(mismatchAgent, mismatchAgent.name, { service });
@@ -1129,6 +1240,49 @@ async function testJoinFailedChild(): Promise<void> {
   assert.deepEqual(finalPlan.events[0]?.payload, { message: "child failed" });
 }
 
+async function testJoinRejectsUnrelatedChild(): Promise<void> {
+  const parentA = "join-parent-a";
+  const parentB = "join-parent-b";
+  const engine = new MemoryThreadEngine([...initialHistory(parentA), ...initialHistory(parentB)]);
+  const service = new ThreadService(engine);
+  const child = await service.startChildSession({
+    parentThreadId: parentA,
+    agentName: "child-agent",
+    input: { query: "a" },
+    source: "test",
+    parentScopeKey: "agent:parent-a",
+    parentStepKey: "spawn-child",
+    idempotencyKey: "spawn-child",
+  });
+  await engine.append([
+    {
+      eventId: eventKey(child.threadId, "agent.response.produced", "done"),
+      threadId: child.threadId,
+      type: "agent.response.produced",
+      occurredAt: nowIso(),
+      actor: { type: "agent", id: "child-agent" },
+      payload: { message: "done" },
+    },
+  ]);
+  const parentBAgent = agent({
+    name: "parent-b",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.join("wait-child", { threadId: child.threadId, agentName: "child-agent" });
+    },
+  });
+  const planner = createAgentPlanner(parentBAgent, parentBAgent.name, { service });
+
+  await assert.rejects(
+    async () => {
+      await planner.plan(parentB, await engine.read(parentB));
+    },
+    /Child thread not found for parent/,
+  );
+  const parentBEvents = await engine.read(parentB);
+  assert.equal(parentBEvents.some((event) => event.type === "child_thread.completed" || event.type === "child_thread.failed"), false);
+}
+
 async function testListChildren(): Promise<void> {
   const parentThreadId = "list-children-service";
   const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
@@ -1370,6 +1524,39 @@ async function testStartSessionAgentNameDispatchesRootSession(): Promise<void> {
   const plan = await planner.plan(session.threadId, events);
   assert(plan);
   assert.deepEqual(plan.events[0]?.payload, { message: "target ran root-input" });
+}
+
+async function testApiCreateThreadAcceptsAgentName(): Promise<void> {
+  const engine = new MemoryThreadEngine();
+  const service = new ThreadService(engine);
+  const server = createApiServer(engine, service);
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert(address && typeof address === "object");
+    const response = await fetch(`http://127.0.0.1:${address.port}/threads`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "Run target agent.",
+        agentName: "target-root-agent",
+        metadata: { query: "root-input" },
+      }),
+    });
+    assert.equal(response.status, 201);
+    const body = (await response.json()) as { threadId: string };
+    const events = await engine.read(body.threadId);
+    const started = events.find(
+      (event): event is Extract<ThreadEvent, { type: "session.started" }> => event.type === "session.started",
+    );
+    assert(started);
+    assert.equal(started.payload.agentName, "target-root-agent");
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
 }
 
 async function testStartSessionIdempotencyMismatch(): Promise<void> {
@@ -1718,6 +1905,7 @@ class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
   private readonly threads = new Map<string, CreateThreadOptions & { rootThreadId: string }>();
 
   constructor(readonly events: ThreadEvent[] = []) {
+    this.events = events.map((event, index) => ({ ...event, seq: event.seq ?? index }) as ThreadEvent);
     for (const event of events) {
       if (!this.threads.has(event.threadId)) {
         this.threads.set(event.threadId, { rootThreadId: event.threadId });
@@ -1828,6 +2016,7 @@ function statusForEvents(events: readonly ThreadEvent[]): ThreadProjection["stat
 }
 
 await testDuplicatePrevention();
+await testRunnerReadsFullReplayHistory();
 await testDecodeFailure();
 await testToolFailedReplayNoPlan();
 await testParallelDurableEffectRejected();
@@ -1849,18 +2038,22 @@ await testThreadProjectionLineageSchema();
 await testStartChildSessionCreatesLineage();
 await testSpawnCreatesChildSession();
 await testSpawnInputMismatch();
+await testSpawnPromptMismatch();
+await testSpawnMetadataMismatch();
 await testJoinMirrorsCompletedChild();
 await testJoinValidatesStructuredChildOutput();
 await testJoinRejectsInvalidStructuredChildOutput();
 await testCancelChildRecordsTerminalFailure();
 await testJoinCancelledChild();
 await testJoinFailedChild();
+await testJoinRejectsUnrelatedChild();
 await testListChildren();
 await testContextChildren();
 await testContextChildrenFilters();
 await testRuntimePlannerDispatchesChildAgent();
 await testRuntimePlannerFallsBackToDefaultAgent();
 await testStartSessionAgentNameDispatchesRootSession();
+await testApiCreateThreadAcceptsAgentName();
 await testStartSessionIdempotencyMismatch();
 await testUnknownRootSessionAgentRecordsFailure();
 await testUnknownChildSessionAgentRecordsFailure();

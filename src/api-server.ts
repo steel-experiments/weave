@@ -26,6 +26,7 @@ import { createIntegrationRoutes } from "./integration-contract.js";
 const CreateThreadBodySchema = z.object({
   prompt: z.string().min(1),
   source: SessionSourceSchema.optional(),
+  agentName: z.string().min(1).optional(),
   actor: ActorSchema.optional(),
   metadata: SessionMetadataSchema.optional(),
   idempotencyKey: z.string().min(1).optional(),

@@ -306,6 +306,8 @@ class ReplayAgentContext implements AgentContext {
         stepKey: spawned.payload.stepKey,
         mode: spawned.payload.mode,
         inputHash: spawned.payload.inputHash,
+        inputSummary: spawned.payload.inputSummary,
+        metadata: spawned.payload.metadata,
       };
       if (canonicalJson(comparable) !== canonicalJson(expected)) {
         throw new ReplayMismatchError("Durable spawn key was previously used with different child work", {
@@ -659,13 +661,18 @@ class ReplayAgentContext implements AgentContext {
     childAgentName: string,
     input: SessionMetadata,
     options: SpawnOptions,
-  ): Pick<Extract<ThreadEvent, { type: "child_thread.spawned" }>["payload"], "childAgentName" | "scopeKey" | "stepKey" | "mode" | "inputHash"> {
+  ): Pick<
+    Extract<ThreadEvent, { type: "child_thread.spawned" }>["payload"],
+    "childAgentName" | "scopeKey" | "stepKey" | "mode" | "inputHash" | "inputSummary" | "metadata"
+  > {
     return {
       childAgentName,
       scopeKey: this.scopeKey,
       stepKey: key,
       mode: options.detached ? "detached" : "attached",
       inputHash: stableJsonHash(input),
+      inputSummary: options.prompt,
+      metadata: options.metadata,
     };
   }
 }

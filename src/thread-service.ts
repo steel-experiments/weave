@@ -297,7 +297,18 @@ export class ThreadService {
       return { mirrored: false, reason: "child-not-terminal" };
     }
 
+    if (childProjection.parentThreadId !== input.parentThreadId) {
+      throw new Error(`Child thread not found for parent: ${input.childThreadId}`);
+    }
+
     const parentEvents = await this.engine.read(input.parentThreadId);
+    const spawned = parentEvents.find((event) => {
+      return event.type === "child_thread.spawned" && event.payload.childThreadId === input.childThreadId;
+    });
+    if (!spawned) {
+      throw new Error(`Child thread was not spawned by parent: ${input.childThreadId}`);
+    }
+
     const existing = parentEvents.find((event) => {
       return (
         (event.type === "child_thread.completed" || event.type === "child_thread.failed") &&

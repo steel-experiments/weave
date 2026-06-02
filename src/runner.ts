@@ -54,7 +54,7 @@ export class ThreadRunner {
     }
 
     try {
-      const history = await this.engine.read(threadId);
+      const history = await readFullThread(this.engine, threadId);
       const planStartedAt = new Date();
       let plan: AgentPlan | null;
       try {
@@ -174,6 +174,29 @@ export class ThreadRunner {
 
 function newestEvent(events: ThreadEvent[]): ThreadEvent | undefined {
   return events.at(-1);
+}
+
+async function readFullThread(engine: ThreadEngine, threadId: string, pageSize = 1000): Promise<ThreadEvent[]> {
+  const events: ThreadEvent[] = [];
+  let fromSeq = 0;
+
+  while (true) {
+    const page = await engine.read(threadId, { fromSeq, limit: pageSize });
+    if (page.length === 0) {
+      return events;
+    }
+
+    events.push(...page);
+    const last = page.at(-1);
+    if (last?.seq === undefined) {
+      throw new Error("Thread event missing seq during replay read");
+    }
+
+    fromSeq = last.seq + 1;
+    if (page.length < pageSize) {
+      return events;
+    }
+  }
 }
 
 function errorMessage(error: unknown): string {
