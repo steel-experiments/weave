@@ -44,3 +44,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `22-agent-output-schema-validation.md`: shipped slice validating run-first agent outputs against declared output schemas.
 - `23-agent-input-validation-errors.md`: shipped slice recording invalid run-first agent input as durable `AGENT_INPUT_INVALID` failures.
 - `24-root-session-agent-dispatch.md`: shipped slice letting root sessions target agents through `session.started.payload.agentName`.
+- `25-unknown-agent-dispatch-failure.md`: shipped slice recording unknown runtime agent dispatch as durable `AGENT_NOT_FOUND` failures.

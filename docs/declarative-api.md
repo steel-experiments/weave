@@ -681,13 +681,13 @@ await service.startSession({
 });
 ```
 
-When `session.started.payload.agentName` is present, the runtime dispatches that thread to the named agent. Threads without `agentName` use the runtime's configured default agent.
+When `session.started.payload.agentName` is present, the runtime dispatches that thread to the named agent. Threads without `agentName` use the runtime's configured default agent. If the named agent is not registered in the runtime app, the runner records `agent.failed` with `AGENT_NOT_FOUND`.
 
 ## Failure Semantics
 
 Failed tools append `tool.failed`, mark the thread failed, and dead-letter the tool-worker inbox item. `tool.failed` is terminal in V1 and does not wake the runner.
 
-If run-first agent input fails the declared `input` schema, the runner records `agent.failed` with `AGENT_INPUT_INVALID`. If an agent planner or `agent.run` throws another non-tool exception, the runner appends `agent.failed`, marks the thread failed, and completes the runner pass. `agent.failed.payload.errorCode` uses the `WeaveError.code` when available, otherwise `AGENT_FAILED`.
+If runtime dispatch targets an unknown agent, the runner records `agent.failed` with `AGENT_NOT_FOUND`. If run-first agent input fails the declared `input` schema, the runner records `agent.failed` with `AGENT_INPUT_INVALID`. If an agent planner or `agent.run` throws another non-tool exception, the runner appends `agent.failed`, marks the thread failed, and completes the runner pass. `agent.failed.payload.errorCode` uses the `WeaveError.code` when available, otherwise `AGENT_FAILED`.
 
 Package subpaths separate authoring from runtime binding:
 

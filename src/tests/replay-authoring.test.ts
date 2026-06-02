@@ -1372,6 +1372,43 @@ async function testStartSessionAgentNameDispatchesRootSession(): Promise<void> {
   assert.deepEqual(plan.events[0]?.payload, { message: "target ran root-input" });
 }
 
+async function testUnknownRootSessionAgentRecordsFailure(): Promise<void> {
+  const engine = new MemoryThreadEngine();
+  const service = new ThreadService(engine);
+  const defaultAgent = agent({
+    name: "default-agent",
+    input: inputSchema,
+    async run() {
+      return { finalMessage: "default ran" };
+    },
+  });
+  const app = weave({ agents: [defaultAgent] });
+  const session = await service.startSession({
+    prompt: "Run missing agent.",
+    source: "test",
+    agentName: "missing-agent",
+    metadata: { query: "root-input" },
+    idempotencyKey: "missing-root-agent-session",
+  });
+  const runner = new ThreadRunner(
+    engine,
+    engine,
+    createRuntimeAgentPlanner(app, defaultAgent.name, service),
+    "test-runner",
+  );
+
+  const result = await runner.runOnce(session.threadId);
+  assert.deepEqual(result, { acted: true, appendedEvents: 1, reason: "agent-failed" });
+  const events = await engine.read(session.threadId);
+  const failed = events.find(
+    (event): event is Extract<ThreadEvent, { type: "agent.failed" }> => event.type === "agent.failed",
+  );
+  assert(failed);
+  assert.equal(failed.payload.errorCode, "AGENT_NOT_FOUND");
+  assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+  assert.equal(events.some((event) => event.type === "agent.output.completed"), false);
+}
+
 async function testRuntimeRegistersToolsFromAllAgents(): Promise<void> {
   const threadId = "runtime-all-agent-tools";
   const childOnlyTool = tool({
@@ -1718,6 +1755,7 @@ await testContextChildrenFilters();
 await testRuntimePlannerDispatchesChildAgent();
 await testRuntimePlannerFallsBackToDefaultAgent();
 await testStartSessionAgentNameDispatchesRootSession();
+await testUnknownRootSessionAgentRecordsFailure();
 await testRuntimeRegistersToolsFromAllAgents();
 await testStartChildSessionIdempotency();
 await testAgentFailureEvent();

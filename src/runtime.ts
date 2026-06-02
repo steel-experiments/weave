@@ -1,5 +1,4 @@
 import type { WeaveAppDefinition } from "./app-contract.js";
-import { getAgent } from "./app-contract.js";
 import { createAgentPlanner } from "./agent-runner.js";
 import { RunnerDaemon, ToolWorkerDaemon } from "./daemons.js";
 import type { ThreadService } from "./thread-service.js";
@@ -11,6 +10,7 @@ import type { AgentPlanner } from "./runner.js";
 import type { ThreadEvent } from "./events.js";
 import type { AnyToolContract } from "./tool-contract.js";
 import type { AnyAgentContract } from "./agent-contract.js";
+import { WeaveError } from "./errors.js";
 
 export type WeaveRuntimeOptions<Agents extends readonly { name: string }[] = readonly { name: string }[]> = {
   app: WeaveAppDefinition<any>;
@@ -67,7 +67,7 @@ export function createRuntimeAgentPlanner(
       const agentName = threadAgentName(events) ?? defaultAgentName;
       let planner = planners.get(agentName);
       if (!planner) {
-        const agent = getAgent(app, agentName as never);
+        const agent = findRuntimeAgent(app, agentName);
         planner = createAgentPlanner(agent, agentName, { service });
         planners.set(agentName, planner);
       }
@@ -75,6 +75,15 @@ export function createRuntimeAgentPlanner(
       return planner.plan(threadId, events);
     },
   };
+}
+
+function findRuntimeAgent(app: WeaveAppDefinition<any>, agentName: string): AnyAgentContract {
+  const agent = app.agents.find((candidate: AnyAgentContract) => candidate.name === agentName);
+  if (!agent) {
+    throw new WeaveError("AGENT_NOT_FOUND", `Agent not found in Weave app: ${agentName}`, { agentName });
+  }
+
+  return agent;
 }
 
 function threadAgentName(events: readonly ThreadEvent[]): string | undefined {
