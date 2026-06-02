@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `In Progress`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -59,12 +59,12 @@ As a Weave app author, I can adopt the new V1 authoring model with clear public 
 - [x] Docs accurately describe implemented V1 behavior and limitations.
 - [x] Examples have clear roles and remain trustworthy.
 - [x] Upgrade guidance exists for authors moving from planner-first and enveloped tool outputs.
-- [ ] `npm test` and `npm run typecheck` pass after all stabilization changes.
+- [x] `npm test` and `npm run typecheck` pass after all stabilization changes.
 
 ## Progress
 
 - [x] `30-public-api-export-audit.md`
-- [ ] `31-migration-legacy-compatibility.md`
+- [x] `31-migration-legacy-compatibility.md`
 - [x] `32-replay-invariant-hardening.md`
 - [x] `33-child-thread-integrity-audit.md`
 - [x] `34-documentation-conformance-pass.md`
@@ -73,23 +73,38 @@ As a Weave app author, I can adopt the new V1 authoring model with clear public 
 
 ## Completion Notes
 
-Fill this in when the stabilization milestone ships.
+Shipped behavior:
 
-Include:
+- Public API exports are covered by `src/tests/public-api-exports.test.ts` through package self-reference imports.
+- Legacy and new event compatibility is covered by replay tests and a real Postgres migration compatibility harness.
+- Replay invariants are covered for terminal idempotency, durable effect mismatch behavior, long histories, and parallel durable effect rejection.
+- Child-thread lineage, detached behavior, ownership rejection, cancellation, and terminal mirroring idempotency are covered.
+- Docs, examples, and the upgrade guide now describe the implemented V1 authoring/runtime boundary.
 
-- shipped test coverage
-- public API decisions
-- migration compatibility results
-- docs updated
-- examples verified
-- commands run
-- known remaining limitations
+Public API decisions:
+
+- Root `weave` remains the authoring boundary and keeps compatibility exports.
+- Runtime, Postgres, server, and testing subpaths are tested and documented.
+- `weave/testing` remains limited to deterministic mock utilities for now.
+
+Commands run:
+
+- `npm test`
+- `npm run typecheck`
+
+Known remaining limitations:
+
+- Arbitrary parallel durable effects are still unsupported.
+- `ctx.emit` and `ctx.uuid` remain provisional replay helpers.
+- Capabilities and stronger policy enforcement remain future work.
+- Effect-backed internals are not part of the public V1 authoring requirement.
+- Migration coverage uses a representative main-era schema fixture, not every historical schema variant.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/architecture.md`
-- [ ] `docs/migration/api-refactor.md` or `docs/upgrade-guide.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/architecture.md`
+- [x] `docs/migration/api-refactor.md` or `docs/upgrade-guide.md`

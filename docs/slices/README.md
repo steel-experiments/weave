@@ -48,9 +48,9 @@ The slice document should stay alive after implementation. It becomes the compac
 - `26-root-session-idempotency-mismatch.md`: shipped slice rejecting changed root session inputs for reused idempotency keys.
 - `27-child-session-idempotency-mismatch.md`: shipped slice rejecting changed child session inputs for reused idempotency keys.
 - `28-unknown-child-agent-dispatch-failure.md`: shipped slice proving unknown child target agents record durable `AGENT_NOT_FOUND` failures.
-- `29-v1-authoring-api-stabilization.md`: in-progress umbrella slice for merge hardening the V1 authoring/runtime boundary.
+- `29-v1-authoring-api-stabilization.md`: shipped umbrella slice for merge hardening the V1 authoring/runtime boundary.
 - `30-public-api-export-audit.md`: shipped slice testing and documenting root and subpath package exports.
-- `31-migration-legacy-compatibility.md`: in-progress slice for legacy event, tool-output, and database migration compatibility coverage.
+- `31-migration-legacy-compatibility.md`: shipped slice for legacy event, tool-output, and database migration compatibility coverage.
 - `32-replay-invariant-hardening.md`: shipped slice locking down run-first replay invariants.
 - `33-child-thread-integrity-audit.md`: shipped slice for child lineage, ownership, cancellation, and terminal mirroring hardening.
 - `34-documentation-conformance-pass.md`: shipped slice aligning docs with implemented V1 behavior and limitations.

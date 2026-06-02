@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `In Progress`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -56,18 +56,18 @@ As an operator with existing threads, I can migrate to the refactored runtime wi
 - [x] Missing `scopeKey`, `stepKey`, and lineage fields do not crash readers or projections.
 - [x] Legacy planner-authored flows still work where supported.
 - [x] Run-first replay does not treat unrelated legacy events as durable effect matches.
-- [ ] Fresh and non-reset migration paths are verified.
+- [x] Fresh and non-reset migration paths are verified.
 
 ## Progress
 
 - [x] Add legacy completion fixtures.
 - [x] Add new completion fixtures.
 - [x] Add missing-field fixtures.
-- [ ] Add migration smoke coverage.
+- [x] Add migration smoke coverage.
 - [x] Update docs with compatibility notes.
 - [x] Run verification.
 
-## Progress Notes
+## Completion Notes
 
 Completed behavior:
 
@@ -76,20 +76,24 @@ Completed behavior:
 - Legacy events without `scopeKey` or `stepKey` remain readable by projection, summary, and timeline paths.
 - Run-first replay does not accidentally match unrelated legacy events that lack durable identity fields.
 - Existing domain-shaped tool output replay coverage continues to prove new tools return raw outputs without `.data`.
+- Fresh migrations and non-reset migrations over a representative main-era schema are covered by a rollback-transaction Postgres test harness.
 
 Changed modules:
 
 - `src/events.ts`: broadens `ToolCompletedPayloadSchema` to normalize legacy top-level tool completion envelopes.
 - `src/tests/replay-authoring.test.ts`: adds legacy top-level completion, legacy planner gate compatibility, and missing durable identity compatibility tests.
+- `src/tests/migration-compatibility.test.ts`: adds real Postgres migration coverage for fresh and representative pre-refactor schemas without persisting schema changes.
+- `package.json`: includes migration compatibility coverage in `npm test`.
 
 Commands run:
 
 - `npm test`
 - `npm run typecheck`
 
-Remaining gap:
+Known gaps:
 
-- Fresh and non-reset database migration coverage is still not automated in this repo. The migration SQL is idempotent through `create table if not exists` and `alter table ... add column if not exists`, but a representative pre-refactor database harness is still needed before this slice can be marked shipped.
+- Migration coverage uses a representative main-era schema fixture, not every historical schema variant.
+- If Postgres is unavailable, the migration test logs a skip instead of failing the full non-DB test suite.
 
 ## Docs To Update On Completion
 
@@ -97,4 +101,4 @@ Remaining gap:
 - [x] `docs/slices/README.md`
 - [x] `docs/declarative-api.md`
 - [x] `docs/event-taxonomy.md`
-- [ ] upgrade or migration guide
+- [x] upgrade or migration guide
