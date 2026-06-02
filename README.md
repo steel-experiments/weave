@@ -70,6 +70,14 @@ curl -X POST http://127.0.0.1:3000/assistant \
 
 The server also exposes the raw Weave thread API at `/threads`, `/threads/<threadId>/events`, and `/threads/<threadId>/stream`.
 
+## Examples
+
+- `examples/sre-demo`: gate-heavy runtime semantics demo. It is deterministic and mocked, exercises domain-shaped tool outputs, approval gates, credentials, observability, and a gated remediation flow. Run with `npm run sre:demo`.
+- `examples/steel-docs-sync`: run-first/domain-output authoring demo. It uses deterministic local fixtures, artifact storage, `ctx.tool`, and `ctx.emit` facts to model a docs audit workflow. Run with `npm run steel:demo`.
+- `examples/simple-assistant`: model-backed run-first demo. It routes the external model call through `zenChatCompletionTool`; no raw network or model side effect happens inside `agent.run`. It requires `OPENCODE_API_KEY` and is optional for using Weave. Run with `npm run assistant:demo -- "your prompt"` or `npm run assistant:server`.
+
+The deterministic examples double as regression assets. The simple assistant demonstrates how to put a real model behind a tool boundary, not a required provider dependency for Weave itself.
+
 The PoC script resets only the dedicated `weave` schema, then verifies:
 
 - thread creation

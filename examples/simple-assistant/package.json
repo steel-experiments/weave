@@ -1,6 +1,7 @@
 {
   "name": "weave-simple-assistant",
   "version": "0.0.0",
+  "description": "Model-backed Weave assistant example with model calls routed through tools.",
   "private": true,
   "type": "module",
   "scripts": {

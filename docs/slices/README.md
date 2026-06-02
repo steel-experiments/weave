@@ -54,5 +54,5 @@ The slice document should stay alive after implementation. It becomes the compac
 - `32-replay-invariant-hardening.md`: shipped slice locking down run-first replay invariants.
 - `33-child-thread-integrity-audit.md`: shipped slice for child lineage, ownership, cancellation, and terminal mirroring hardening.
 - `34-documentation-conformance-pass.md`: shipped slice aligning docs with implemented V1 behavior and limitations.
-- `35-example-quality-audit.md`: proposed slice for making examples trustworthy demos and regression assets.
+- `35-example-quality-audit.md`: shipped slice making examples trustworthy demos and regression assets.
 - `36-api-refactor-upgrade-guide.md`: proposed slice for a human-readable migration guide from planner-first to V1 authoring.

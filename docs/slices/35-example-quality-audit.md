@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -48,38 +48,59 @@ As a potential app author, I can use the examples to understand the supported V1
 
 ## Acceptance Criteria
 
-- [ ] SRE demo has a clear gate-heavy/runtime semantics role.
-- [ ] Steel docs sync demonstrates run-first authoring and domain-shaped tool outputs.
-- [ ] Simple assistant routes model calls through tools and does not imply the model provider is required for Weave.
-- [ ] Examples avoid raw nondeterminism inside `agent.run`.
-- [ ] Examples avoid manual event construction where context helpers should be used.
-- [ ] Example README or root README explains each example's purpose and requirements.
-- [ ] All example workspaces typecheck.
+- [x] SRE demo has a clear gate-heavy/runtime semantics role.
+- [x] Steel docs sync demonstrates run-first authoring and domain-shaped tool outputs.
+- [x] Simple assistant routes model calls through tools and does not imply the model provider is required for Weave.
+- [x] Examples avoid raw nondeterminism inside `agent.run`.
+- [x] Examples avoid manual event construction where context helpers should be used.
+- [x] Example README or root README explains each example's purpose and requirements.
+- [x] All example workspaces typecheck.
 
 ## Progress
 
-- [ ] Audit SRE demo.
-- [ ] Audit Steel docs sync.
-- [ ] Audit simple assistant.
-- [ ] Update example docs.
-- [ ] Run verification.
+- [x] Audit SRE demo.
+- [x] Audit Steel docs sync.
+- [x] Audit simple assistant.
+- [x] Update example docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+Shipped behavior:
 
-Include:
+- Audited `examples/sre-demo`, `examples/steel-docs-sync`, and `examples/simple-assistant` agent bodies.
+- Confirmed examples route side effects through durable tools and context helpers rather than raw side effects inside `agent.run`.
+- Confirmed the simple assistant model call is routed through `zenChatCompletionTool` and requires `OPENCODE_API_KEY` only for that example.
+- Added a root README `Examples` section assigning each example a clear role and documenting credential requirements.
+- Added package descriptions to the example workspaces.
 
-- examples changed
-- smoke commands run
-- credential requirements documented
-- commands run
-- known example limitations
+Changed files:
+
+- `README.md`
+- `examples/sre-demo/package.json`
+- `examples/steel-docs-sync/package.json`
+- `examples/simple-assistant/package.json`
+
+Commands run:
+
+- `npm test`
+- `npm run typecheck`
+
+Smoke commands not run:
+
+- `npm run sre:demo`
+- `npm run steel:demo`
+
+Reason: both deterministic demos are DB-backed and call `migrate(..., { reset: true })`, which resets the shared `weave` schema. They were audited in code and covered by workspace typecheck here.
+
+Known limitations:
+
+- The simple assistant is credentialed and network-backed, so it is documented as optional and not a Weave provider requirement.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `README.md`
-- [ ] relevant example README files if present
-- [ ] `docs/declarative-api.md` if examples are referenced there
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `README.md`
+- [x] relevant example README files if present
+- [x] `docs/declarative-api.md` if examples are referenced there

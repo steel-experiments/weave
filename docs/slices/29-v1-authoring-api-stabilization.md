@@ -57,7 +57,7 @@ As a Weave app author, I can adopt the new V1 authoring model with clear public 
 - [x] Replay invariants are captured as regression tests.
 - [x] Child-thread lineage, ownership, cancellation, and terminal mirroring are covered.
 - [x] Docs accurately describe implemented V1 behavior and limitations.
-- [ ] Examples have clear roles and remain trustworthy.
+- [x] Examples have clear roles and remain trustworthy.
 - [ ] Upgrade guidance exists for authors moving from planner-first and enveloped tool outputs.
 - [ ] `npm test` and `npm run typecheck` pass after all stabilization changes.
 
@@ -68,7 +68,7 @@ As a Weave app author, I can adopt the new V1 authoring model with clear public 
 - [x] `32-replay-invariant-hardening.md`
 - [x] `33-child-thread-integrity-audit.md`
 - [x] `34-documentation-conformance-pass.md`
-- [ ] `35-example-quality-audit.md`
+- [x] `35-example-quality-audit.md`
 - [ ] `36-api-refactor-upgrade-guide.md`
 
 ## Completion Notes
