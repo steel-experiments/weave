@@ -675,7 +675,7 @@ The runtime owns runners, workers, leases, inbox claiming, credentials, artifact
 
 Failed tools append `tool.failed`, mark the thread failed, and dead-letter the tool-worker inbox item. `tool.failed` is terminal in V1 and does not wake the runner.
 
-If an agent planner or `agent.run` throws a non-tool exception, the runner appends `agent.failed`, marks the thread failed, and completes the runner pass. `agent.failed.payload.errorCode` uses the `WeaveError.code` when available, otherwise `AGENT_FAILED`.
+If run-first agent input fails the declared `input` schema, the runner records `agent.failed` with `AGENT_INPUT_INVALID`. If an agent planner or `agent.run` throws another non-tool exception, the runner appends `agent.failed`, marks the thread failed, and completes the runner pass. `agent.failed.payload.errorCode` uses the `WeaveError.code` when available, otherwise `AGENT_FAILED`.
 
 Package subpaths separate authoring from runtime binding:
 

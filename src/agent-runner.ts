@@ -689,7 +689,16 @@ function readAgentInput(agent: AgentContract, events: readonly ThreadEvent[]): u
   }
 
   const rawInput = sessionStarted?.payload.metadata ?? { prompt: promptReceived.payload.prompt };
-  return agent.input ? agent.input.parse(rawInput) : rawInput;
+  if (!agent.input) {
+    return rawInput;
+  }
+
+  const inputResult = agent.input.safeParse(rawInput);
+  if (!inputResult.success) {
+    throw new WeaveError("AGENT_INPUT_INVALID", `Invalid input for agent ${agent.name}`, inputResult.error);
+  }
+
+  return inputResult.data;
 }
 
 function validateAgentOutput(agent: AgentContract, output: unknown): unknown {

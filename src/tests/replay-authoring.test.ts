@@ -412,6 +412,43 @@ async function testInvalidAgentOutputRecordsFailure(): Promise<void> {
   assert.equal((await engine.read(threadId)).some((event) => event.type === "agent.output.completed"), false);
 }
 
+async function testInvalidAgentInputRecordsFailure(): Promise<void> {
+  const threadId = "invalid-agent-input";
+  const inputValidatingAgent = agent({
+    name: "input-validating-agent",
+    input: inputSchema,
+    async run(_ctx, input) {
+      return { finalMessage: input.query };
+    },
+  });
+  const history = initialHistory(threadId).map((event) => {
+    if (event.type !== "session.started") {
+      return event;
+    }
+
+    return {
+      ...event,
+      payload: {
+        source: "test" as const,
+        metadata: { query: "" },
+      },
+    } satisfies ThreadEvent;
+  });
+  const engine = new MemoryThreadEngine(history);
+  const runner = new ThreadRunner(engine, engine, createAgentPlanner(inputValidatingAgent), "test-runner");
+
+  const result = await runner.runOnce(threadId);
+  assert.deepEqual(result, { acted: true, appendedEvents: 1, reason: "agent-failed" });
+  const events = await engine.read(threadId);
+  const failed = events.find(
+    (event): event is Extract<ThreadEvent, { type: "agent.failed" }> => event.type === "agent.failed",
+  );
+  assert(failed);
+  assert.equal(failed.payload.errorCode, "AGENT_INPUT_INVALID");
+  assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+  assert.equal(events.some((event) => event.type === "agent.output.completed"), false);
+}
+
 async function testToolWorkerOutputSummaries(): Promise<void> {
   const domainTool = tool({
     name: "test.workerDomain",
@@ -1620,6 +1657,7 @@ await testCheckpointReplay();
 await testCheckpointMismatch();
 await testDomainToolOutputReplay();
 await testInvalidAgentOutputRecordsFailure();
+await testInvalidAgentInputRecordsFailure();
 await testToolWorkerOutputSummaries();
 await testGateReplay();
 await testGatePayloadMismatch();
