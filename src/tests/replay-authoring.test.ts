@@ -99,6 +99,33 @@ async function testDuplicatePrevention(): Promise<void> {
   assert.equal(secondPlan, null);
 }
 
+async function testCompletedRunFirstAgentIsTerminal(): Promise<void> {
+  const threadId = "completed-run-first-agent-is-terminal";
+  const terminalAgent = agent({
+    name: "terminal-agent",
+    input: inputSchema,
+    output: z.object({ finalMessage: z.string().min(1) }),
+    async run(_ctx, input) {
+      return { finalMessage: `done ${input.query}` };
+    },
+  });
+  const engine = new MemoryThreadEngine(initialHistory(threadId));
+  const runner = new ThreadRunner(engine, engine, createAgentPlanner(terminalAgent), "test-runner");
+
+  const firstRun = await runner.runOnce(threadId);
+  assert.equal(firstRun.acted, true);
+  assert.equal(firstRun.reason, "new-prompt");
+  const afterFirstRun = await engine.read(threadId);
+  assert.equal(afterFirstRun.filter((event) => event.type === "agent.response.produced").length, 1);
+  assert.equal(afterFirstRun.filter((event) => event.type === "agent.output.completed").length, 1);
+
+  const secondRun = await runner.runOnce(threadId);
+  assert.deepEqual(secondRun, { acted: false, appendedEvents: 0, reason: "no-plan" });
+  const afterSecondRun = await engine.read(threadId);
+  assert.equal(afterSecondRun.filter((event) => event.type === "agent.response.produced").length, 1);
+  assert.equal(afterSecondRun.filter((event) => event.type === "agent.output.completed").length, 1);
+}
+
 async function testRunnerReadsFullReplayHistory(): Promise<void> {
   const threadId = "full-replay-history";
   const history = initialHistory(threadId);
@@ -318,6 +345,45 @@ async function testEmitPayloadMismatch(): Promise<void> {
     },
     ReplayMismatchError,
   );
+}
+
+async function testEmitReplayDoesNotDuplicateEvent(): Promise<void> {
+  const threadId = "emit-replay-no-duplicate";
+  const emitAgent = agent({
+    name: "emit-replay-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.emit(
+        "finding",
+        event("agent.finding.produced", {
+          findingId: ctx.uuid("finding"),
+          severity: "info",
+          summary: "replayed finding",
+          evidence: [{ source: "test", summary: "evidence" }],
+        }),
+      );
+      return "done";
+    },
+  });
+  const planner = createAgentPlanner(emitAgent);
+  const history = initialHistory(threadId);
+
+  const firstPlan = await planner.plan(threadId, history);
+  assert(firstPlan);
+  assert.equal(firstPlan.events.filter((event) => event.type === "agent.finding.produced").length, 1);
+  const emittedFinding = firstPlan.events.find(
+    (planned): planned is Extract<ThreadEvent, { type: "agent.finding.produced" }> => planned.type === "agent.finding.produced",
+  );
+  assert(emittedFinding);
+
+  const replayPlan = await planner.plan(threadId, [...history, emittedFinding]);
+  assert(replayPlan);
+  assert.equal(replayPlan.events.some((planned) => planned.type === "agent.finding.produced"), false);
+  assert.equal(replayPlan.events[0]?.type, "agent.response.produced");
+  assert.equal(replayPlan.events[1]?.type, "agent.output.completed");
+
+  const terminalPlan = await planner.plan(threadId, [...history, ...firstPlan.events]);
+  assert.equal(terminalPlan, null);
 }
 
 async function testCheckpointReplay(): Promise<void> {
@@ -2139,6 +2205,7 @@ function statusForEvents(events: readonly ThreadEvent[]): ThreadProjection["stat
 }
 
 await testDuplicatePrevention();
+await testCompletedRunFirstAgentIsTerminal();
 await testRunnerReadsFullReplayHistory();
 await testDecodeFailure();
 await testToolFailedReplayNoPlan();
@@ -2146,6 +2213,7 @@ await testParallelDurableEffectRejected();
 await testMixedParallelDurableEffectRejected();
 await testReplayMismatch();
 await testEmitPayloadMismatch();
+await testEmitReplayDoesNotDuplicateEvent();
 await testCheckpointReplay();
 await testCheckpointMismatch();
 await testDomainToolOutputReplay();

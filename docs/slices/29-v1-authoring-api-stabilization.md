@@ -54,7 +54,7 @@ As a Weave app author, I can adopt the new V1 authoring model with clear public 
 
 - [x] Public package exports are tested and documented.
 - [x] Legacy event and tool-output compatibility is tested.
-- [ ] Replay invariants are captured as regression tests.
+- [x] Replay invariants are captured as regression tests.
 - [ ] Child-thread lineage, ownership, cancellation, and terminal mirroring are covered.
 - [ ] Docs accurately describe implemented V1 behavior and limitations.
 - [ ] Examples have clear roles and remain trustworthy.
@@ -65,7 +65,7 @@ As a Weave app author, I can adopt the new V1 authoring model with clear public 
 
 - [x] `30-public-api-export-audit.md`
 - [ ] `31-migration-legacy-compatibility.md`
-- [ ] `32-replay-invariant-hardening.md`
+- [x] `32-replay-invariant-hardening.md`
 - [ ] `33-child-thread-integrity-audit.md`
 - [ ] `34-documentation-conformance-pass.md`
 - [ ] `35-example-quality-audit.md`

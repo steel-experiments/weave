@@ -179,6 +179,8 @@ Pass 3:
 
 A pending durable effect should not cause the runner to poll. The runner wakes when a relevant event is appended, such as `tool.completed` or `gate.resolved`. In V1, `tool.failed` is terminal for the thread and does not wake the runner.
 
+After a run-first agent appends terminal response or output events, later runner passes are idempotent and should append no duplicate terminal events.
+
 ## Durable Step Keys
 
 Every durable operation needs a stable key.

@@ -51,7 +51,7 @@ The slice document should stay alive after implementation. It becomes the compac
 - `29-v1-authoring-api-stabilization.md`: in-progress umbrella slice for merge hardening the V1 authoring/runtime boundary.
 - `30-public-api-export-audit.md`: shipped slice testing and documenting root and subpath package exports.
 - `31-migration-legacy-compatibility.md`: in-progress slice for legacy event, tool-output, and database migration compatibility coverage.
-- `32-replay-invariant-hardening.md`: proposed slice for locking down run-first replay invariants.
+- `32-replay-invariant-hardening.md`: shipped slice locking down run-first replay invariants.
 - `33-child-thread-integrity-audit.md`: proposed slice for child lineage, ownership, cancellation, and terminal mirroring hardening.
 - `34-documentation-conformance-pass.md`: proposed slice for aligning docs with implemented V1 behavior and limitations.
 - `35-example-quality-audit.md`: proposed slice for making examples trustworthy demos and regression assets.

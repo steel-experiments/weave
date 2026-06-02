@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -50,35 +50,47 @@ As an app author, I can trust that stable-keyed durable effects append once, rep
 
 ## Acceptance Criteria
 
-- [ ] Long thread replay does not miss durable events after page boundaries.
-- [ ] Completed agents do not append duplicate terminal response or output events.
-- [ ] Current durable effects append once when missing.
-- [ ] Current durable effects append nothing while pending where applicable.
-- [ ] Current durable effects return recorded values when completed.
-- [ ] Changed payloads or effect-kind reuse throw `ReplayMismatchError`.
-- [ ] Concurrent durable effects remain rejected with `ParallelDurableEffectError`.
+- [x] Long thread replay does not miss durable events after page boundaries.
+- [x] Completed agents do not append duplicate terminal response or output events.
+- [x] Current durable effects append once when missing.
+- [x] Current durable effects append nothing while pending where applicable.
+- [x] Current durable effects return recorded values when completed.
+- [x] Changed payloads or effect-kind reuse throw `ReplayMismatchError`.
+- [x] Concurrent durable effects remain rejected with `ParallelDurableEffectError`.
 
 ## Progress
 
-- [ ] Inventory existing replay coverage.
-- [ ] Add missing invariant tests.
-- [ ] Update replay documentation.
-- [ ] Run verification.
+- [x] Inventory existing replay coverage.
+- [x] Add missing invariant tests.
+- [x] Update replay documentation.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+Shipped behavior:
 
-Include:
+- Confirmed existing coverage for full-history replay, duplicate tool prevention, effect-kind reuse mismatch, checkpoint/gate/spawn payload mismatch, child join variants, and parallel durable effect rejection.
+- Added terminal idempotency coverage proving completed run-first agents do not append duplicate `agent.response.produced` or `agent.output.completed` events on later runner passes.
+- Added `ctx.emit` replay coverage proving an already emitted event is treated as a no-op before terminal output is appended.
+- Updated the declarative API docs to state terminal response/output replay idempotency explicitly.
 
-- invariants covered
-- tests added or confirmed existing
-- commands run
-- known limitations
+Changed modules:
+
+- `src/tests/replay-authoring.test.ts`: adds terminal idempotency and `ctx.emit` replay no-duplicate tests.
+- `docs/declarative-api.md`: documents terminal idempotency.
+
+Commands run:
+
+- `npm test`
+- `npm run typecheck`
+
+Known limitations:
+
+- V1 still does not support arbitrary parallel durable effects or JavaScript continuation persistence.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
 - [ ] upgrade or migration guide
