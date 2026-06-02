@@ -56,3 +56,7 @@ The slice document should stay alive after implementation. It becomes the compac
 - `34-documentation-conformance-pass.md`: shipped slice aligning docs with implemented V1 behavior and limitations.
 - `35-example-quality-audit.md`: shipped slice making examples trustworthy demos and regression assets.
 - `36-api-refactor-upgrade-guide.md`: shipped slice for a human-readable migration guide from planner-first to V1 authoring.
+- `37-typed-events-and-stable-ids.md`: proposed slice for contract-based typed event factories and `ctx.id` stable IDs.
+- `38-capability-contracts.md`: proposed slice for declarative capability contracts without enforcement.
+- `39-policy-enforcement-over-requests.md`: proposed slice for runtime policy enforcement over tools, gates, and capabilities.
+- `40-effect-internals-tool-credential.md`: proposed slice for Effect-backed tool execution and credential resolution internals.
