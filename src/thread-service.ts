@@ -164,6 +164,7 @@ export class ThreadService {
           actor: { type: "system", id: "thread-service" },
           payload: {
             source,
+            agentName: input.agentName,
             metadata: input.input,
           },
         },

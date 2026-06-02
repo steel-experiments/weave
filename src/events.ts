@@ -28,6 +28,7 @@ export const EventEnvelopeBaseSchema = z.object({
 
 export const SessionStartedPayloadSchema = z.object({
   source: SessionSourceSchema,
+  agentName: z.string().min(1).optional(),
   metadata: SessionMetadataSchema.optional(),
 });
 

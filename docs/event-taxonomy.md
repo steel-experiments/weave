@@ -70,6 +70,8 @@ The PoC uses this event set.
 ```ts
 const SessionStartedPayload = z.object({
   source: z.enum(["api", "test", "system"]),
+  agentName: z.string().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 ```
 

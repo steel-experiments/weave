@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { z } from "zod";
 import { agent, event } from "../agent-contract.js";
 import { createAgentPlanner } from "../agent-runner.js";
+import { weave } from "../app-contract.js";
 import type {
   AppendOptions,
   AppendResult,
@@ -25,6 +26,7 @@ import {
 } from "../events.js";
 import { approvalPolicy } from "../policy-contract.js";
 import { ThreadRunner } from "../runner.js";
+import { createRuntimeAgentPlanner } from "../runtime.js";
 import { ThreadService } from "../thread-service.js";
 import { tool, type AnyToolContract } from "../tool-contract.js";
 import { ContractToolWorker } from "../tool-worker.js";
@@ -655,6 +657,7 @@ async function testStartChildSessionCreatesLineage(): Promise<void> {
   assert.equal(childEvents[0]?.type, "session.started");
   assert.deepEqual(childEvents[0]?.payload, {
     source: "test",
+    agentName: "research-agent",
     metadata: { query: "research docs" },
   });
   assert.equal(childEvents[1]?.type, "prompt.received");
@@ -927,6 +930,41 @@ async function testContextChildren(): Promise<void> {
   const plan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
   assert(plan);
   assert.deepEqual(plan.events[0]?.payload, { message: "children=child-agent" });
+}
+
+async function testRuntimePlannerDispatchesChildAgent(): Promise<void> {
+  const parentThreadId = "dispatch-parent";
+  const engine = new MemoryThreadEngine(initialHistory(parentThreadId));
+  const service = new ThreadService(engine);
+  const parentAgent = agent({
+    name: "parent-agent",
+    input: inputSchema,
+    async run() {
+      return { finalMessage: "parent ran" };
+    },
+  });
+  const childDispatchAgent = agent({
+    name: "dispatch-child-agent",
+    input: inputSchema,
+    async run(_ctx, input) {
+      return { finalMessage: `child ran ${input.query}` };
+    },
+  });
+  const app = weave({ agents: [parentAgent, childDispatchAgent] });
+  const child = await service.startChildSession({
+    parentThreadId,
+    agentName: childDispatchAgent.name,
+    input: { query: "child-input" },
+    source: "test",
+    parentScopeKey: "agent:parent-agent",
+    parentStepKey: "spawn-child",
+    idempotencyKey: "spawn-child",
+  });
+  const planner = createRuntimeAgentPlanner(app, parentAgent.name, service);
+
+  const plan = await planner.plan(child.threadId, await engine.read(child.threadId));
+  assert(plan);
+  assert.deepEqual(plan.events[0]?.payload, { message: "child ran child-input" });
 }
 
 async function testStartChildSessionIdempotency(): Promise<void> {
@@ -1202,6 +1240,7 @@ await testJoinMirrorsCompletedChild();
 await testJoinFailedChild();
 await testListChildren();
 await testContextChildren();
+await testRuntimePlannerDispatchesChildAgent();
 await testStartChildSessionIdempotency();
 await testAgentFailureEvent();
 

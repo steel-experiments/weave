@@ -36,3 +36,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `14-ctx-spawn-durable-effect.md`: shipped slice adding service-backed `ctx.spawn` for child sessions.
 - `15-ctx-join-child-terminal-mirroring.md`: shipped slice adding `ctx.join` and parent child-terminal mirroring.
 - `16-child-listing.md`: shipped slice adding `ThreadService.listChildren` and `ctx.children`.
+- `17-child-agent-runtime-dispatch.md`: shipped slice dispatching child threads to their target agent.

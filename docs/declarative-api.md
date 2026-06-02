@@ -570,7 +570,7 @@ await service.startChildSession({
 });
 ```
 
-The child session stores `input` in `session.started.payload.metadata`, which is the current replay input source for `agent.run`. The parent thread receives a `child_thread.spawned` event.
+The child session stores `input` in `session.started.payload.metadata`, which is the current replay input source for `agent.run`. It also stores the target `agentName` in `session.started.payload.agentName`, so the runtime can dispatch child runner passes to the intended child agent. The parent thread receives a `child_thread.spawned` event.
 
 Agents can create child sessions with `ctx.spawn`:
 
@@ -692,7 +692,7 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - `ctx.tool`, `ctx.gate`, and `ctx.checkpoint` are implemented durable effects.
 - `ctx.emit` and `ctx.uuid` are provisional replay helpers.
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
-- capabilities, child runtime dispatch, and richer projections are planned but not implemented in this slice.
+- capabilities and richer projections are planned but not implemented in this slice.
 - Package subpaths are available, but root exports still include runtime internals for compatibility.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.

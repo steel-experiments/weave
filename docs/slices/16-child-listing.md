@@ -57,6 +57,5 @@ Changed modules:
 
 Known follow-ups:
 
-- Runtime support for dispatching child threads to the intended child agent.
 - Child status filtering.
 - Child cancellation APIs.

@@ -59,4 +59,4 @@ Changed modules:
 
 Known follow-ups:
 
-- Runtime support for dispatching child threads to the intended child agent.
+- Raw child output event support for typed `AgentRun.output`.
