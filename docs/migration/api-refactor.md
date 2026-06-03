@@ -327,8 +327,8 @@ Use `ctx.children` to list known children and `ctx.cancelChild` to record durabl
 - Arbitrary parallel durable effects are unsupported.
 - `ctx.emit` supports typed event factories and raw compatibility input.
 - `ctx.id` is preferred for deterministic IDs; `ctx.uuid` remains a compatibility alias.
-- Capability contracts are declaration-only metadata; runtime enforcement is planned separately.
-- Effect-backed internals are not required for public V1 authoring.
+- Capability contracts are tool metadata; runtime request policies can inspect them for `ctx.tool` enforcement.
+- Effect-style internals are not required for public V1 authoring.
 - Cancelled children use failed thread semantics; there is no separate `cancelled` status yet.
 
 ## Migration Checklist

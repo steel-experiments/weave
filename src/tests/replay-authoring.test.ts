@@ -5,6 +5,7 @@ import { createAgentPlanner } from "../agent-runner.js";
 import { createApiServer } from "../api-server.js";
 import { weave } from "../app-contract.js";
 import { capability } from "../capability-contract.js";
+import type { CredentialProvider, CredentialRequest, CredentialResolution, CredentialResolutionContext } from "../credentials.js";
 import type {
   AppendOptions,
   AppendResult,
@@ -32,7 +33,7 @@ import { createRuntimeAgentPlanner, createWeaveRuntime } from "../runtime.js";
 import { buildThreadSummary } from "../summary.js";
 import { ThreadService } from "../thread-service.js";
 import { toMermaidTimeline, toTextTimeline } from "../timeline.js";
-import { tool, type AnyToolContract } from "../tool-contract.js";
+import { RetryableToolError, tool, type AnyToolContract } from "../tool-contract.js";
 import { ContractToolWorker } from "../tool-worker.js";
 
 const inputSchema = z.object({ query: z.string().min(1) });
@@ -1144,6 +1145,84 @@ async function testToolWorkerOutputSummaries(): Promise<void> {
     data: { result: "legacy" },
   });
   assert.equal(legacyCompletion.payload.summary, "legacy summary");
+}
+
+async function testToolWorkerEffectPathFailureParity(): Promise<void> {
+  const invalidOutputTool = tool({
+    name: "test.workerInvalidOutput",
+    description: "Worker invalid output tool.",
+    input: inputSchema,
+    output: z.object({ value: z.string().min(1) }),
+    run() {
+      return { value: 123 } as unknown as { value: string };
+    },
+  });
+  const invalidOutput = await runToolToTerminal(invalidOutputTool.name, invalidOutputTool);
+  assert.equal(invalidOutput.terminal.type, "tool.failed");
+  assert.equal(invalidOutput.terminal.payload.errorCode, "output_validation_failed");
+
+  const credentialedTool = tool({
+    name: "test.workerMissingCredential",
+    description: "Worker missing credential tool.",
+    input: inputSchema,
+    output: z.object({ value: z.string().min(1) }),
+    credentials() {
+      return { name: "github", kind: "secret" };
+    },
+    run(ctx) {
+      return { value: ctx.credentials.value("github") };
+    },
+  });
+  const missingCredential = await runToolToTerminal(credentialedTool.name, credentialedTool);
+  assert.equal(missingCredential.terminal.type, "tool.failed");
+  assert.equal(missingCredential.terminal.payload.errorCode, "credential_resolution_failed");
+  assert(missingCredential.events.some((event) => event.type === "credential.requested"));
+  assert(missingCredential.events.some((event) => event.type === "credential.failed" && event.payload.errorCode === "credential_not_found"));
+
+  const providerError = await runToolToTerminal(
+    "test.workerProviderError",
+    {
+      ...credentialedTool,
+      name: "test.workerProviderError",
+    },
+    new ThrowingCredentialProvider("provider exploded"),
+  );
+  assert.equal(providerError.terminal.type, "tool.failed");
+  assert.equal(providerError.terminal.payload.errorCode, "credential_resolution_failed");
+  assert(providerError.events.some((event) => event.type === "credential.failed" && event.payload.errorCode === "credential_provider_error"));
+
+  let attempts = 0;
+  const retryableTool = tool({
+    name: "test.workerRetryable",
+    description: "Worker retryable tool.",
+    input: inputSchema,
+    output: z.object({ ok: z.literal(true) }),
+    run() {
+      attempts += 1;
+      if (attempts < 2) {
+        throw new RetryableToolError("temporary failure");
+      }
+      return { ok: true };
+    },
+  });
+  const retryable = await runToolToTerminal(retryableTool.name, retryableTool);
+  assert.equal(retryable.terminal.type, "tool.completed");
+  assert.equal(attempts, 2);
+  assert(retryable.events.some((event) => event.type === "tool.progress" && event.payload.message.includes("Retrying")));
+
+  const throwingTool = tool({
+    name: "test.workerThrows",
+    description: "Worker throwing tool.",
+    input: inputSchema,
+    output: z.object({ ok: z.literal(true) }),
+    run() {
+      throw new Error("terminal failure");
+    },
+  });
+  const throwing = await runToolToTerminal(throwingTool.name, throwingTool);
+  assert.equal(throwing.terminal.type, "tool.failed");
+  assert.equal(throwing.terminal.payload.errorCode, "execution_failed");
+  assert.equal(throwing.terminal.payload.message, "terminal failure");
 }
 
 async function testGateReplay(): Promise<void> {
@@ -2647,19 +2726,44 @@ async function runToolToCompletion(
   toolName: string,
   toolContract: AnyToolContract,
 ): Promise<Extract<ThreadEvent, { type: "tool.completed" }>> {
+  const result = await runToolToTerminal(toolName, toolContract);
+  assert.equal(result.terminal.type, "tool.completed");
+  return result.terminal;
+}
+
+async function runToolToTerminal(
+  toolName: string,
+  toolContract: AnyToolContract,
+  credentialProvider?: CredentialProvider,
+): Promise<{
+  events: ThreadEvent[];
+  terminal: Extract<ThreadEvent, { type: "tool.completed" | "tool.failed" }>;
+}> {
   const threadId = `worker-${toolName}`;
   const request = requestedEventForTool(threadId, toolName);
   const engine = new MemoryThreadEngine([request]);
-  const worker = new ContractToolWorker(engine, [toolContract]);
+  const worker = new ContractToolWorker(engine, [toolContract], "test-worker", credentialProvider);
 
   assert.equal((await worker.processOnce(threadId)).eventType, "tool.started");
-  assert.equal((await worker.processOnce(threadId)).eventType, "tool.completed");
+  const second = await worker.processOnce(threadId);
+  assert(second.eventType === "tool.completed" || second.eventType === "tool.failed");
 
-  const completion = engine.events.find((event): event is Extract<ThreadEvent, { type: "tool.completed" }> => {
-    return event.type === "tool.completed";
+  const terminal = engine.events.find((event): event is Extract<ThreadEvent, { type: "tool.completed" | "tool.failed" }> => {
+    return event.type === second.eventType;
   });
-  assert(completion);
-  return completion;
+  assert(terminal);
+  return { events: engine.events, terminal };
+}
+
+class ThrowingCredentialProvider implements CredentialProvider {
+  constructor(private readonly message: string) {}
+
+  async resolve(
+    _request: CredentialRequest,
+    _context: CredentialResolutionContext,
+  ): Promise<CredentialResolution | null> {
+    throw new Error(this.message);
+  }
 }
 
 function requestedEventForTool(threadId: string, toolName: string): Extract<ThreadEvent, { type: "tool.requested" }> {
@@ -2828,6 +2932,7 @@ await testLegacyEventsWithoutDurableIdentityRemainReadable();
 await testInvalidAgentOutputRecordsFailure();
 await testInvalidAgentInputRecordsFailure();
 await testToolWorkerOutputSummaries();
+await testToolWorkerEffectPathFailureParity();
 await testGateReplay();
 await testGatePayloadMismatch();
 await testApprovalPolicyEvaluation();

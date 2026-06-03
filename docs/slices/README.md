@@ -59,4 +59,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `37-typed-events-and-stable-ids.md`: shipped slice for contract-based typed event factories and `ctx.id` stable IDs.
 - `38-capability-contracts.md`: shipped slice for declarative capability contracts without enforcement.
 - `39-policy-enforcement-over-requests.md`: shipped slice for runtime policy enforcement over tool requests, gates, and capabilities.
-- `40-effect-internals-tool-credential.md`: proposed slice for Effect-backed tool execution and credential resolution internals.
+- `40-effect-internals-tool-credential.md`: shipped slice for Effect-style tool execution and credential resolution internals.

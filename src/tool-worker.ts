@@ -9,6 +9,7 @@ import {
   type CredentialResolution,
 } from "./credentials.js";
 import { eventKey, nowIso, type ThreadEvent } from "./events.js";
+import { internalTryPromise, runInternalEffect } from "./internal-effect.js";
 import {
   NoopObservabilitySink,
   ToolObserver,
@@ -30,6 +31,17 @@ import {
 } from "./tool-contract.js";
 
 type ToolRequestedEvent = Extract<ThreadEvent, { type: "tool.requested" }>;
+
+type CredentialProviderFailure = {
+  type: "credential_provider_error";
+  message: string;
+};
+
+type ToolRunFailure = {
+  type: "tool_execution_failed";
+  message: string;
+  cause: unknown;
+};
 
 export type ToolWorkerResult = {
   acted: boolean;
@@ -134,54 +146,30 @@ export class ContractToolWorker {
     const observer = new ToolObserver(this.observability, spanContext);
     let attempt = 1;
     while (true) {
-      try {
-        const output = await observer.span(
-          "tool.run",
-          () =>
-            tool.run({
-              threadId,
-              toolCallId: request.payload.toolCallId,
-              toolName: request.payload.toolName,
-              input: inputResult.data,
-              credentials: credentialResult.credentials,
-              artifactStore: this.artifactStore,
-              observe: observer,
-              request,
-              progress,
-            }),
-          { kind: "tool", attributes: { toolName: request.payload.toolName, attempt } },
-        );
-        const outputResult = tool.output.safeParse(output);
-        if (!outputResult.success) {
-          const event = this.failedEvent(
-            threadId,
-            request,
-            "output_validation_failed",
-            formatZodError(outputResult.error),
-          );
-          await this.emitToolLog(spanContext, "error", "Tool output validation failed", {
-            errorCode: "output_validation_failed",
-          });
-          await this.emitToolSpan(spanContext, rootStartedAt, "error", {
-            errorCode: "output_validation_failed",
-          });
-          await this.engine.append([...credentialEvents, ...progressEvents, event]);
-          return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
-        }
+      const runResult = await runInternalEffect(
+        internalTryPromise<ToolRunFailure, unknown>({
+          try: () => observer.span(
+            "tool.run",
+            () =>
+              tool.run({
+                threadId,
+                toolCallId: request.payload.toolCallId,
+                toolName: request.payload.toolName,
+                input: inputResult.data,
+                credentials: credentialResult.credentials,
+                artifactStore: this.artifactStore,
+                observe: observer,
+                request,
+                progress,
+              }),
+            { kind: "tool", attributes: { toolName: request.payload.toolName, attempt } },
+          ),
+          catch: (error) => ({ type: "tool_execution_failed", message: errorMessage(error), cause: error }),
+        }),
+      );
 
-        const event = this.completedEvent(threadId, request, outputResult.data, summarizeToolOutput(tool, outputResult.data));
-        await this.emitToolLog(spanContext, "info", "Tool execution completed", {
-          attempt,
-          progressEvents: progressEvents.length,
-        });
-        await this.emitToolSpan(spanContext, rootStartedAt, "ok", {
-          attempt,
-          credentialCount: credentialResult.credentials.names().length,
-          progressEvents: progressEvents.length,
-        });
-        await this.engine.append([...credentialEvents, ...progressEvents, event]);
-        return { acted: true, eventType: event.type };
-      } catch (error) {
+      if (!runResult.ok) {
+        const error = runResult.error.cause;
         if (error instanceof RetryableToolError && attempt < 3) {
           const nextAttempt = attempt + 1;
           await progress({
@@ -198,20 +186,52 @@ export class ContractToolWorker {
           continue;
         }
 
-        const event = this.failedEvent(threadId, request, "execution_failed", errorMessage(error));
+        const event = this.failedEvent(threadId, request, "execution_failed", runResult.error.message);
         await this.emitToolLog(spanContext, "error", "Tool execution failed", {
           attempt,
           errorCode: "execution_failed",
-          error: errorMessage(error),
+          error: runResult.error.message,
         });
         await this.emitToolSpan(spanContext, rootStartedAt, "error", {
           attempt,
           errorCode: "execution_failed",
-          error: errorMessage(error),
+          error: runResult.error.message,
         });
         await this.engine.append([...credentialEvents, ...progressEvents, event]);
         return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
       }
+
+      const output = runResult.value;
+      const outputResult = tool.output.safeParse(output);
+      if (!outputResult.success) {
+        const event = this.failedEvent(
+          threadId,
+          request,
+          "output_validation_failed",
+          formatZodError(outputResult.error),
+        );
+        await this.emitToolLog(spanContext, "error", "Tool output validation failed", {
+          errorCode: "output_validation_failed",
+        });
+        await this.emitToolSpan(spanContext, rootStartedAt, "error", {
+          errorCode: "output_validation_failed",
+        });
+        await this.engine.append([...credentialEvents, ...progressEvents, event]);
+        return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
+      }
+
+      const event = this.completedEvent(threadId, request, outputResult.data, summarizeToolOutput(tool, outputResult.data));
+      await this.emitToolLog(spanContext, "info", "Tool execution completed", {
+        attempt,
+        progressEvents: progressEvents.length,
+      });
+      await this.emitToolSpan(spanContext, rootStartedAt, "ok", {
+        attempt,
+        credentialCount: credentialResult.credentials.names().length,
+        progressEvents: progressEvents.length,
+      });
+      await this.engine.append([...credentialEvents, ...progressEvents, event]);
+      return { acted: true, eventType: event.type };
     }
   }
 
@@ -234,27 +254,32 @@ export class ContractToolWorker {
       const startedAt = new Date();
       events.push(this.credentialRequestedEvent(threadId, request, credentialRequest));
 
-      let resolution: CredentialResolution | null;
-      try {
-        resolution = await this.credentialProvider.resolve(credentialRequest, {
-          threadId,
-          toolCallId: request.payload.toolCallId,
-          toolName: request.payload.toolName,
-        });
-      } catch (error) {
-        const message = errorMessage(error);
-        events.push(this.credentialFailedEvent(threadId, request, credentialRequest, "credential_provider_error", message));
+      const resolutionResult = await runInternalEffect(
+        internalTryPromise<CredentialProviderFailure, CredentialResolution | null>({
+          try: () => this.credentialProvider.resolve(credentialRequest, {
+            threadId,
+            toolCallId: request.payload.toolCallId,
+            toolName: request.payload.toolName,
+          }),
+          catch: (error) => ({ type: "credential_provider_error", message: errorMessage(error) }),
+        }),
+      );
+
+      if (!resolutionResult.ok) {
+        events.push(this.credentialFailedEvent(threadId, request, credentialRequest, "credential_provider_error", resolutionResult.error.message));
         await this.emitCredentialSpan(parentContext, spanContext, startedAt, credentialRequest, "error", {
           errorCode: "credential_provider_error",
-          error: message,
+          error: resolutionResult.error.message,
         });
         return {
           failed: true,
           events,
           credentials: new ResolvedCredentials(resolutions),
-          message: `Credential provider failed for ${credentialRequest.name}: ${message}`,
+          message: `Credential provider failed for ${credentialRequest.name}: ${resolutionResult.error.message}`,
         };
       }
+
+      const resolution = resolutionResult.value;
 
       if (!resolution) {
         events.push(this.credentialFailedEvent(threadId, request, credentialRequest, "credential_not_found", "Credential provider returned no credential"));

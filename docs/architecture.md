@@ -74,6 +74,8 @@ Responsibilities:
 
 Tool workers should keep large raw payloads out of thread events. Events should contain durable facts, summaries, hashes, and artifact references; artifact storage owns raw bodies.
 
+Tool execution and credential provider calls are wrapped in a small internal Effect-style adapter so runtime code can handle typed success/failure values while keeping the public tool API Promise-first.
+
 ### 4. Policy and Credential Layer
 
 Responsibilities:

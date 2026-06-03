@@ -872,8 +872,8 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.
 - Parallel durable effects are explicitly unsupported and throw `PARALLEL_DURABLE_EFFECT` when detected.
+- Tool execution and credential resolution use an internal Effect-style adapter for typed failures; app authors still use Promise-first APIs.
 
 ## Planned Next Primitives
 
-- capability contracts and richer policy enforcement for centralized governance and scoped grants.
-- Effect-backed internals behind the same Promise-first public API.
+- richer policy enforcement for centralized governance and scoped grants.

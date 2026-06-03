@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-02`
 - Owner: `weave-core`
 
@@ -51,41 +51,41 @@ As a maintainer, I get better internal resource safety, typed failures, and comp
 
 ## Acceptance Criteria
 
-- [ ] Tool execution internals use Effect or a clearly isolated Effect adapter.
-- [ ] Credential resolution internals use Effect or a clearly isolated Effect adapter.
-- [ ] Public tool contracts remain Promise-first and unchanged.
-- [ ] Public agent authoring remains Promise-first and unchanged.
-- [ ] Existing emitted event behavior is preserved or intentionally documented.
-- [ ] Existing observability behavior is preserved or intentionally documented.
-- [ ] Docs state Effect is internal and not required for V1 authoring.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Tool execution internals use Effect or a clearly isolated Effect adapter.
+- [x] Credential resolution internals use Effect or a clearly isolated Effect adapter.
+- [x] Public tool contracts remain Promise-first and unchanged.
+- [x] Public agent authoring remains Promise-first and unchanged.
+- [x] Existing emitted event behavior is preserved or intentionally documented.
+- [x] Existing observability behavior is preserved or intentionally documented.
+- [x] Docs state Effect is internal and not required for V1 authoring.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Inventory current tool-worker behavior.
-- [ ] Add parity tests where missing.
-- [ ] Refactor smallest internal path.
-- [ ] Preserve public adapters.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Inventory current tool-worker behavior.
+- [x] Add parity tests where missing.
+- [x] Refactor smallest internal path.
+- [x] Preserve public adapters.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
-
-Include:
-
-- internal paths changed
-- public API compatibility evidence
-- parity tests added
-- commands run
-- follow-up Effect internals slices
+- Added `src/internal-effect.ts`, a small isolated Effect-style adapter returning typed success/failure results without adding a public dependency or changing author APIs.
+- Wrapped credential provider resolution in the adapter with typed internal `credential_provider_error` failures.
+- Wrapped `ToolContract.run(ctx)` execution in the adapter with typed internal `tool_execution_failed` failures while preserving retry behavior for `RetryableToolError`.
+- Preserved public `ContractToolWorker.processOnce(...)`, `ToolContract.run(ctx)`, and `CredentialProvider.resolve(...)` Promise-first behavior.
+- Preserved emitted event behavior for success, output validation failure, missing credentials, credential provider errors, retryable tool errors, and terminal execution failure.
+- Preserved existing observability calls around tool execution and credential resolution.
+- Added parity tests for output validation failure, credential missing, credential provider error, retryable success, and terminal execution failure.
+- Verified with `npm test` and `npm run typecheck`.
+- Follow-up slices can move more runner/worker internals onto a richer Effect runtime if the project adopts an external Effect dependency later.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md` limitations if wording changes
-- [ ] `docs/architecture.md`
-- [ ] `docs/migration/api-refactor.md` only if author guidance changes
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md` limitations if wording changes
+- [x] `docs/architecture.md`
+- [x] `docs/migration/api-refactor.md` only if author guidance changes
