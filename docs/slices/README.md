@@ -60,3 +60,9 @@ The slice document should stay alive after implementation. It becomes the compac
 - `38-capability-contracts.md`: shipped slice for declarative capability contracts without enforcement.
 - `39-policy-enforcement-over-requests.md`: shipped slice for runtime policy enforcement over tool requests, gates, and capabilities.
 - `40-effect-internals-tool-credential.md`: shipped slice for Effect-style tool execution and credential resolution internals.
+- `41-policy-capability-runtime-stabilization.md`: proposed slice hardening durable policy replay, request hashing, ordering, and capability-aware mismatch detection.
+- `42-capability-mediated-credentials.md`: planned slice turning capabilities into scoped credential request boundaries.
+- `43-typed-integration-event-handlers.md`: planned slice adding schema-backed typed integration event handlers.
+- `44-effect-internals-runner-policy-tool.md`: planned slice expanding Effect-style internals into runner and policy paths.
+- `45-durable-timers-and-ctx-sleep.md`: planned slice adding durable timer semantics and `ctx.sleep`.
+- `46-durable-waits-and-external-signals.md`: planned slice adding durable waits for external signals.
