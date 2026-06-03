@@ -124,6 +124,10 @@ The parent-child metadata that connects a child thread to its parent and root th
 
 A durable reference to another thread, usually a child thread, containing at least `threadId` and optionally agent name, lineage fields, and output typing.
 
+## Workflow Plan
+
+A typed data plan generated from a high-level prompt and interpreted by registered Weave agents. Workflow plans are data, not executable JavaScript, so durable effects, policies, gates, and child-thread replay semantics still control execution.
+
 ## Attached Child Thread
 
 A child thread that the parent knows about, can list, inspect, and join. Attached is the default mode for `ctx.spawn`.

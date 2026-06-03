@@ -66,7 +66,7 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 - `mvp.md`: smallest useful end-to-end Weave primitive definition
 - `poc-scope.md`: fixed decisions and success criteria for the first proof of concept
 - `poc-components-and-flow.md`: detailed component plan and end-to-end demo flow
-- `slices/47-prompt-driven-workflow-example.md`: planned prompt-driven dynamic workflow example using Weave child agents and an OpenCode-backed harness
+- `slices/47-prompt-driven-workflow-example.md`: shipped prompt-driven dynamic workflow example using Weave child agents and a conservative repo-read harness
 - `slices/01-replay-authoring-api.md`: planned first slice for `agent.run` and replay-based `ctx.tool`
 - `roadmap.md`: original phase roadmap; should be reconciled with the slice model over time
 

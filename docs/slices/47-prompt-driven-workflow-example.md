@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-examples`
 
@@ -247,13 +247,13 @@ Expected core primitive changes:
 
 ## Acceptance Criteria
 
-- [ ] A user can run one command or script to create a prompt-driven workflow thread.
-- [ ] The generated workflow plan is schema-validated and stored durably before execution.
-- [ ] The workflow uses registered Weave agents and tools only.
-- [ ] The workflow fans out claim checks through child threads and joins their outputs.
-- [ ] The workflow can resume after interruption without duplicating child work.
-- [ ] Policies prevent unsafe generated plans from executing silently.
-- [ ] The final report is structured and cites evidence.
+- [x] A user can run one command or script to create a prompt-driven workflow thread.
+- [x] The generated workflow plan is schema-validated and stored durably before execution.
+- [x] The workflow uses registered Weave agents and tools only.
+- [x] The workflow fans out claim checks through child threads and joins their outputs.
+- [x] The workflow can resume after interruption without duplicating child work.
+- [x] Policies prevent unsafe generated plans from executing silently.
+- [x] The final report is structured and cites evidence.
 
 ## Open Questions
 
@@ -265,30 +265,30 @@ Expected core primitive changes:
 ## Progress
 
 - [x] Planning document created.
-- [ ] OpenCode harness approach selected.
-- [ ] Example schemas drafted.
-- [ ] Example implementation started.
-- [ ] Tests added.
-- [ ] Completion notes written.
+- [x] OpenCode harness approach selected.
+- [x] Example schemas drafted.
+- [x] Example implementation started.
+- [x] Tests added.
+- [x] Completion notes written.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
-
-Include:
-
-- shipped behavior
-- changed files or modules
-- tests added
-- commands run
-- known gaps
-- follow-up slices created
+- Shipped `examples/prompt-workflow-review`, a deterministic prompt-driven workflow review example.
+- Added a typed `WorkflowPlan` schema and deterministic compiler that turns `{ prompt, document }` into a validated fan-out/adversarial-verification plan.
+- Added registered agents only: `workflow.customize`, `workflow.claimExtractor`, `workflow.claimChecker`, `workflow.claimVerifier`, and `workflow.synthesizer`.
+- Added a conservative `repo.searchEvidence` tool that simulates the first OpenCode-backed claim-check harness through a read-only repository evidence catalog.
+- Added a request policy that allows only the example `repo.read` capability for claim-check tool requests.
+- The root workflow stores the plan in `ctx.checkpoint`, emits a plan summary event, spawns child claim work, joins child outputs, and returns a structured final report.
+- Added `npm --workspace weave-prompt-workflow-review run demo` as the one-command demo entrypoint.
+- Added `examples/prompt-workflow-review/src/workflow.test.ts` covering plan validation, deterministic claim keys, unsafe capability gating decisions, full prompt-to-report execution, child-thread fan-out, policy evidence, and tool requests.
+- Known gap: this is not yet a reusable OpenCode adapter and does not execute real OpenCode/model-backed claim checks. It intentionally uses deterministic mocked repository evidence so CI remains reliable and no generated JavaScript is executed.
+- Commands run: `npm --workspace weave-prompt-workflow-review run test`, `npm --workspace weave-prompt-workflow-review run typecheck`, `npm test`, `npm run typecheck`, `git diff --check`, `npm --workspace weave-prompt-workflow-review run demo`.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/README.md`
-- [ ] `docs/agent-adapters.md` if the OpenCode harness becomes reusable
-- [ ] `docs/declarative-api.md` if workflow examples expose new public helpers
-- [ ] `docs/glossary.md` if `WorkflowPlan` or `WorkflowCompiler` becomes shared vocabulary
-- [ ] `docs/slices/README.md` if status changes
+- [x] this slice document
+- [x] `docs/README.md`
+- [x] `docs/agent-adapters.md` not updated because the harness is example-local, not reusable
+- [x] `docs/declarative-api.md` not updated because no public helpers were added
+- [x] `docs/glossary.md` updated with `Workflow Plan`
+- [x] `docs/slices/README.md` updated because status changed
