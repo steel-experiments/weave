@@ -67,3 +67,5 @@ The slice document should stay alive after implementation. It becomes the compac
 - `45-durable-timers-and-ctx-sleep.md`: shipped slice adding durable timer semantics and `ctx.sleep`.
 - `46-durable-waits-and-external-signals.md`: shipped slice adding durable waits for external signals.
 - `47-prompt-driven-workflow-example.md`: shipped slice for a prompt-generated workflow plan example using child agents and a conservative repo-read harness.
+- `48-opencode-backed-workflow-harness.md`: planned slice turning the deterministic claim-checking example into a reusable bounded OpenCode-style repo task harness.
+- `49-model-backed-workflow-compiler.md`: planned slice replacing deterministic plan generation with a model-backed compiler that emits schema-validated `WorkflowPlan` data only.

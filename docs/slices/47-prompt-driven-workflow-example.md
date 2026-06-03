@@ -273,6 +273,8 @@ Expected core primitive changes:
 
 ## Completion Notes
 
+### Shipped Behavior
+
 - Shipped `examples/prompt-workflow-review`, a deterministic prompt-driven workflow review example.
 - Added a typed `WorkflowPlan` schema and deterministic compiler that turns `{ prompt, document }` into a validated fan-out/adversarial-verification plan.
 - Added registered agents only: `workflow.customize`, `workflow.claimExtractor`, `workflow.claimChecker`, `workflow.claimVerifier`, and `workflow.synthesizer`.
@@ -280,9 +282,33 @@ Expected core primitive changes:
 - Added a request policy that allows only the example `repo.read` capability for claim-check tool requests.
 - The root workflow stores the plan in `ctx.checkpoint`, emits a plan summary event, spawns child claim work, joins child outputs, and returns a structured final report.
 - Added `npm --workspace weave-prompt-workflow-review run demo` as the one-command demo entrypoint.
-- Added `examples/prompt-workflow-review/src/workflow.test.ts` covering plan validation, deterministic claim keys, unsafe capability gating decisions, full prompt-to-report execution, child-thread fan-out, policy evidence, and tool requests.
-- Known gap: this is not yet a reusable OpenCode adapter and does not execute real OpenCode/model-backed claim checks. It intentionally uses deterministic mocked repository evidence so CI remains reliable and no generated JavaScript is executed.
-- Commands run: `npm --workspace weave-prompt-workflow-review run test`, `npm --workspace weave-prompt-workflow-review run typecheck`, `npm test`, `npm run typecheck`, `git diff --check`, `npm --workspace weave-prompt-workflow-review run demo`.
+
+### Implementation Files
+
+- `examples/prompt-workflow-review/package.json`
+- `examples/prompt-workflow-review/tsconfig.json`
+- `examples/prompt-workflow-review/src/schemas.ts`
+- `examples/prompt-workflow-review/src/workflow.ts`
+- `examples/prompt-workflow-review/src/index.ts`
+- `examples/prompt-workflow-review/src/workflow.test.ts`
+- `package.json`
+- `package-lock.json`
+
+### Tests And Commands Run
+
+- `npm --workspace weave-prompt-workflow-review run test`
+- `npm --workspace weave-prompt-workflow-review run typecheck`
+- `npm test`
+- `npm run typecheck`
+- `git diff --check`
+- `npm --workspace weave-prompt-workflow-review run demo`
+
+### Known Gaps
+
+- The example uses deterministic repo evidence.
+- There is no reusable OpenCode adapter yet.
+- The example does not execute real OpenCode/model-backed claim checks.
+- The example does not execute generated JavaScript; workflow plans are schema-validated data interpreted by registered Weave agents.
 
 ## Docs To Update On Completion
 
