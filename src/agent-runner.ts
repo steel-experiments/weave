@@ -30,11 +30,23 @@ import {
   type SessionMetadata,
   type ThreadEvent,
 } from "./events.js";
+import { internalTry, internalTryPromise, runInternalEffect, runInternalSyncEffect } from "./internal-effect.js";
 import { isCapabilityRequest, normalizeCapabilityDeclarations, type CapabilityDeclaration } from "./capability-contract.js";
 import type { AgentPlan, AgentPlanner } from "./runner.js";
 import type { ThreadService } from "./thread-service.js";
 import type { ToolContract } from "./tool-contract.js";
 import type { AnyPolicyRule, PolicyDecision, PolicyRequest } from "./policy-contract.js";
+
+type AgentRunFailure = {
+  type: "agent_run_failed";
+  cause: unknown;
+};
+
+type PolicyEvaluationFailure = {
+  type: "policy_evaluation_failed";
+  policyName: string;
+  cause: unknown;
+};
 
 type SuspensionReason =
   | "tool-requested"
@@ -102,7 +114,17 @@ class RunAgentPlanner implements AgentPlanner {
     });
 
     try {
-      const rawOutput = await this.agent.run(context, input);
+      const runResult = await runInternalEffect(
+        internalTryPromise<AgentRunFailure, unknown>({
+          try: () => this.agent.run!(context, input),
+          catch: (error) => ({ type: "agent_run_failed", cause: error }),
+        }),
+      );
+      if (!runResult.ok) {
+        throw runResult.error.cause;
+      }
+
+      const rawOutput = runResult.value;
       const output = validateAgentOutput(this.agent, rawOutput);
       const plannedEvents = context.drainEvents();
       const outputSummary = formatAgentOutput(output);
@@ -656,7 +678,17 @@ class ReplayAgentContext implements AgentContext {
     };
 
     for (const policy of policies) {
-      const decision = policy.evaluate(request);
+      const evaluationResult = runInternalSyncEffect(
+        internalTry<PolicyEvaluationFailure, PolicyDecision | undefined>({
+          try: () => policy.evaluate(request),
+          catch: (error) => ({ type: "policy_evaluation_failed", policyName: policy.name, cause: error }),
+        }),
+      );
+      if (!evaluationResult.ok) {
+        throw evaluationResult.error.cause;
+      }
+
+      const decision = evaluationResult.value;
       if (!decision) {
         continue;
       }

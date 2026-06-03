@@ -74,7 +74,7 @@ Responsibilities:
 
 Tool workers should keep large raw payloads out of thread events. Events should contain durable facts, summaries, hashes, and artifact references; artifact storage owns raw bodies.
 
-Tool execution and credential provider calls are wrapped in a small internal Effect-style adapter so runtime code can handle typed success/failure values while keeping the public tool API Promise-first.
+Tool execution, credential provider calls, agent `run` execution, and policy evaluation are wrapped in a small internal Effect-style adapter so runtime code can handle typed success/failure values while keeping public authoring APIs Promise-first.
 
 ### 4. Policy and Credential Layer
 
@@ -137,6 +137,8 @@ Runtime request policies can inspect capability declarations and capability requ
 A runtime request rule that can allow, deny, or require approval before a supported durable request is recorded. Current enforcement happens at the `ctx.tool` planning boundary and records `policy.evaluated` audit evidence.
 
 Policies run in `app.policies` order. `allow` records evidence and continues. `deny` and `approval_required` short-circuit later policies. Once recorded, policy decisions replay from the event log rather than re-running current policy code for the same durable request.
+
+If policy evaluation code throws before producing a decision, no `policy.evaluated` evidence is recorded for that policy. Through `ThreadRunner`, the exception is recorded as the existing durable `agent.failed` behavior.
 
 ### Stream Link
 

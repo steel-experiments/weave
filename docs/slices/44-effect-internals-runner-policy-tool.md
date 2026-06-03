@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-core`
 
@@ -27,7 +27,7 @@ As a maintainer, I get more consistent typed failure handling across runner, pol
 
 - Extends `src/internal-effect.ts` usage beyond tool worker internals.
 - Wraps policy evaluation with typed internal failures.
-- May wrap `agent.run` planning execution with typed internal failures.
+- Wraps `agent.run` planning execution with typed internal failures.
 - Preserves durable event behavior for `agent.failed`, `policy.evaluated`, and tool events.
 - Provides a migration path toward a richer external Effect runtime only if the project later chooses one.
 
@@ -51,30 +51,33 @@ As a maintainer, I get more consistent typed failure handling across runner, pol
 
 ## Acceptance Criteria
 
-- [ ] Runner or policy internals use the isolated Effect-style adapter.
-- [ ] Public APIs remain Promise-first and unchanged.
-- [ ] Existing emitted event behavior is preserved or intentionally documented.
-- [ ] Existing observability behavior is preserved or intentionally documented.
-- [ ] Docs state Effect is still internal.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Runner or policy internals use the isolated Effect-style adapter.
+- [x] Public APIs remain Promise-first and unchanged.
+- [x] Existing emitted event behavior is preserved or intentionally documented.
+- [x] Existing observability behavior is preserved or intentionally documented.
+- [x] Docs state Effect is still internal.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Inventory runner and policy failure paths.
-- [ ] Select minimal internal boundary.
-- [ ] Refactor through adapter.
-- [ ] Add parity tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Inventory runner and policy failure paths.
+- [x] Select minimal internal boundary.
+- [x] Refactor through adapter.
+- [x] Add parity tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+- `RunAgentPlanner.plan(...)` now executes `agent.run` through `src/internal-effect.ts` and rethrows the original cause so existing planner and runner failure semantics stay unchanged.
+- `ctx.tool(...)` policy enforcement now uses a synchronous internal policy evaluation boundary that wraps each `policy.evaluate(...)` call through `src/internal-effect.ts`.
+- Policy code exceptions keep existing durable behavior: through `ThreadRunner`, they record one `agent.failed` with the existing error code mapping and do not record `policy.evaluated` or `tool.requested` for the failed evaluation.
+- No public authoring API changed and app authors still do not import or write Effect code.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/architecture.md`
-- [ ] `docs/declarative-api.md` if public guidance changes
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/architecture.md`
+- [x] `docs/declarative-api.md` not updated because public guidance did not change

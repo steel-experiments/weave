@@ -644,6 +644,36 @@ async function testPolicyVersionAuditDoesNotBreakReplay(): Promise<void> {
   assert.equal(newPlan.events[0]?.payload.policyVersion, "2");
 }
 
+async function testPolicyEvaluationThrownErrorRecordsAgentFailure(): Promise<void> {
+  const threadId = "policy-evaluation-throws";
+  const throwingPolicy = policy({
+    name: "test.throwing-policy",
+    evaluate() {
+      throw new Error("policy evaluation exploded");
+    },
+  });
+  const engine = new MemoryThreadEngine(initialHistory(threadId));
+  const runner = new ThreadRunner(
+    engine,
+    engine,
+    createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [throwingPolicy] }),
+    "test-runner",
+  );
+
+  const result = await runner.runOnce(threadId);
+
+  assert.deepEqual(result, { acted: true, appendedEvents: 1, reason: "agent-failed" });
+  const events = await engine.read(threadId);
+  const failed = events.find(
+    (event): event is Extract<ThreadEvent, { type: "agent.failed" }> => event.type === "agent.failed",
+  );
+  assert(failed);
+  assert.equal(failed.payload.errorCode, "AGENT_FAILED");
+  assert.equal(failed.payload.message, "policy evaluation exploded");
+  assert.equal(events.some((event) => event.type === "policy.evaluated"), false);
+  assert.equal(events.some((event) => event.type === "tool.requested"), false);
+}
+
 async function testCompletedRunFirstAgentIsTerminal(): Promise<void> {
   const threadId = "completed-run-first-agent-is-terminal";
   const terminalAgent = agent({
@@ -3361,6 +3391,7 @@ await testCapabilityRequestHashMismatch();
 await testPolicyOrderingAllowThenDeny();
 await testPolicyOrderingAllowThenApproval();
 await testPolicyVersionAuditDoesNotBreakReplay();
+await testPolicyEvaluationThrownErrorRecordsAgentFailure();
 await testCompletedRunFirstAgentIsTerminal();
 await testRunnerReadsFullReplayHistory();
 await testDecodeFailure();
