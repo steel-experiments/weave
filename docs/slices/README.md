@@ -68,5 +68,5 @@ The slice document should stay alive after implementation. It becomes the compac
 - `46-durable-waits-and-external-signals.md`: shipped slice adding durable waits for external signals.
 - `47-prompt-driven-workflow-example.md`: shipped slice for a prompt-generated workflow plan example using child agents and a conservative repo-read harness.
 - `48-opencode-backed-workflow-harness.md`: shipped slice turning the deterministic claim-checking example into an example-local reusable bounded OpenCode-style repo task harness.
-- `49-model-backed-workflow-compiler.md`: planned slice replacing deterministic plan generation with a model-backed compiler that emits schema-validated `WorkflowPlan` data only.
+- `49-model-backed-workflow-compiler.md`: shipped slice adding a model-backed compiler boundary that emits schema-validated `WorkflowPlan` data only.
 - `50-full-opencode-adapter.md`: planned slice adapting the example-local harness into a full bounded OpenCode adapter with real read-only repo tools, mediated tool calls, policy gates, and replay-safe structured output.

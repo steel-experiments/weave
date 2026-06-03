@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { RepoReadFileInputSchema, RepoSearchTextInputSchema, hasMutableHarnessCapability, workflowCapabilityDecision } from "./opencode-harness.js";
-import { compileWorkflowPlan, defaultWorkflowInput, extractClaims, planRequiresApproval, runPromptWorkflowReviewDemo, workflowPlanHash } from "./workflow.js";
+import { createMockModelWorkflowCompiler } from "./workflow-compiler.js";
+import {
+  compileWorkflowPlan,
+  compileWorkflowPlanFromCompiler,
+  defaultWorkflowInput,
+  extractClaims,
+  planRequiresApproval,
+  runPromptWorkflowReviewDemo,
+  workflowPlanHash,
+} from "./workflow.js";
 
 const input = defaultWorkflowInput();
 
@@ -33,6 +42,34 @@ assert.equal(hasMutableHarnessCapability("network.access"), true);
 assert.equal(hasMutableHarnessCapability("shell.exec"), true);
 assert.equal(hasMutableHarnessCapability("repo.write"), true);
 
+const mockedModelCompiler = createMockModelWorkflowCompiler(plan);
+const modelPlan = await compileWorkflowPlanFromCompiler(input, mockedModelCompiler);
+assert.deepEqual(modelPlan, plan);
+
+await assert.rejects(
+  () => compileWorkflowPlanFromCompiler(input, createMockModelWorkflowCompiler({ ...plan, pattern: "unknown-pattern" })),
+  /Invalid option/,
+);
+await assert.rejects(
+  () =>
+    compileWorkflowPlanFromCompiler(
+      input,
+      createMockModelWorkflowCompiler({
+        ...plan,
+        steps: [{ kind: "spawn", key: "unknown-agent", agentName: "workflow.unregistered", input: {} }],
+      }),
+    ),
+  /unregistered agents: workflow\.unregistered/,
+);
+await assert.rejects(
+  () => compileWorkflowPlanFromCompiler(input, createMockModelWorkflowCompiler(unsafePlan), "reject"),
+  /unsafe capabilities: network\.access, repo\.write/,
+);
+await assert.rejects(
+  () => compileWorkflowPlanFromCompiler(input, createMockModelWorkflowCompiler({ ...plan, generatedJavaScript: "ctx.spawn(...)" })),
+  /executable field: generatedJavaScript/,
+);
+
 const result = await runPromptWorkflowReviewDemo(input);
 assert.equal(result.report.recommendation, "do-not-publish");
 assert.equal(result.report.claims.length, 3);
@@ -44,5 +81,10 @@ assert(result.allEvents.some((event) => event.type === "tool.requested" && event
 assert(result.allEvents.some((event) => event.type === "tool.requested" && event.payload.toolName === "repo.readFile"));
 assert(result.allEvents.some((event) => event.type === "checkpoint.completed" && event.stepKey === "opencode-harness-limits"));
 assert.equal(result.events.filter((event) => event.type === "child_thread.spawned").length, new Set(result.childThreadIds).size);
+
+const modelResult = await runPromptWorkflowReviewDemo(input, { compiler: mockedModelCompiler });
+assert.equal(modelResult.report.recommendation, "do-not-publish");
+assert.equal(modelResult.report.claims.length, 3);
+assert(modelResult.events.some((event) => event.type === "checkpoint.completed" && event.stepKey === "workflow-plan"));
 
 console.log("Prompt workflow review example tests passed");

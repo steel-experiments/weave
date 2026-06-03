@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-examples`
 
@@ -83,28 +83,38 @@ The compiler may be a tool or child agent, but its output remains data. The exis
 
 ## Acceptance Criteria
 
-- [ ] Model-backed compiler emits `WorkflowPlan` data only.
-- [ ] `WorkflowPlan` output is schema-validated before execution.
-- [ ] Plans referencing unregistered agents are rejected or routed to human review.
-- [ ] Unsafe capabilities do not execute silently.
-- [ ] Deterministic/mock tests do not require live model credentials.
-- [ ] No model-generated JavaScript is executed.
-- [ ] Existing prompt workflow demo still works.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Model-backed compiler emits `WorkflowPlan` data only.
+- [x] `WorkflowPlan` output is schema-validated before execution.
+- [x] Plans referencing unregistered agents are rejected or routed to human review.
+- [x] Unsafe capabilities do not execute silently.
+- [x] Deterministic/mock tests do not require live model credentials.
+- [x] No model-generated JavaScript is executed.
+- [x] Existing prompt workflow demo still works.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Extract compiler interface.
-- [ ] Add model-backed compiler boundary.
-- [ ] Add validation and rejection tests.
-- [ ] Wire mocked model compiler into tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Extract compiler interface.
+- [x] Add model-backed compiler boundary.
+- [x] Add validation and rejection tests.
+- [x] Wire mocked model compiler into tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+- Added `WorkflowCompiler` and `compileWorkflowPlanWithCompiler(...)` in `examples/prompt-workflow-review/src/workflow-compiler.ts`.
+- Kept the deterministic plan generator as the default compiler while allowing tests and demos to inject a mocked model-backed compiler.
+- Added `normalizeWorkflowPlan(...)` validation for schema conformance, registered agent references, unsafe capability rejection mode, and executable-looking fields such as `generatedJavaScript`.
+- Wired `workflow.customize` through the compiler boundary before its durable `ctx.checkpoint("workflow-plan", ...)` completes.
+- Added tests proving valid mocked model data runs through real Weave runner/service boundaries and invalid mocked model data is rejected before execution.
+- Verification run:
+- `npm --workspace weave-prompt-workflow-review run test`
+- `npm --workspace weave-prompt-workflow-review run typecheck`
+- `npm test`
+- `npm run typecheck`
+- `git diff --check`
 
 ## Docs To Update On Completion
 

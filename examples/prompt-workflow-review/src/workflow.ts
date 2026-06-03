@@ -39,6 +39,11 @@ import {
   type WorkflowPlan,
 } from "./schemas.js";
 import {
+  compileWorkflowPlanWithCompiler,
+  normalizeWorkflowPlan,
+  type WorkflowCompiler,
+} from "./workflow-compiler.js";
+import {
   opencodeRepoTaskAgent,
   repoReadCapability,
   repoReadFileTool,
@@ -48,6 +53,21 @@ import {
 } from "./opencode-harness.js";
 
 const SAFE_CAPABILITIES = new Set(["repo.read"]);
+const REGISTERED_WORKFLOW_AGENT_NAMES = new Set([
+  "workflow.claimExtractor",
+  "workflow.claimChecker",
+  "workflow.claimVerifier",
+  "workflow.synthesizer",
+]);
+
+export const deterministicWorkflowCompiler: WorkflowCompiler = {
+  source: "deterministic",
+  compile(input) {
+    return deterministicWorkflowPlan(input);
+  },
+};
+
+let activeWorkflowCompiler: WorkflowCompiler = deterministicWorkflowCompiler;
 
 export const claimExtractorAgent = agent({
   name: "workflow.claimExtractor",
@@ -111,7 +131,9 @@ export const workflowCustomizeAgent = agent({
   input: WorkflowInputSchema,
   output: FinalReportSchema,
   async run(ctx, input) {
-    const plan = await ctx.checkpoint("workflow-plan", () => compileWorkflowPlan(input));
+    const plan = await ctx.checkpoint("workflow-plan", () =>
+      compileWorkflowPlanWithCompiler(input, activeWorkflowCompiler, workflowPlanValidationOptions()),
+    );
     await ctx.emit(
       "workflow-plan-summary",
       event("agent.finding.produced", {
@@ -199,52 +221,85 @@ export type PromptWorkflowDemoResult = {
   childThreadIds: string[];
 };
 
-export async function runPromptWorkflowReviewDemo(input: WorkflowInput = defaultWorkflowInput()): Promise<PromptWorkflowDemoResult> {
-  const engine = new DemoThreadEngine();
-  const service = new ThreadService(engine);
-  const runner = new ThreadRunner(
-    engine,
-    engine,
-    createRuntimeAgentPlanner(promptWorkflowReviewApp, workflowCustomizeAgent.name, service),
-    "prompt-workflow-runner",
-  );
-  const toolWorker = new ContractToolWorker(engine, [repoSearchTextTool, repoReadFileTool], "prompt-workflow-tool-worker");
-  const session = await service.startSession({
-    prompt: input.prompt,
-    agentName: workflowCustomizeAgent.name,
-    metadata: input,
-    idempotencyKey: "prompt-workflow-review-demo",
-  });
+export type PromptWorkflowReviewDemoOptions = {
+  compiler?: WorkflowCompiler;
+};
 
-  await drainWorkflow(engine, runner, toolWorker, session.threadId);
-
-  const events = await engine.read(session.threadId);
-  const output = [...events].reverse().find((event): event is Extract<ThreadEvent, { type: "agent.output.completed" }> => {
-    return event.type === "agent.output.completed";
-  });
-  if (!output) {
-    const projection = await engine.getProjection(session.threadId);
-    const failures = events
-      .filter((event) => event.type === "agent.failed" || event.type === "child_thread.failed")
-      .map((event) => JSON.stringify(event.payload))
-      .join(";");
-    throw new Error(
-      `Workflow did not produce a final report. status=${projection?.status ?? "missing"} failures=${failures} events=${events.map((event) => event.type).join(",")}`,
+export async function runPromptWorkflowReviewDemo(
+  input: WorkflowInput = defaultWorkflowInput(),
+  options: PromptWorkflowReviewDemoOptions = {},
+): Promise<PromptWorkflowDemoResult> {
+  const previousWorkflowCompiler = activeWorkflowCompiler;
+  activeWorkflowCompiler = options.compiler ?? deterministicWorkflowCompiler;
+  try {
+    const engine = new DemoThreadEngine();
+    const service = new ThreadService(engine);
+    const runner = new ThreadRunner(
+      engine,
+      engine,
+      createRuntimeAgentPlanner(promptWorkflowReviewApp, workflowCustomizeAgent.name, service),
+      "prompt-workflow-runner",
     );
-  }
+    const toolWorker = new ContractToolWorker(engine, [repoSearchTextTool, repoReadFileTool], "prompt-workflow-tool-worker");
+    const session = await service.startSession({
+      prompt: input.prompt,
+      agentName: workflowCustomizeAgent.name,
+      metadata: input,
+      idempotencyKey: "prompt-workflow-review-demo",
+    });
 
-  return {
-    threadId: session.threadId,
-    report: FinalReportSchema.parse(output.payload.output),
-    events,
-    allEvents: engine.allEvents(),
-    childThreadIds: events
-      .filter((event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned")
-      .map((event) => event.payload.childThreadId),
-  };
+    await drainWorkflow(engine, runner, toolWorker, session.threadId);
+
+    const events = await engine.read(session.threadId);
+    const output = [...events].reverse().find((event): event is Extract<ThreadEvent, { type: "agent.output.completed" }> => {
+      return event.type === "agent.output.completed";
+    });
+    if (!output) {
+      const projection = await engine.getProjection(session.threadId);
+      const failures = events
+        .filter((event) => event.type === "agent.failed" || event.type === "child_thread.failed")
+        .map((event) => JSON.stringify(event.payload))
+        .join(";");
+      throw new Error(
+        `Workflow did not produce a final report. status=${projection?.status ?? "missing"} failures=${failures} events=${events.map((event) => event.type).join(",")}`,
+      );
+    }
+
+    return {
+      threadId: session.threadId,
+      report: FinalReportSchema.parse(output.payload.output),
+      events,
+      allEvents: engine.allEvents(),
+      childThreadIds: events
+        .filter((event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned")
+        .map((event) => event.payload.childThreadId),
+    };
+  } finally {
+    activeWorkflowCompiler = previousWorkflowCompiler;
+  }
 }
 
 export function compileWorkflowPlan(input: WorkflowInput): WorkflowPlan {
+  return normalizeWorkflowPlan(deterministicWorkflowPlan(input), workflowPlanValidationOptions());
+}
+
+export async function compileWorkflowPlanFromCompiler(
+  input: WorkflowInput,
+  compiler: WorkflowCompiler,
+  unsafeCapabilityMode: "allow-for-gate" | "reject" = "allow-for-gate",
+): Promise<WorkflowPlan> {
+  return compileWorkflowPlanWithCompiler(input, compiler, workflowPlanValidationOptions(unsafeCapabilityMode));
+}
+
+export function workflowPlanValidationOptions(unsafeCapabilityMode: "allow-for-gate" | "reject" = "allow-for-gate") {
+  return {
+    registeredAgents: REGISTERED_WORKFLOW_AGENT_NAMES,
+    safeCapabilities: SAFE_CAPABILITIES,
+    unsafeCapabilityMode,
+  };
+}
+
+function deterministicWorkflowPlan(input: WorkflowInput): WorkflowPlan {
   const claims = extractClaims(input.document);
   const requestedCapabilities = [
     { name: "repo.read", reason: "Claim checkers need read-only repository evidence." },
