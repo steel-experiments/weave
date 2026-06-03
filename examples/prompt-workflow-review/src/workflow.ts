@@ -31,6 +31,7 @@ import {
   SynthesisInputSchema,
   WorkflowInputSchema,
   WorkflowPlanSchema,
+  type ClaimCheckInput,
   type ClaimCheckOutput,
   type ClaimVerificationOutput,
   type ExtractedClaim,
@@ -44,13 +45,16 @@ import {
   type WorkflowCompiler,
 } from "./workflow-compiler.js";
 import {
-  opencodeRepoTaskAgent,
+  createOpenCodeAgent,
   repoReadCapability,
   repoReadFileTool,
+  repoListFilesTool,
+  repoReadRangeTool,
   repoSearchTextTool,
   workflowCapabilityDecision,
+  type OpenCodeSessionRunner,
   type RepoSearchTextOutput,
-} from "./opencode-harness.js";
+} from "./opencode-adapter.js";
 
 const SAFE_CAPABILITIES = new Set(["repo.read"]);
 const REGISTERED_WORKFLOW_AGENT_NAMES = new Set([
@@ -68,6 +72,7 @@ export const deterministicWorkflowCompiler: WorkflowCompiler = {
 };
 
 let activeWorkflowCompiler: WorkflowCompiler = deterministicWorkflowCompiler;
+let activeClaimCheckRunner: OpenCodeSessionRunner<ClaimCheckInput>;
 
 export const claimExtractorAgent = agent({
   name: "workflow.claimExtractor",
@@ -78,17 +83,12 @@ export const claimExtractorAgent = agent({
   },
 });
 
-export const claimCheckerAgent = opencodeRepoTaskAgent({
-  name: "workflow.claimChecker",
-  description: "Bounded OpenCode-style claim checker using read-only repository tools.",
-  input: ClaimCheckInputSchema,
-  output: ClaimCheckOutputSchema,
-  limits: { maxToolCalls: 4, timeoutMs: 120_000 },
-  async runTask(input, tools) {
-    const search = await tools.searchText(`repo-search:${input.claim.key}`, input.claim.text);
+const defaultClaimCheckRunner: OpenCodeSessionRunner<ClaimCheckInput> = {
+  async run({ input, tools }) {
+    const search = await tools.searchText({ query: input.claim.text, maxResults: 10 });
     const primaryEvidence = search.matches[0];
     if (primaryEvidence) {
-      await tools.readFile(`repo-read:${input.claim.key}`, primaryEvidence.path);
+      await tools.readRange({ path: primaryEvidence.path, startLine: primaryEvidence.line, endLine: primaryEvidence.line });
     }
     const evidence = classifyClaimEvidence(input.claim.text, search);
     return {
@@ -98,6 +98,30 @@ export const claimCheckerAgent = opencodeRepoTaskAgent({
       evidence: evidence.evidence,
       checkerNotes: evidence.notes,
     };
+  },
+};
+
+activeClaimCheckRunner = defaultClaimCheckRunner;
+
+export const claimCheckerAgent = createOpenCodeAgent({
+  name: "workflow.claimChecker",
+  description: "Bounded OpenCode claim checker using mediated read-only repository tools.",
+  input: ClaimCheckInputSchema,
+  output: ClaimCheckOutputSchema,
+  limits: {
+    maxToolCalls: 4,
+    timeoutMs: 120_000,
+    maxBytesRead: 1_000_000,
+    maxOutputBytes: 50_000,
+    maxFileSizeBytes: 200_000,
+  },
+  taskPrompt(input) {
+    return `Check this claim against the repository using read-only tools, then return structured JSON only: ${input.claim.text}`;
+  },
+  runner: {
+    run(session) {
+      return activeClaimCheckRunner.run(session);
+    },
   },
 });
 
@@ -197,7 +221,7 @@ export const workflowCustomizeAgent = agent({
 export const promptWorkflowReviewApp = weave({
   name: "prompt-workflow-review",
   agents: [workflowCustomizeAgent, claimExtractorAgent, claimCheckerAgent, claimVerifierAgent, synthesizerAgent],
-  tools: [repoSearchTextTool, repoReadFileTool],
+  tools: [repoListFilesTool, repoSearchTextTool, repoReadFileTool, repoReadRangeTool],
   policies: [
     policy({
       name: "prompt-workflow.repo-read-only",
@@ -223,6 +247,7 @@ export type PromptWorkflowDemoResult = {
 
 export type PromptWorkflowReviewDemoOptions = {
   compiler?: WorkflowCompiler;
+  claimCheckRunner?: OpenCodeSessionRunner<ClaimCheckInput>;
 };
 
 export async function runPromptWorkflowReviewDemo(
@@ -230,7 +255,9 @@ export async function runPromptWorkflowReviewDemo(
   options: PromptWorkflowReviewDemoOptions = {},
 ): Promise<PromptWorkflowDemoResult> {
   const previousWorkflowCompiler = activeWorkflowCompiler;
+  const previousClaimCheckRunner = activeClaimCheckRunner;
   activeWorkflowCompiler = options.compiler ?? deterministicWorkflowCompiler;
+  activeClaimCheckRunner = options.claimCheckRunner ?? defaultClaimCheckRunner;
   try {
     const engine = new DemoThreadEngine();
     const service = new ThreadService(engine);
@@ -240,7 +267,11 @@ export async function runPromptWorkflowReviewDemo(
       createRuntimeAgentPlanner(promptWorkflowReviewApp, workflowCustomizeAgent.name, service),
       "prompt-workflow-runner",
     );
-    const toolWorker = new ContractToolWorker(engine, [repoSearchTextTool, repoReadFileTool], "prompt-workflow-tool-worker");
+    const toolWorker = new ContractToolWorker(
+      engine,
+      [repoListFilesTool, repoSearchTextTool, repoReadFileTool, repoReadRangeTool],
+      "prompt-workflow-tool-worker",
+    );
     const session = await service.startSession({
       prompt: input.prompt,
       agentName: workflowCustomizeAgent.name,
@@ -276,6 +307,7 @@ export async function runPromptWorkflowReviewDemo(
     };
   } finally {
     activeWorkflowCompiler = previousWorkflowCompiler;
+    activeClaimCheckRunner = previousClaimCheckRunner;
   }
 }
 
