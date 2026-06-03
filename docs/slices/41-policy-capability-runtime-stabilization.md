@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-core`
 
@@ -119,51 +119,55 @@ If any of these materially change for an already-recorded policy decision, repla
 
 ## Acceptance Criteria
 
-- [ ] Policy replay semantics are documented and tested.
-- [ ] Recorded policy decisions are replayed instead of re-evaluating current policy code.
-- [ ] `policyVersion` is recorded for versioned policies.
-- [ ] Policy version changes do not fail in-flight replay by default.
-- [ ] Policy request hash includes tool input and capability declarations.
-- [ ] Request hash mismatch raises `ReplayMismatchError`.
-- [ ] Multi-policy ordering is deterministic and tested.
-- [ ] Deny and approval-required decisions short-circuit later policies.
-- [ ] Policy-required gates have stable derived identity and are idempotent.
-- [ ] Legacy events remain compatible.
-- [ ] Docs distinguish durable policy replay from current policy code evaluation.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Policy replay semantics are documented and tested.
+- [x] Recorded policy decisions are replayed instead of re-evaluating current policy code.
+- [x] `policyVersion` is recorded for versioned policies.
+- [x] Policy version changes do not fail in-flight replay by default.
+- [x] Policy request hash includes tool input and capability declarations.
+- [x] Request hash mismatch raises `ReplayMismatchError`.
+- [x] Multi-policy ordering is deterministic and tested.
+- [x] Deny and approval-required decisions short-circuit later policies.
+- [x] Policy-required gates have stable derived identity and are idempotent.
+- [x] Legacy events remain compatible.
+- [x] Docs distinguish durable policy replay from current policy code evaluation.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Formalize replay semantics.
-- [ ] Add policy version metadata.
-- [ ] Add request hash helper and event fields.
-- [ ] Harden policy gate identity and replay.
-- [ ] Add multi-policy ordering behavior.
-- [ ] Add replay and mismatch tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Formalize replay semantics.
+- [x] Add policy version metadata.
+- [x] Add request hash helper and event fields.
+- [x] Harden policy gate identity and replay.
+- [x] Add multi-policy ordering behavior.
+- [x] Add replay and mismatch tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
-
-Include:
-
-- final policy replay semantics
-- final `policy.evaluated` payload shape
-- request hash inputs
-- gate identity behavior
-- tests added
-- docs updated
-- commands run
-- remaining policy/capability limitations
+- `policy.evaluated` is durable audit evidence and a durable control decision.
+- Replay uses recorded policy decisions for a durable request and does not re-run current policy code.
+- Policies execute in `app.policies` order.
+- `allow` records evidence and continues to the next policy.
+- `deny` records evidence, appends `agent.failed`, and short-circuits later policies.
+- `approval_required` records evidence, creates or reuses a deterministic policy gate, and short-circuits later policies.
+- Added optional `PolicyRule.version` and recorded `policyVersion` on `policy.evaluated`.
+- Policy version changes do not fail replay by default; existing decisions remain source-of-truth.
+- Added `requestKind` and `requestHash` to `policy.evaluated` while preserving compatibility fields.
+- Request hash includes request kind, scope key, step key, tool name, parsed input, relevant options, and capability declarations.
+- Capability declaration changes now cause policy-layer `ReplayMismatchError` for already-recorded policy decisions.
+- Policy gate keys are derived from tool step key and policy name: `<tool-step>:policy:<policy-name>:approval`.
+- Added tests for recorded allow replay, recorded deny replay, approval-required pending/approved/denied replay, input mismatch, capability mismatch, multi-policy ordering, and policy version audit behavior.
+- Updated docs in `docs/declarative-api.md`, `docs/event-taxonomy.md`, `docs/architecture.md`, and `docs/glossary.md`.
+- Verified with `npm test` and `npm run typecheck`.
+- Remaining limitations: policies still only enforce `ctx.tool`; capability-mediated credentials, policy over other context operations, aggregation, redaction, and external policy services remain follow-up work.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/architecture.md`
-- [ ] `docs/glossary.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/architecture.md`
+- [x] `docs/glossary.md`

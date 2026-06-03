@@ -418,6 +418,7 @@ Approval policy helpers are useful for naming and reusing approval rules inside 
 ```ts
 const productionToolPolicy = policy({
   name: "production-tool-policy",
+  version: "1",
   evaluate(request) {
     if (request.type !== "tool") {
       return undefined;
@@ -447,15 +448,26 @@ const app = weave({
 
 Supported outcomes:
 
-- `allow`: records `policy.evaluated` with `outcome: "allowed"`, then records `tool.requested`
+- `allow`: records `policy.evaluated` with `outcome: "allowed"`, then continues to the next policy
 - `deny`: records `policy.evaluated` with `outcome: "denied"`, records `agent.failed`, and does not record `tool.requested`
 - `approval_required`: records `policy.evaluated`, records a `gate.created` event, and waits for `gate.resolved` before recording `tool.requested`
+
+Policy ordering:
+
+- policies run in `app.policies` order
+- `allow` decisions are recorded and evaluation continues
+- `deny` short-circuits later policies
+- `approval_required` short-circuits later policies
+- policies that return `undefined` are skipped and do not record `policy.evaluated`
 
 Replay semantics:
 
 - a recorded policy decision is replayed instead of re-evaluating current policy code
-- policy-relevant request identity includes scope key, step key, tool call ID, tool name, input hash, and capability names
-- changing policy-relevant request input after a `policy.evaluated` event raises `ReplayMismatchError`
+- policy-relevant request identity includes scope key, step key, tool call ID, tool name, request kind, request hash, and capability names
+- request hash includes tool name, parsed input, relevant options, scope key, step key, and capability declarations
+- changing policy-relevant request input or capability declarations after a `policy.evaluated` event raises `ReplayMismatchError`
+- `policyVersion` is recorded for audit, but current policy version changes do not fail replay of already-recorded decisions
+- approval-required policy gates derive stable identity from the tool step key and policy name
 - existing tool requests without policy evidence remain compatible and are not retroactively blocked
 
 Current boundary:

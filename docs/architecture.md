@@ -136,6 +136,8 @@ Runtime request policies can inspect capability names during `ctx.tool` planning
 
 A runtime request rule that can allow, deny, or require approval before a supported durable request is recorded. Current enforcement happens at the `ctx.tool` planning boundary and records `policy.evaluated` audit evidence.
 
+Policies run in `app.policies` order. `allow` records evidence and continues. `deny` and `approval_required` short-circuit later policies. Once recorded, policy decisions replay from the event log rather than re-running current policy code for the same durable request.
+
 ### Stream Link
 
 A controlled way for one thread stream to feed another thread or supervisor path.

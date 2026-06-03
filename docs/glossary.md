@@ -66,7 +66,19 @@ The rules that decide what actions an agent, worker, or human may take under whi
 
 ## Policy Evaluation
 
-Durable audit evidence that a runtime request policy evaluated a tool request. Policy evaluations record the outcome, policy name, input hash, tool name, tool call ID, and capability names used for replay safety.
+Durable audit evidence and control decision for a runtime request policy. Policy evaluations record the outcome, policy name, optional policy version, request hash, tool name, tool call ID, and capability names used for replay safety.
+
+## Policy Decision
+
+The recorded result of a policy evaluation: `allowed`, `denied`, or `approval_required`. Recorded policy decisions are replayed from the event log for the same durable request.
+
+## Request Hash
+
+A stable hash binding a policy decision to the request it evaluated. For tool requests, the hash includes request kind, scope key, step key, tool name, parsed input, relevant options, and capability declarations.
+
+## Policy Replay
+
+The rule that existing `policy.evaluated` events are source-of-truth for in-flight durable requests. Current policy code and version changes affect new evaluations, not already-recorded decisions.
 
 ## Trace
 

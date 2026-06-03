@@ -187,6 +187,7 @@ interface ToolPolicyRequest<Input = unknown> {
   stepKey: string;
   toolName: string;
   input: Input;
+  options?: ToolCallOptions;
   capabilities: readonly AnyCapabilityContract[];
 }
 
@@ -199,6 +200,7 @@ type PolicyDecision =
 
 interface PolicyRule<Request extends PolicyRequest = PolicyRequest> {
   name: string;
+  version?: string;
   description?: string;
   evaluate(request: Request): PolicyDecision | undefined;
 }

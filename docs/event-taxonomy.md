@@ -223,7 +223,9 @@ const ToolFailedPayload = z.object({
 ```ts
 const PolicyEvaluatedPayload = z.object({
   policyEvaluationId: z.string().uuid(),
-  requestType: z.literal("tool"),
+  requestType: z.literal("tool").optional(),
+  requestKind: z.literal("tool.requested").optional(),
+  requestHash: z.string().min(1).optional(),
   outcome: z.enum(["allowed", "denied", "approval_required"]),
   scopeKey: z.string().min(1),
   stepKey: z.string().min(1),
@@ -233,12 +235,15 @@ const PolicyEvaluatedPayload = z.object({
   inputHash: z.string().min(1),
   capabilityNames: z.array(z.string().min(1)),
   policyName: z.string().min(1).optional(),
+  policyVersion: z.string().min(1).optional(),
   reason: z.string().min(1).optional(),
   gateId: z.string().uuid().optional(),
 })
 ```
 
-`policy.evaluated` is durable audit evidence for runtime request policy decisions. It is emitted before `tool.requested` for allowed tool requests, before `gate.created` for approval-required requests, and before `agent.failed` for denied requests.
+`policy.evaluated` is durable audit evidence and a durable control decision for runtime request policies. Policies are evaluated in `app.policies` order. `allow` decisions are recorded and evaluation continues. `deny` and `approval_required` decisions are recorded and short-circuit later policies.
+
+Replay uses recorded `policy.evaluated` events instead of re-running current policy code for the same durable request. `requestHash` binds the decision to the tool name, parsed input, relevant options, scope key, step key, and capability declarations. `policyVersion` is audit metadata; changing the current policy version does not invalidate already-recorded decisions by default.
 
 ### Credential requested
 

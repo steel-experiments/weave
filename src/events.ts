@@ -109,7 +109,9 @@ export const ToolFailedPayloadSchema = z.object({
 
 export const PolicyEvaluatedPayloadSchema = z.object({
   policyEvaluationId: z.string().uuid(),
-  requestType: z.literal("tool"),
+  requestType: z.literal("tool").optional(),
+  requestKind: z.literal("tool.requested").optional(),
+  requestHash: z.string().min(1).optional(),
   outcome: z.enum(["allowed", "denied", "approval_required"]),
   scopeKey: z.string().min(1),
   stepKey: z.string().min(1),
@@ -119,6 +121,7 @@ export const PolicyEvaluatedPayloadSchema = z.object({
   inputHash: z.string().min(1),
   capabilityNames: z.array(z.string().min(1)),
   policyName: z.string().min(1).optional(),
+  policyVersion: z.string().min(1).optional(),
   reason: z.string().min(1).optional(),
   gateId: z.string().uuid().optional(),
 });

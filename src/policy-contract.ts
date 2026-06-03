@@ -1,4 +1,4 @@
-import type { GateRequest } from "./agent-contract.js";
+import type { GateRequest, ToolCallOptions } from "./agent-contract.js";
 import type { AnyCapabilityContract } from "./capability-contract.js";
 
 export type ApprovalPolicyDecision = GateRequest | undefined;
@@ -37,6 +37,7 @@ export type ToolPolicyRequest<Input = unknown> = {
   stepKey: string;
   toolName: string;
   input: Input;
+  options?: ToolCallOptions;
   capabilities: readonly AnyCapabilityContract[];
 };
 
@@ -59,6 +60,7 @@ export type PolicyDecision =
 
 export type PolicyRule<Request extends PolicyRequest = PolicyRequest> = {
   name: string;
+  version?: string;
   description?: string;
   evaluate(request: Request): PolicyDecision | undefined;
 };

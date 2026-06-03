@@ -140,6 +140,8 @@ async function testPolicyAllowRecordsAuditAndRequestsTool(): Promise<void> {
   assert.equal(plan.events[0]?.type, "policy.evaluated");
   assert.equal(plan.events[0]?.payload.outcome, "allowed");
   assert.equal(plan.events[0]?.payload.policyName, "test.allow-lookup-capability");
+  assert.equal(plan.events[0]?.payload.requestKind, "tool.requested");
+  assert.equal(typeof plan.events[0]?.payload.requestHash, "string");
   assert.deepEqual(plan.events[0]?.payload.capabilityNames, ["test.lookup.read"]);
   assert.equal(plan.events[1]?.type, "tool.requested");
 
@@ -199,7 +201,7 @@ async function testPolicyApprovalRequiredCreatesGateThenRequestsTool(): Promise<
   assert.equal(firstPlan.events[0]?.payload.outcome, "approval_required");
   const gateCreated = firstPlan.events[1];
   assert.equal(gateCreated?.type, "gate.created");
-  assert.equal(gateCreated.stepKey, "lookup:policy-gate");
+  assert.equal(gateCreated.stepKey, "lookup:policy:test.require-lookup-approval:approval");
   assert.equal(gateCreated.payload.relatedToolCallId, firstPlan.events[0]?.payload.toolCallId);
 
   const pendingPlan = await planner.plan("policy-approval", [...history, ...firstPlan.events]);
@@ -296,6 +298,193 @@ async function testPolicyEvaluationInputMismatch(): Promise<void> {
     },
     ReplayMismatchError,
   );
+}
+
+async function testPolicyCapabilityDeclarationMismatch(): Promise<void> {
+  const readCapability = capability({
+    name: "github.repo.read",
+    description: "Read a GitHub repository.",
+    scopes: z.object({ repo: z.string().min(1) }),
+  });
+  const writeCapability = capability({
+    name: "github.repo.write",
+    description: "Write a GitHub repository.",
+    scopes: z.object({ repo: z.string().min(1) }),
+  });
+  const readTool = tool({
+    name: "test.capabilitySensitive",
+    description: "Capability sensitive test tool.",
+    input: inputSchema,
+    output: outputSchema,
+    capabilities: [readCapability],
+    run() {
+      return { summary: "read", requiresManualApproval: false, data: { result: "read" } };
+    },
+  });
+  const writeTool = tool({
+    ...readTool,
+    capabilities: [writeCapability],
+  });
+  const readAgent = agent({
+    name: "capability-sensitive-agent",
+    input: inputSchema,
+    tools: [readTool],
+    async run(ctx, input) {
+      return ctx.tool("capability-sensitive", readTool, input);
+    },
+  });
+  const writeAgent = agent({
+    name: "capability-sensitive-agent",
+    input: inputSchema,
+    tools: [writeTool],
+    async run(ctx, input) {
+      return ctx.tool("capability-sensitive", writeTool, input);
+    },
+  });
+  const allow = policy({
+    name: "test.capability-sensitive-policy",
+    evaluate() {
+      return { outcome: "allow" };
+    },
+  });
+  const history = initialHistory("policy-capability-mismatch");
+  const firstPlan = await createAgentPlanner(readAgent, readAgent.name, { policies: [allow] }).plan("policy-capability-mismatch", history);
+  assert(firstPlan);
+
+  await assert.rejects(
+    async () => {
+      await createAgentPlanner(writeAgent, writeAgent.name, { policies: [allow] }).plan("policy-capability-mismatch", [
+        ...history,
+        firstPlan.events[0]!,
+      ]);
+    },
+    ReplayMismatchError,
+  );
+}
+
+async function testPolicyOrderingAllowThenDeny(): Promise<void> {
+  const calls: string[] = [];
+  const allowA = policy({
+    name: "test.order-a-allow",
+    evaluate() {
+      calls.push("a");
+      return { outcome: "allow", reason: "a allowed" };
+    },
+  });
+  const denyB = policy({
+    name: "test.order-b-deny",
+    evaluate() {
+      calls.push("b");
+      return { outcome: "deny", reason: "b denied" };
+    },
+  });
+  const allowC = policy({
+    name: "test.order-c-allow",
+    evaluate() {
+      calls.push("c");
+      return { outcome: "allow" };
+    },
+  });
+  const planner = createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [allowA, denyB, allowC] });
+  const plan = await planner.plan("policy-order-deny", initialHistory("policy-order-deny"));
+
+  assert(plan);
+  assert.deepEqual(calls, ["a", "b"]);
+  assert.equal(plan.events.filter((event) => event.type === "policy.evaluated").length, 2);
+  assert.equal(plan.events[0]?.type, "policy.evaluated");
+  assert.equal(plan.events[0]?.payload.policyName, "test.order-a-allow");
+  assert.equal(plan.events[0]?.payload.outcome, "allowed");
+  assert.equal(plan.events[1]?.type, "policy.evaluated");
+  assert.equal(plan.events[1]?.payload.policyName, "test.order-b-deny");
+  assert.equal(plan.events[1]?.payload.outcome, "denied");
+  assert.equal(plan.events[2]?.type, "agent.failed");
+  assert(!plan.events.some((event) => event.type === "tool.requested"));
+}
+
+async function testPolicyOrderingAllowThenApproval(): Promise<void> {
+  const calls: string[] = [];
+  const allowA = policy({
+    name: "test.order-approval-a-allow",
+    evaluate() {
+      calls.push("a");
+      return { outcome: "allow" };
+    },
+  });
+  const approvalB = policy({
+    name: "test.order-approval-b-gate",
+    evaluate() {
+      calls.push("b");
+      return {
+        outcome: "approval_required",
+        gate: { reason: "risky-remediation", proposedAction: "Approve ordered policy test." },
+      };
+    },
+  });
+  const denyC = policy({
+    name: "test.order-approval-c-deny",
+    evaluate() {
+      calls.push("c");
+      return { outcome: "deny", reason: "c denied" };
+    },
+  });
+  const planner = createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [allowA, approvalB, denyC] });
+  const plan = await planner.plan("policy-order-approval", initialHistory("policy-order-approval"));
+
+  assert(plan);
+  assert.deepEqual(calls, ["a", "b"]);
+  assert.equal(plan.events.filter((event) => event.type === "policy.evaluated").length, 2);
+  assert.equal(plan.events[0]?.type, "policy.evaluated");
+  assert.equal(plan.events[0]?.payload.outcome, "allowed");
+  assert.equal(plan.events[1]?.type, "policy.evaluated");
+  assert.equal(plan.events[1]?.payload.outcome, "approval_required");
+  assert.equal(plan.events[2]?.type, "gate.created");
+  assert.equal(plan.events[2]?.stepKey, "lookup:policy:test.order-approval-b-gate:approval");
+}
+
+async function testPolicyVersionAuditDoesNotBreakReplay(): Promise<void> {
+  const versionOne = policy({
+    name: "test.versioned-policy",
+    version: "1",
+    evaluate() {
+      return {
+        outcome: "approval_required",
+        gate: { reason: "risky-remediation", proposedAction: "Approve versioned policy test." },
+      };
+    },
+  });
+  const history = initialHistory("policy-version-replay");
+  const firstPlan = await createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [versionOne] }).plan("policy-version-replay", history);
+  assert(firstPlan);
+  assert.equal(firstPlan.events[0]?.type, "policy.evaluated");
+  assert.equal(firstPlan.events[0]?.payload.policyVersion, "1");
+
+  const versionTwoThrows = policy({
+    name: "test.versioned-policy",
+    version: "2",
+    evaluate() {
+      throw new Error("current policy code should not run for recorded decisions");
+    },
+  });
+  const replay = await createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [versionTwoThrows] }).plan("policy-version-replay", [
+    ...history,
+    ...firstPlan.events,
+  ]);
+  assert.equal(replay, null);
+
+  const versionTwo = policy({
+    name: "test.versioned-policy",
+    version: "2",
+    evaluate() {
+      return { outcome: "allow" };
+    },
+  });
+  const newPlan = await createAgentPlanner(lookupAgent, lookupAgent.name, { policies: [versionTwo] }).plan(
+    "policy-version-new-request",
+    initialHistory("policy-version-new-request"),
+  );
+  assert(newPlan);
+  assert.equal(newPlan.events[0]?.type, "policy.evaluated");
+  assert.equal(newPlan.events[0]?.payload.policyVersion, "2");
 }
 
 async function testCompletedRunFirstAgentIsTerminal(): Promise<void> {
@@ -2908,6 +3097,10 @@ await testPolicyDenyRecordsAuditAndFailsAgent();
 await testPolicyApprovalRequiredCreatesGateThenRequestsTool();
 await testPolicyApprovalDeniedFailsAgent();
 await testPolicyEvaluationInputMismatch();
+await testPolicyCapabilityDeclarationMismatch();
+await testPolicyOrderingAllowThenDeny();
+await testPolicyOrderingAllowThenApproval();
+await testPolicyVersionAuditDoesNotBreakReplay();
 await testCompletedRunFirstAgentIsTerminal();
 await testRunnerReadsFullReplayHistory();
 await testDecodeFailure();
