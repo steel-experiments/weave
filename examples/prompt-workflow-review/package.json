@@ -7,6 +7,7 @@
   "scripts": {
     "demo": "tsx src/index.ts",
     "test": "tsx src/workflow.test.ts",
+    "test:opencode": "tsx src/opencode-integration.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

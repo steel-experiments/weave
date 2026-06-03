@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-examples`
 
@@ -182,36 +182,56 @@ Replay correctness is more important than matching OpenCode's native in-memory l
 
 ## Acceptance Criteria
 
-- [ ] `createOpenCodeAgent(...)` or equivalent adapter exists example-locally.
-- [ ] Adapter returns a normal Weave agent contract.
-- [ ] Adapter can run one bounded repo task per child thread.
-- [ ] Real read-only repo tools replace deterministic catalog lookup for claim checks.
-- [ ] OpenCode read/search/list operations are mediated through Weave tools where practical.
-- [ ] File writes are unavailable.
-- [ ] Arbitrary shell mutation is unavailable.
-- [ ] Network is disabled by default or policy-gated.
-- [ ] Limits are enforced with structured failures.
-- [ ] Output is schema-validated.
-- [ ] Replay after interruption does not duplicate mediated tool requests.
-- [ ] No generated JavaScript is executed.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] `createOpenCodeAgent(...)` or equivalent adapter exists example-locally.
+- [x] Adapter returns a normal Weave agent contract.
+- [x] Adapter can run one bounded repo task per child thread.
+- [x] Real read-only repo tools replace deterministic catalog lookup for claim checks.
+- [x] OpenCode read/search/list operations are mediated through Weave tools where practical.
+- [x] File writes are unavailable.
+- [x] Arbitrary shell mutation is unavailable.
+- [x] Network is disabled by default or policy-gated.
+- [x] Limits are enforced with structured failures.
+- [x] Output is schema-validated.
+- [x] Replay after interruption does not duplicate mediated tool requests.
+- [x] No generated JavaScript is executed.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Finalize adapter contract.
-- [ ] Implement bounded read-only repo tools.
-- [ ] Implement OpenCode execution boundary.
-- [ ] Implement mediated tool calls.
-- [ ] Add sandbox and limit enforcement.
-- [ ] Wire prompt workflow claim checker.
-- [ ] Add tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Finalize adapter contract.
+- [x] Implement bounded read-only repo tools.
+- [x] Implement OpenCode execution boundary.
+- [x] Implement mediated tool calls.
+- [x] Add sandbox and limit enforcement.
+- [x] Wire prompt workflow claim checker.
+- [x] Add tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+- Added example-local `examples/prompt-workflow-review/src/opencode-adapter.ts`.
+- Added `createOpenCodeAgent(...)`, which returns a normal Weave `agent(...)` contract and accepts a mockable `OpenCodeSessionRunner` boundary.
+- Replaced the deterministic in-memory repository catalog with real bounded read-only repository tools: `repo.listFiles`, `repo.readFile`, `repo.readRange`, and `repo.searchText`.
+- Added explicit repository root resolution, path traversal denial, denied-glob handling, max file size checks, max tool call checks, max total bytes read checks, timeout checks, and max output byte checks.
+- Routed adapter read/search/range/list operations through deterministic `ctx.tool(...)` step keys so the normal `tool.requested`, `tool.completed`, policy, and replay paths remain visible to Weave.
+- Wired `workflow.claimChecker` through `createOpenCodeAgent(...)` with a deterministic runner for CI and an opt-in real `opencode run --format json` CLI integration test behind the same runner interface.
+- Kept file writes, shell execution, and network access unavailable through the adapter and denied by the example policy when requested as capabilities.
+- Added compatibility re-export from `opencode-harness.ts` to the new adapter module.
+- Added tests for repo tool schemas, real read/list/range/search, path traversal denial, denied globs, max file size failure, structured output parsing, and the mediated workflow trace.
+- Verification run:
+- `npm --workspace weave-prompt-workflow-review run test`
+- `npm --workspace weave-prompt-workflow-review run typecheck`
+- `npm test`
+- `npm run typecheck`
+- `git diff --check`
+- `npm --workspace weave-prompt-workflow-review run demo`
+- `npm --workspace weave-prompt-workflow-review run test:opencode`
+
+Replay note: mediated calls use deterministic `ctx.tool(...)` keys and therefore reuse recorded tool outputs on replay. The explicit interruption regression remains covered by core replay tests rather than a new example-local runner harness.
+
+Real OpenCode note: `test:opencode` shells out to the local `opencode` binary, gathers repository evidence through Weave-mediated `repo.searchText` and `repo.readRange` tool calls, then asks OpenCode to return schema-validated JSON from that evidence. Normal CI remains deterministic and does not require model credentials.
 
 ## Docs To Update On Completion
 

@@ -1,5 +1,20 @@
 import assert from "node:assert/strict";
-import { RepoReadFileInputSchema, RepoSearchTextInputSchema, hasMutableHarnessCapability, workflowCapabilityDecision } from "./opencode-harness.js";
+import { z } from "zod";
+import {
+  RepoListFilesInputSchema,
+  RepoReadFileInputSchema,
+  RepoReadRangeInputSchema,
+  RepoSearchTextInputSchema,
+  defaultOpenCodeDeniedGlobs,
+  defaultOpenCodeRepoRoot,
+  hasMutableHarnessCapability,
+  listRepositoryFiles,
+  parseOpenCodeStructuredOutput,
+  readRepositoryFile,
+  readRepositoryRange,
+  searchRepositoryText,
+  workflowCapabilityDecision,
+} from "./opencode-adapter.js";
 import { createMockModelWorkflowCompiler } from "./workflow-compiler.js";
 import {
   compileWorkflowPlan,
@@ -32,7 +47,13 @@ assert.equal(planRequiresApproval(unsafePlan), true);
 assert.equal(unsafePlan.requiredCapabilities.some((capability) => capability.name === "network.access"), true);
 assert.equal(unsafePlan.requiredCapabilities.some((capability) => capability.name === "repo.write"), true);
 
+assert.deepEqual(RepoListFilesInputSchema.parse({ directory: "docs", maxResults: 5 }), { directory: "docs", maxResults: 5 });
 assert.deepEqual(RepoReadFileInputSchema.parse({ path: "docs/declarative-api.md" }), { path: "docs/declarative-api.md" });
+assert.deepEqual(RepoReadRangeInputSchema.parse({ path: "docs/declarative-api.md", startLine: 1, endLine: 2 }), {
+  path: "docs/declarative-api.md",
+  startLine: 1,
+  endLine: 2,
+});
 assert.deepEqual(RepoSearchTextInputSchema.parse({ query: "child thread lineage" }), { query: "child thread lineage" });
 assert.equal(workflowCapabilityDecision(["repo.read"]), "allow");
 assert.equal(workflowCapabilityDecision(["network.access"]), "deny");
@@ -41,6 +62,46 @@ assert.equal(workflowCapabilityDecision(["repo.write"]), "deny");
 assert.equal(hasMutableHarnessCapability("network.access"), true);
 assert.equal(hasMutableHarnessCapability("shell.exec"), true);
 assert.equal(hasMutableHarnessCapability("repo.write"), true);
+
+const repoRoot = defaultOpenCodeRepoRoot();
+const deniedGlobs = defaultOpenCodeDeniedGlobs();
+const listedFiles = await listRepositoryFiles({ root: repoRoot, deniedGlobs, directory: "docs/slices", maxListFiles: 100 });
+assert(listedFiles.files.some((file) => file.path === "docs/slices/50-full-opencode-adapter.md"));
+const sliceFile = await readRepositoryFile({ root: repoRoot, deniedGlobs, path: "docs/slices/50-full-opencode-adapter.md", maxFileSizeBytes: 50_000 });
+assert(sliceFile.content.includes("Full OpenCode Adapter"));
+const sliceRange = await readRepositoryRange({
+  root: repoRoot,
+  deniedGlobs,
+  path: "docs/slices/50-full-opencode-adapter.md",
+  startLine: 1,
+  endLine: 1,
+  maxFileSizeBytes: 50_000,
+});
+assert.equal(sliceRange.content, "# Full OpenCode Adapter");
+const repoSearch = await searchRepositoryText({
+  root: repoRoot,
+  deniedGlobs,
+  query: "Adapt the example-local OpenCode-style harness",
+  maxResults: 100,
+  maxSearchFiles: 1_000,
+  maxFileSizeBytes: 50_000,
+});
+assert(repoSearch.matches.some((match) => match.path === "docs/slices/50-full-opencode-adapter.md"));
+await assert.rejects(
+  () => readRepositoryFile({ root: repoRoot, deniedGlobs, path: "../package.json", maxFileSizeBytes: 50_000 }),
+  /escapes root/,
+);
+await assert.rejects(
+  () => listRepositoryFiles({ root: repoRoot, deniedGlobs, directory: ".git", maxListFiles: 5 }),
+  /denied by glob/,
+);
+await assert.rejects(
+  () => readRepositoryFile({ root: repoRoot, deniedGlobs, path: "package.json", maxFileSizeBytes: 1 }),
+  /exceeds maxFileSizeBytes=1/,
+);
+assert.equal(parseOpenCodeStructuredOutput('{"ok":true}', z.object({ ok: z.literal(true) }), 100).ok, true);
+assert.throws(() => parseOpenCodeStructuredOutput("not-json", z.object({ ok: z.boolean() }), 100), /Unexpected token|JSON/);
+assert.throws(() => parseOpenCodeStructuredOutput({ ok: true }, z.object({ ok: z.boolean() }), 2), /maxOutputBytes=2/);
 
 const mockedModelCompiler = createMockModelWorkflowCompiler(plan);
 const modelPlan = await compileWorkflowPlanFromCompiler(input, mockedModelCompiler);
@@ -78,8 +139,9 @@ assert(result.events.some((event) => event.type === "checkpoint.completed"));
 assert(result.events.some((event) => event.type === "agent.finding.produced"));
 assert(result.allEvents.some((event) => event.type === "policy.evaluated"));
 assert(result.allEvents.some((event) => event.type === "tool.requested" && event.payload.toolName === "repo.searchText"));
-assert(result.allEvents.some((event) => event.type === "tool.requested" && event.payload.toolName === "repo.readFile"));
-assert(result.allEvents.some((event) => event.type === "checkpoint.completed" && event.stepKey === "opencode-harness-limits"));
+assert(result.allEvents.some((event) => event.type === "tool.requested" && event.payload.toolName === "repo.readRange"));
+assert(result.allEvents.some((event) => event.type === "checkpoint.completed" && event.stepKey === "opencode-task-spec"));
+assert(result.allEvents.some((event) => event.type === "checkpoint.completed" && event.stepKey === "opencode-adapter-limits"));
 assert.equal(result.events.filter((event) => event.type === "child_thread.spawned").length, new Set(result.childThreadIds).size);
 
 const modelResult = await runPromptWorkflowReviewDemo(input, { compiler: mockedModelCompiler });

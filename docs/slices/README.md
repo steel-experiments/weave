@@ -69,4 +69,10 @@ The slice document should stay alive after implementation. It becomes the compac
 - `47-prompt-driven-workflow-example.md`: shipped slice for a prompt-generated workflow plan example using child agents and a conservative repo-read harness.
 - `48-opencode-backed-workflow-harness.md`: shipped slice turning the deterministic claim-checking example into an example-local reusable bounded OpenCode-style repo task harness.
 - `49-model-backed-workflow-compiler.md`: shipped slice adding a model-backed compiler boundary that emits schema-validated `WorkflowPlan` data only.
-- `50-full-opencode-adapter.md`: planned slice adapting the example-local harness into a full bounded OpenCode adapter with real read-only repo tools, mediated tool calls, policy gates, and replay-safe structured output.
+- `50-full-opencode-adapter.md`: shipped slice adapting the example-local harness into a bounded OpenCode adapter with real read-only repo tools, mediated tool calls, policy gates, and replay-safe structured output.
+- `51-auth-gateway-thread-start.md`: proposed slice adding the first auth gateway path for protected HTTP thread start and safe auth metadata.
+- `52-auth-context-runtime-policy.md`: proposed slice flowing thread auth context into runtime policy and capability authorization.
+- `53-authenticated-thread-actions.md`: proposed slice applying the auth gateway to existing HTTP thread actions such as read, signal delivery, gate resolution, cancellation, and artifacts.
+- `54-authenticated-integration-ingress.md`: proposed slice proving integration ingress auth with a Slack-shaped stable-principal flow.
+- `55-auth-decision-audit-trail.md`: proposed slice adding safe thread-scoped auth audit events without storing raw tokens or full claims.
+- `56-auth-provider-adapter-boundary.md`: proposed slice stabilizing provider-neutral identity adapter boundaries and optional dependency-light token adapters.

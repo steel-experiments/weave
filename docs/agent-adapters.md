@@ -185,6 +185,25 @@ so that the agent can continue without depending on hidden live memory.
 - the process assumes it stays alive forever
 - progress and interrupts are not surfaced cleanly
 
+## Example-local OpenCode adapter
+
+The prompt workflow review example includes an example-local bounded adapter in `examples/prompt-workflow-review/src/opencode-adapter.ts`.
+
+It is intentionally not a public `weave/opencode` export yet.
+
+The adapter shape is:
+
+- `createOpenCodeAgent(...)` returns a normal Weave `agent(...)` contract
+- OpenCode execution is represented by a mockable `OpenCodeSessionRunner`
+- `createOpenCodeCliRunner(...)` can shell out to `opencode run --format json` for opt-in real binary testing
+- repo operations use Weave tools: `repo.listFiles`, `repo.readFile`, `repo.readRange`, and `repo.searchText`
+- writes, shell, and network are not exposed by the adapter
+- structured outputs are parsed and validated against the caller's schema
+
+This keeps Weave as the durable control layer while leaving the live OpenCode process/session implementation behind a replaceable boundary.
+
+The opt-in prompt workflow integration test is `npm --workspace weave-prompt-workflow-review run test:opencode`.
+
 ## Other Agent Families
 
 ## Function-calling chat agents
