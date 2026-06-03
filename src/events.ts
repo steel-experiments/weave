@@ -201,7 +201,7 @@ export const CredentialFailedPayloadSchema = z.object({
 export const GateCreatedPayloadSchema = z.object({
   gateId: z.string().uuid(),
   gateType: z.literal("manual-approval"),
-  reason: z.enum(["tool-result-requires-approval", "risky-remediation"]),
+  reason: z.enum(["tool-result-requires-approval", "risky-remediation", "slice-plan-approval"]),
   relatedToolCallId: z.string().uuid().optional(),
   proposedAction: z.string().optional(),
 });
@@ -292,6 +292,136 @@ export const ChildThreadFailedPayloadSchema = z.object({
   childAgentName: z.string().min(1).optional(),
   errorCode: z.string().min(1),
   message: z.string().min(1),
+});
+
+export const DevReviewVerdictSchema = z.enum(["pass", "needs-fixes", "blocked"]);
+export type DevReviewVerdict = z.infer<typeof DevReviewVerdictSchema>;
+
+export const DevReviewFindingSchema = z.object({
+  severity: z.enum(["high", "medium", "low"]),
+  file: z.string().min(1).optional(),
+  line: z.number().int().positive().optional(),
+  issue: z.string().min(1),
+  suggestedFix: z.string().min(1).optional(),
+});
+export type DevReviewFinding = z.infer<typeof DevReviewFindingSchema>;
+
+export const DevCommandResultSchema = z.object({
+  command: z.string().min(1),
+  exitCode: z.number().int().nullable(),
+  status: z.enum(["passed", "failed", "skipped"]),
+  durationMs: z.number().int().nonnegative().optional(),
+  summary: z.string().min(1),
+  output: z.string().optional(),
+});
+export type DevCommandResult = z.infer<typeof DevCommandResultSchema>;
+
+export const DevInitiativeStartedPayloadSchema = z.object({
+  initiative: z.string().min(1),
+  repo: z.string().min(1),
+  baseBranch: z.string().min(1),
+  workingBranch: z.string().min(1),
+  contextFiles: z.array(z.string().min(1)),
+});
+
+export const DevSliceProposedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  title: z.string().min(1),
+  objective: z.string().min(1),
+  acceptanceCriteria: z.array(z.string().min(1)),
+  requiredReviewers: z.array(z.string().min(1)).default([]),
+});
+
+export const DevSliceApprovedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  title: z.string().min(1),
+  approvedBy: z.string().min(1),
+});
+
+export const DevSliceStartedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  title: z.string().min(1),
+  branch: z.string().min(1),
+});
+
+export const DevSliceCompletedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  title: z.string().min(1),
+  branch: z.string().min(1),
+  summary: z.string().min(1),
+  testsPassed: z.boolean(),
+  reviewVerdicts: z.array(DevReviewVerdictSchema),
+});
+
+export const DevSliceFailedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  title: z.string().min(1),
+  branch: z.string().min(1),
+  reason: z.string().min(1),
+  findings: z.array(DevReviewFindingSchema).default([]),
+});
+
+export const DevImplementationStartedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  branch: z.string().min(1),
+  agentName: z.string().min(1),
+});
+
+export const DevImplementationCompletedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  branch: z.string().min(1),
+  summary: z.string().min(1),
+  filesChanged: z.array(z.string().min(1)),
+  testsAdded: z.array(z.string().min(1)).default([]),
+  knownLimitations: z.array(z.string().min(1)).default([]),
+});
+
+export const DevVerificationCompletedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  branch: z.string().min(1),
+  status: z.enum(["passed", "failed", "blocked"]),
+  commands: z.array(DevCommandResultSchema),
+});
+
+export const DevReviewCompletedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  reviewer: z.string().min(1),
+  verdict: DevReviewVerdictSchema,
+  findings: z.array(DevReviewFindingSchema),
+});
+
+export const DevRepairStartedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  branch: z.string().min(1),
+  attempt: z.number().int().nonnegative(),
+  findings: z.array(DevReviewFindingSchema),
+});
+
+export const DevRepairCompletedPayloadSchema = z.object({
+  sliceId: z.string().min(1),
+  branch: z.string().min(1),
+  attempt: z.number().int().nonnegative(),
+  status: z.enum(["completed", "failed", "blocked"]),
+  summary: z.string().min(1),
+});
+
+export const DevPrOpenedPayloadSchema = z.object({
+  branch: z.string().min(1),
+  url: z.string().url(),
+  title: z.string().min(1),
+});
+
+export const DevPrUpdatedPayloadSchema = z.object({
+  branch: z.string().min(1),
+  url: z.string().url(),
+  summary: z.string().min(1),
+});
+
+export const DevPrReadyForReviewPayloadSchema = z.object({
+  branch: z.string().min(1),
+  url: z.string().url().optional(),
+  summary: z.string().min(1),
+  shippedSlices: z.array(z.string().min(1)),
 });
 
 const SessionStartedEventSchema = EventEnvelopeBaseSchema.extend({
@@ -444,6 +574,81 @@ const ChildThreadFailedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: ChildThreadFailedPayloadSchema,
 });
 
+const DevInitiativeStartedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.initiative.started"),
+  payload: DevInitiativeStartedPayloadSchema,
+});
+
+const DevSliceProposedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.slice.proposed"),
+  payload: DevSliceProposedPayloadSchema,
+});
+
+const DevSliceApprovedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.slice.approved"),
+  payload: DevSliceApprovedPayloadSchema,
+});
+
+const DevSliceStartedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.slice.started"),
+  payload: DevSliceStartedPayloadSchema,
+});
+
+const DevSliceCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.slice.completed"),
+  payload: DevSliceCompletedPayloadSchema,
+});
+
+const DevSliceFailedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.slice.failed"),
+  payload: DevSliceFailedPayloadSchema,
+});
+
+const DevImplementationStartedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.implementation.started"),
+  payload: DevImplementationStartedPayloadSchema,
+});
+
+const DevImplementationCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.implementation.completed"),
+  payload: DevImplementationCompletedPayloadSchema,
+});
+
+const DevVerificationCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.verification.completed"),
+  payload: DevVerificationCompletedPayloadSchema,
+});
+
+const DevReviewCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.review.completed"),
+  payload: DevReviewCompletedPayloadSchema,
+});
+
+const DevRepairStartedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.repair.started"),
+  payload: DevRepairStartedPayloadSchema,
+});
+
+const DevRepairCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.repair.completed"),
+  payload: DevRepairCompletedPayloadSchema,
+});
+
+const DevPrOpenedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.pr.opened"),
+  payload: DevPrOpenedPayloadSchema,
+});
+
+const DevPrUpdatedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.pr.updated"),
+  payload: DevPrUpdatedPayloadSchema,
+});
+
+const DevPrReadyForReviewEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.pr.ready_for_review"),
+  payload: DevPrReadyForReviewPayloadSchema,
+});
+
 export const ThreadEventSchema = z.discriminatedUnion("type", [
   SessionStartedEventSchema,
   PromptReceivedEventSchema,
@@ -475,6 +680,21 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   ChildThreadSpawnedEventSchema,
   ChildThreadCompletedEventSchema,
   ChildThreadFailedEventSchema,
+  DevInitiativeStartedEventSchema,
+  DevSliceProposedEventSchema,
+  DevSliceApprovedEventSchema,
+  DevSliceStartedEventSchema,
+  DevSliceCompletedEventSchema,
+  DevSliceFailedEventSchema,
+  DevImplementationStartedEventSchema,
+  DevImplementationCompletedEventSchema,
+  DevVerificationCompletedEventSchema,
+  DevReviewCompletedEventSchema,
+  DevRepairStartedEventSchema,
+  DevRepairCompletedEventSchema,
+  DevPrOpenedEventSchema,
+  DevPrUpdatedEventSchema,
+  DevPrReadyForReviewEventSchema,
 ]);
 
 export type ThreadEvent = z.infer<typeof ThreadEventSchema>;

@@ -18,6 +18,9 @@ import {
   tool,
   weave,
   definePolicy,
+  DevelopmentInitiativeInputSchema,
+  developmentEvents,
+  weaveMaintainer,
 } from "weave";
 import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
@@ -119,6 +122,9 @@ assert.equal(echoTool.capabilities?.[0], githubRead);
 assert.equal(allowEchoPolicy.name, "public-api.allow-echo");
 assert.equal(denyNothingPolicy.name, "public-api.deny-nothing");
 assert.equal(echoApp.policies?.[0], allowEchoPolicy);
+assert.equal(typeof DevelopmentInitiativeInputSchema.parse, "function");
+assert.equal(developmentEvents.sliceCompleted.type, "dev.slice.completed");
+assert.equal(weaveMaintainer.name, "weave.maintainer");
 
 const emitted = event("agent.response.produced", { message: "ok" });
 const defined = defineEvent("agent.response.produced", { message: "ok" });

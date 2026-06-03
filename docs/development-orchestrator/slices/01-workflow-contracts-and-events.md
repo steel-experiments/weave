@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-maintainer`
 
@@ -25,7 +25,7 @@ As a Weave maintainer, I can describe an implementation initiative, its slices, 
 ## Architecture Impact
 
 - Adds development-orchestrator domain contracts for initiatives, slices, role inputs, verification results, review findings, repair attempts, and PR draft summaries.
-- Adds typed development event definitions for the workflow if an event registry exists; otherwise keeps them example-local until promoted.
+- Adds typed development event definitions to the core event registry so `ctx.emit`, `event(...)`, replay, and integration handlers can type-check the development workflow.
 - Adds checkpoint names for initiative context, slice plan, approvals, branch identity, test results, review findings, repair attempt count, and PR URL.
 - Does not require new core replay primitives.
 
@@ -95,30 +95,37 @@ Important checkpoint names:
 
 ## Acceptance Criteria
 
-- [ ] Initiative, slice, implementation, verification, review, repair, and PR result schemas exist.
-- [ ] Development event payloads are schema-validated.
-- [ ] Checkpoint keys are documented and stable.
-- [ ] The contracts support the MVP workflow without requiring OpenCode execution.
-- [ ] Invalid role outputs fail clearly rather than being coerced.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Initiative, slice, implementation, verification, review, repair, and PR result schemas exist.
+- [x] Development event payloads are schema-validated.
+- [x] Checkpoint keys are documented and stable.
+- [x] The contracts support the MVP workflow without requiring OpenCode execution.
+- [x] Invalid role outputs fail clearly rather than being coerced.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Define schemas.
-- [ ] Define event payloads.
-- [ ] Add fixtures.
-- [ ] Add validation tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Define schemas.
+- [x] Define event payloads.
+- [x] Add fixtures.
+- [x] Add validation tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `src/development-orchestrator.ts` with schemas for initiative inputs, slice plans, slice runner inputs, OpenCode implementation inputs, implementation summaries, verification results, review results, repair results, PR draft results, development capabilities, reviewer roles, and stable checkpoint keys.
+- Added `developmentEvents` factories for the development workflow events.
+- Promoted `dev.*` payload schemas into `src/events.ts` and added them to `ThreadEventSchema`.
+- Updated Postgres inbox routing so `dev.*` events are durable audit facts but do not wake runners or tool workers by default.
+- Added `src/tests/development-orchestrator-contracts.test.ts` and included it in `npm test`.
+- Updated the public API smoke test to cover the exported orchestrator contracts and event factories.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`.
+- Known gap: this slice defines contracts only; planner, branch control, OpenCode implementation, verification/review orchestration, repair, and PR handoff remain follow-up slices.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `../../event-taxonomy.md` if events are promoted beyond the example/app boundary
+- [x] this slice document
+- [x] `../README.md`
+- [x] `../../event-taxonomy.md` if events are promoted beyond the example/app boundary
 - [ ] `../../architecture.md` if new reusable primitives are added

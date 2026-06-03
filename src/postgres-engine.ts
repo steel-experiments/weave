@@ -618,10 +618,24 @@ function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
     case "gate.created":
     case "agent.response.produced":
     case "agent.output.completed":
-    case "agent.failed":
     case "agent.finding.produced":
     case "agent.remediation.proposed":
     case "agent.incident_report.produced":
+    case "dev.initiative.started":
+    case "dev.slice.proposed":
+    case "dev.slice.approved":
+    case "dev.slice.started":
+    case "dev.slice.completed":
+    case "dev.slice.failed":
+    case "dev.implementation.started":
+    case "dev.implementation.completed":
+    case "dev.verification.completed":
+    case "dev.review.completed":
+    case "dev.repair.started":
+    case "dev.repair.completed":
+    case "dev.pr.opened":
+    case "dev.pr.updated":
+    case "dev.pr.ready_for_review":
       return [];
   }
 }

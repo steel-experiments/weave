@@ -20,6 +20,7 @@ export * from "./runtime.js";
 export * from "./runner.js";
 export * from "./summary.js";
 export * from "./credentials.js";
+export * from "./development-orchestrator.js";
 export * from "./observability.js";
 export * from "./otlp-observability.js";
 export * from "./policy-contract.js";

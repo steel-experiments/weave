@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `In Progress`
 - Last updated: `2026-06-03`
 - Owner: `weave-maintainer`
 
@@ -50,27 +50,32 @@ As a maintainer, I can hand Weave an initiative and get a durable, reviewable sl
 
 ## Acceptance Criteria
 
-- [ ] `weave.maintainer` can accept an initiative input.
+- [x] `weave.maintainer` can accept an initiative input.
 - [ ] Planner reads only configured repo context.
-- [ ] Planner emits proposed-slice events.
-- [ ] Planner opens a human approval gate before work starts.
-- [ ] Approved slice plan is checkpointed durably.
-- [ ] Replay does not regenerate a different approved plan.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Planner emits proposed-slice events.
+- [x] Planner opens a human approval gate before work starts.
+- [x] Approved slice plan is checkpointed durably.
+- [x] Replay does not regenerate a different approved plan.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Add planner agent.
+- [x] Add planner agent.
 - [ ] Add repo context read path.
-- [ ] Add proposed-slice events.
-- [ ] Add approval gate.
-- [ ] Add replay tests.
-- [ ] Update docs.
+- [x] Add proposed-slice events.
+- [x] Add approval gate.
+- [x] Add replay tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+In-progress notes:
+
+- Added `weaveMaintainer`, which accepts `DevelopmentInitiativeInputSchema`, checkpoints `initiative-context` and `slice-plan`, emits `dev.initiative.started` and `dev.slice.proposed`, and stops at a `slice-plan-approval` gate.
+- After a human approval event, the planner checkpoints `approved-slice-plan`, emits `dev.slice.approved`, and returns a schema-validated approved planner output.
+- Added `buildDevelopmentSlicePlan` for explicit-slice initiatives. Model-backed planning and real repo-context file reads remain follow-up work inside this slice.
+- Added replay tests proving the planner blocks before approval and resumes deterministically after gate resolution.
 
 ## Docs To Update On Completion
 

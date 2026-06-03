@@ -63,6 +63,8 @@ await ctx.emit("final-response", responseProduced({ message }));
 
 Replay identity is still `threadId + scopeKey + stepKey`. Re-emitting the same key, type, and canonical payload is a no-op. Reusing a key with a different event type or different canonical payload raises `ReplayMismatchError`.
 
+Slice-plan approval gates use the standard `gate.created` / `gate.resolved` lifecycle with `reason: "slice-plan-approval"`.
+
 The lower-level raw form remains supported for compatibility:
 
 ```ts
@@ -121,6 +123,23 @@ The PoC uses this event set.
 - `child_thread.failed`
 - `runner.resumed`
 - `agent.response.produced`
+- `dev.initiative.started`
+- `dev.slice.proposed`
+- `dev.slice.approved`
+- `dev.slice.started`
+- `dev.slice.completed`
+- `dev.slice.failed`
+- `dev.implementation.started`
+- `dev.implementation.completed`
+- `dev.verification.completed`
+- `dev.review.completed`
+- `dev.repair.started`
+- `dev.repair.completed`
+- `dev.pr.opened`
+- `dev.pr.updated`
+- `dev.pr.ready_for_review`
+
+Development workflow events are internal audit facts for Weave-managed implementation initiatives. They are valid `ThreadEvent` records, but they do not wake runners or tool workers by default.
 
 ## Typed Payload Schemas
 
