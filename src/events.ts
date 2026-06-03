@@ -134,6 +134,22 @@ export const TimerFiredPayloadSchema = z.object({
   fireAt: z.string().datetime(),
 });
 
+export const SignalNameSchema = z.string().min(1);
+
+export const SignalWaitingPayloadSchema = z.object({
+  waitId: z.string().uuid(),
+  signalName: SignalNameSchema,
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+});
+
+export const SignalReceivedPayloadSchema = z.object({
+  waitId: z.string().uuid(),
+  signalName: SignalNameSchema,
+  payloadHash: z.string().min(1),
+  data: z.unknown(),
+});
+
 export const PolicyEvaluatedPayloadSchema = z.object({
   policyEvaluationId: z.string().uuid(),
   requestType: z.literal("tool").optional(),
@@ -202,6 +218,7 @@ export const RunnerResumedPayloadSchema = z.object({
     "tool-completed",
     "gate-resolved",
     "timer-fired",
+    "signal-received",
     "child-spawned",
     "child-completed",
     "child-failed",
@@ -337,6 +354,16 @@ const TimerFiredEventSchema = EventEnvelopeBaseSchema.extend({
   payload: TimerFiredPayloadSchema,
 });
 
+const SignalWaitingEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("signal.waiting"),
+  payload: SignalWaitingPayloadSchema,
+});
+
+const SignalReceivedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("signal.received"),
+  payload: SignalReceivedPayloadSchema,
+});
+
 const PolicyEvaluatedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("policy.evaluated"),
   payload: PolicyEvaluatedPayloadSchema,
@@ -430,6 +457,8 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   ToolFailedEventSchema,
   TimerScheduledEventSchema,
   TimerFiredEventSchema,
+  SignalWaitingEventSchema,
+  SignalReceivedEventSchema,
   PolicyEvaluatedEventSchema,
   CredentialRequestedEventSchema,
   CredentialResolvedEventSchema,

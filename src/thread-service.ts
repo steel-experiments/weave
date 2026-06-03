@@ -91,6 +91,23 @@ export type CancelChildThreadResult = {
   errorCode: "CHILD_CANCELLED";
 };
 
+export type DeliverSignalInput = {
+  threadId: string;
+  signal: string;
+  payload: unknown;
+  waitId?: string;
+  scopeKey?: string;
+  stepKey?: string;
+  actor?: Actor;
+  idempotencyKey?: string;
+};
+
+export type DeliverSignalResult = {
+  delivered: boolean;
+  eventType: "signal.received";
+  waitId: string;
+};
+
 export class ThreadService {
   constructor(private readonly engine: ThreadEngine) {}
 
@@ -501,6 +518,85 @@ export class ThreadService {
       },
     ]);
   }
+
+  async deliverSignal(input: DeliverSignalInput): Promise<DeliverSignalResult> {
+    const events = await this.engine.read(input.threadId);
+    const waiting = findWaitingSignal(events, input);
+    const existing = events.find((event): event is Extract<ThreadEvent, { type: "signal.received" }> => {
+      return event.type === "signal.received" && event.payload.waitId === waiting.payload.waitId;
+    });
+    const payloadHash = stableJsonHash(input.payload);
+
+    if (existing) {
+      if (existing.payload.signalName !== input.signal || existing.payload.payloadHash !== payloadHash) {
+        throw new ReplayMismatchError("Signal delivery does not match the already delivered signal", {
+          threadId: input.threadId,
+          waitId: waiting.payload.waitId,
+          signalName: input.signal,
+        });
+      }
+      return { delivered: false, eventType: "signal.received", waitId: waiting.payload.waitId };
+    }
+
+    await this.engine.append([
+      {
+        eventId: input.idempotencyKey
+          ? deterministicUuid("signal-received", input.threadId, input.idempotencyKey)
+          : deterministicUuid("signal-received", input.threadId, waiting.payload.waitId, payloadHash),
+        threadId: input.threadId,
+        type: "signal.received",
+        occurredAt: nowIso(),
+        correlationId: waiting.correlationId,
+        causationId: waiting.eventId,
+        idempotencyKey: input.idempotencyKey,
+        scopeKey: waiting.scopeKey,
+        stepKey: waiting.stepKey,
+        actor: input.actor ?? { type: "system", id: "thread-service" },
+        payload: {
+          waitId: waiting.payload.waitId,
+          signalName: input.signal,
+          payloadHash,
+          data: input.payload,
+        },
+      },
+    ]);
+
+    return { delivered: true, eventType: "signal.received", waitId: waiting.payload.waitId };
+  }
+}
+
+function findWaitingSignal(
+  events: readonly ThreadEvent[],
+  input: DeliverSignalInput,
+): Extract<ThreadEvent, { type: "signal.waiting" }> {
+  const candidates = events.filter((event): event is Extract<ThreadEvent, { type: "signal.waiting" }> => {
+    if (event.type !== "signal.waiting" || event.payload.signalName !== input.signal) {
+      return false;
+    }
+    if (input.waitId && event.payload.waitId !== input.waitId) {
+      return false;
+    }
+    if (input.scopeKey && event.payload.scopeKey !== input.scopeKey) {
+      return false;
+    }
+    if (input.stepKey && event.payload.stepKey !== input.stepKey) {
+      return false;
+    }
+    return true;
+  });
+
+  if (candidates.length === 0) {
+    throw new Error(`Signal wait not found: ${input.signal}`);
+  }
+  if (candidates.length > 1) {
+    throw new Error(`Signal delivery is ambiguous: ${input.signal}`);
+  }
+
+  const waiting = candidates[0];
+  if (!waiting) {
+    throw new Error(`Signal wait not found: ${input.signal}`);
+  }
+  return waiting;
 }
 
 function matchesFilter<Value extends string>(value: Value | undefined, filter: Value | readonly Value[] | undefined): boolean {

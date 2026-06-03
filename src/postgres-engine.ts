@@ -497,6 +497,8 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       case "gate.resolved":
       case "timer.scheduled":
       case "timer.fired":
+      case "signal.waiting":
+      case "signal.received":
       case "child_thread.spawned":
       case "child_thread.completed":
       case "child_thread.failed":
@@ -590,6 +592,7 @@ function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
     case "tool.completed":
     case "gate.resolved":
     case "timer.fired":
+    case "signal.received":
     case "child_thread.spawned":
     case "child_thread.completed":
     case "child_thread.failed":
@@ -605,6 +608,7 @@ function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
     case "agent.failed":
     case "checkpoint.completed":
     case "policy.evaluated":
+    case "signal.waiting":
     case "tool.started":
     case "tool.progress":
     case "credential.requested":

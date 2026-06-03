@@ -763,6 +763,172 @@ async function testSleepTargetMismatch(): Promise<void> {
   );
 }
 
+async function testSignalWaitSchedulesAndPendingReplayDoesNotDuplicate(): Promise<void> {
+  const waiter = agent({
+    name: "signal-pending-agent",
+    input: inputSchema,
+    async run(ctx) {
+      const payload = await ctx.waitForSignal("checks", {
+        signal: "github.check.completed",
+        schema: z.object({ conclusion: z.string().min(1) }),
+      });
+      return payload.conclusion;
+    },
+  });
+  const planner = createAgentPlanner(waiter);
+  const history = initialHistory("signal-pending");
+
+  const firstPlan = await planner.plan("signal-pending", history);
+
+  assert(firstPlan);
+  assert.equal(firstPlan.events.length, 1);
+  const waiting = firstPlan.events[0];
+  assert.equal(waiting?.type, "signal.waiting");
+  assert.equal(waiting.scopeKey, "agent:signal-pending-agent");
+  assert.equal(waiting.stepKey, "checks");
+  assert.equal(waiting.payload.signalName, "github.check.completed");
+
+  const replay = await planner.plan("signal-pending", [...history, ...firstPlan.events]);
+  assert.equal(replay, null);
+}
+
+async function testSignalDeliveryResumesAgentAndIsIdempotent(): Promise<void> {
+  const waiter = agent({
+    name: "signal-delivery-agent",
+    input: inputSchema,
+    output: z.object({ conclusion: z.string().min(1) }),
+    async run(ctx) {
+      const payload = await ctx.waitForSignal("checks", {
+        signal: "github.check.completed",
+        schema: z.object({ conclusion: z.string().min(1) }),
+      });
+      return payload;
+    },
+  });
+  const threadId = "signal-delivery";
+  const engine = new MemoryThreadEngine(initialHistory(threadId));
+  const runner = new ThreadRunner(engine, engine, createAgentPlanner(waiter), "test-runner");
+  const service = new ThreadService(engine);
+
+  const waitingRun = await runner.runOnce(threadId);
+  assert.equal(waitingRun.acted, true);
+  assert.equal(waitingRun.reason, "new-prompt");
+  let events = await engine.read(threadId);
+  const waiting = events.find((event): event is Extract<ThreadEvent, { type: "signal.waiting" }> => {
+    return event.type === "signal.waiting";
+  });
+  assert(waiting);
+
+  const delivered = await service.deliverSignal({
+    threadId,
+    waitId: waiting.payload.waitId,
+    signal: "github.check.completed",
+    payload: { conclusion: "success" },
+    idempotencyKey: "checks-completed",
+  });
+  assert.deepEqual(delivered, { delivered: true, eventType: "signal.received", waitId: waiting.payload.waitId });
+  const duplicate = await service.deliverSignal({
+    threadId,
+    waitId: waiting.payload.waitId,
+    signal: "github.check.completed",
+    payload: { conclusion: "success" },
+    idempotencyKey: "checks-completed",
+  });
+  assert.deepEqual(duplicate, { delivered: false, eventType: "signal.received", waitId: waiting.payload.waitId });
+
+  events = await engine.read(threadId);
+  assert.equal(events.filter((event) => event.type === "signal.received").length, 1);
+
+  const resumedRun = await runner.runOnce(threadId);
+  assert.equal(resumedRun.acted, true);
+  assert.equal(resumedRun.reason, "signal-received");
+  events = await engine.read(threadId);
+  const output = events.find((event): event is Extract<ThreadEvent, { type: "agent.output.completed" }> => {
+    return event.type === "agent.output.completed";
+  });
+  assert(output);
+  assert.deepEqual(output.payload.output, { conclusion: "success" });
+
+  await assert.rejects(
+    async () => service.deliverSignal({
+      threadId,
+      waitId: waiting.payload.waitId,
+      signal: "github.check.completed",
+      payload: { conclusion: "failure" },
+    }),
+    (error: unknown) => error instanceof ReplayMismatchError && error.message.includes("already delivered"),
+  );
+}
+
+async function testSignalWaitSignalMismatch(): Promise<void> {
+  const firstWaiter = agent({
+    name: "signal-mismatch-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.waitForSignal("checks", { signal: "github.check.completed", schema: z.unknown() });
+      return "done";
+    },
+  });
+  const changedWaiter = agent({
+    name: "signal-mismatch-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.waitForSignal("checks", { signal: "github.review.submitted", schema: z.unknown() });
+      return "done";
+    },
+  });
+  const history = initialHistory("signal-mismatch");
+  const firstPlan = await createAgentPlanner(firstWaiter).plan("signal-mismatch", history);
+  assert(firstPlan);
+
+  await assert.rejects(
+    async () => createAgentPlanner(changedWaiter).plan("signal-mismatch", [...history, ...firstPlan.events]),
+    (error: unknown) => error instanceof ReplayMismatchError && error.message.includes("different signal"),
+  );
+}
+
+async function testSignalPayloadSchemaMismatch(): Promise<void> {
+  const waiter = agent({
+    name: "signal-schema-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.waitForSignal("checks", {
+        signal: "github.check.completed",
+        schema: z.object({ conclusion: z.string().min(1) }),
+      });
+      return "done";
+    },
+  });
+  const threadId = "signal-schema-mismatch";
+  const history = initialHistory(threadId);
+  const firstPlan = await createAgentPlanner(waiter).plan(threadId, history);
+  assert(firstPlan);
+  const waiting = firstPlan.events[0];
+  assert(waiting?.type === "signal.waiting");
+  const received: Extract<ThreadEvent, { type: "signal.received" }> = {
+    eventId: eventKey(threadId, "signal.received", "invalid-signal-payload"),
+    threadId,
+    type: "signal.received",
+    occurredAt: nowIso(),
+    correlationId: waiting.correlationId,
+    causationId: waiting.eventId,
+    scopeKey: waiting.scopeKey,
+    stepKey: waiting.stepKey,
+    actor: { type: "system", id: "test" },
+    payload: {
+      waitId: waiting.payload.waitId,
+      signalName: "github.check.completed",
+      payloadHash: stableJsonHash({ conclusion: 42 }),
+      data: { conclusion: 42 },
+    },
+  };
+
+  await assert.rejects(
+    async () => createAgentPlanner(waiter).plan(threadId, [...history, ...firstPlan.events, received]),
+    (error: unknown) => error instanceof ReplayMismatchError && error.message.includes("signal schema"),
+  );
+}
+
 async function testCompletedRunFirstAgentIsTerminal(): Promise<void> {
   const threadId = "completed-run-first-agent-is-terminal";
   const terminalAgent = agent({
@@ -3484,6 +3650,10 @@ await testPolicyEvaluationThrownErrorRecordsAgentFailure();
 await testSleepSchedulesAndPendingReplayDoesNotDuplicate();
 await testSleepFiredResumesAgent();
 await testSleepTargetMismatch();
+await testSignalWaitSchedulesAndPendingReplayDoesNotDuplicate();
+await testSignalDeliveryResumesAgentAndIsIdempotent();
+await testSignalWaitSignalMismatch();
+await testSignalPayloadSchemaMismatch();
 await testCompletedRunFirstAgentIsTerminal();
 await testRunnerReadsFullReplayHistory();
 await testDecodeFailure();

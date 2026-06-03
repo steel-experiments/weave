@@ -107,6 +107,8 @@ The PoC uses this event set.
 - `tool.failed`
 - `timer.scheduled`
 - `timer.fired`
+- `signal.waiting`
+- `signal.received`
 - `policy.evaluated`
 - `credential.requested`
 - `credential.resolved`
@@ -274,6 +276,32 @@ const TimerFiredPayload = z.object({
 
 `timer.fired` records that a scheduled timer became due. It wakes the runner and lets `ctx.sleep` return on the next replay pass.
 
+### Signal waiting
+
+```ts
+const SignalWaitingPayload = z.object({
+  waitId: z.string().uuid(),
+  signalName: z.string().min(1),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+})
+```
+
+`signal.waiting` records a durable `ctx.waitForSignal` request. It does not subscribe to an arbitrary event bus; it is a thread-local wait that `ThreadService.deliverSignal(...)` can satisfy.
+
+### Signal received
+
+```ts
+const SignalReceivedPayload = z.object({
+  waitId: z.string().uuid(),
+  signalName: z.string().min(1),
+  payloadHash: z.string().min(1),
+  data: z.unknown(),
+})
+```
+
+`signal.received` records a delivered external signal payload for one wait. The payload is validated by the current `ctx.waitForSignal(..., { schema })` call during replay.
+
 ### Policy evaluated
 
 ```ts
@@ -410,6 +438,7 @@ const RunnerResumedPayload = z.object({
     "tool-completed",
     "gate-resolved",
     "timer-fired",
+    "signal-received",
     "child-spawned",
     "child-completed",
     "child-failed",
@@ -548,6 +577,16 @@ const TimerScheduledEvent = EventEnvelopeBase.extend({
 const TimerFiredEvent = EventEnvelopeBase.extend({
   type: z.literal("timer.fired"),
   payload: TimerFiredPayload,
+})
+
+const SignalWaitingEvent = EventEnvelopeBase.extend({
+  type: z.literal("signal.waiting"),
+  payload: SignalWaitingPayload,
+})
+
+const SignalReceivedEvent = EventEnvelopeBase.extend({
+  type: z.literal("signal.received"),
+  payload: SignalReceivedPayload,
 })
 
 const CredentialRequestedEvent = EventEnvelopeBase.extend({

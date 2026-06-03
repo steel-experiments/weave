@@ -32,6 +32,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.uuid` | Compatibility alias for `ctx.id` |
 | `ctx.gate` | Current approval effect |
 | `ctx.sleep` | Current durable timer effect |
+| `ctx.waitForSignal` | Current external signal wait effect |
 | `ctx.checkpoint` | Current local durable effect |
 | `ctx.spawn` | Current child-thread effect |
 | `ctx.join` | Current child-thread wait effect |
@@ -183,7 +184,7 @@ When an agent calls `await ctx.tool(...)`, the authoring model looks like ordina
 
 The thread is suspended. The JavaScript stack is not.
 
-When a relevant event arrives, such as `tool.completed`, `gate.resolved`, or `timer.fired`, the runner wakes and re-executes `agent.run` from the beginning. Completed durable effects return their recorded outputs. Pending effects suspend again. Missing effects append new events.
+When a relevant event arrives, such as `tool.completed`, `gate.resolved`, `timer.fired`, or `signal.received`, the runner wakes and re-executes `agent.run` from the beginning. Completed durable effects return their recorded outputs. Pending effects suspend again. Missing effects append new events.
 
 Execution trace:
 
@@ -213,7 +214,7 @@ Pass 3:
   -> append final agent events
 ```
 
-A pending durable effect should not cause the runner to poll. The runner wakes when a relevant event is appended, such as `tool.completed`, `gate.resolved`, or `timer.fired`. For `ctx.sleep`, the Postgres inbox delays the runner wake until the scheduled fire time. In V1, `tool.failed` is terminal for the thread and does not wake the runner.
+A pending durable effect should not cause the runner to poll. The runner wakes when a relevant event is appended, such as `tool.completed`, `gate.resolved`, `timer.fired`, or `signal.received`. For `ctx.sleep`, the Postgres inbox delays the runner wake until the scheduled fire time. In V1, `tool.failed` is terminal for the thread and does not wake the runner.
 
 After a run-first agent appends terminal response or output events, later runner passes are idempotent and should append no duplicate terminal events.
 
@@ -314,6 +315,45 @@ Replay safety:
 - changing the timer target for an existing key raises `ReplayMismatchError`
 - duration targets store the original duration, not a moving wall-clock deadline, so replay does not mismatch just because time advanced
 
+## ctx.waitForSignal Semantics
+
+`ctx.waitForSignal(key, { signal, schema })` records a durable wait for a named external signal. Integrations or APIs deliver matching signals through `ThreadService.deliverSignal(...)`.
+
+```ts
+const result = await ctx.waitForSignal("wait-for-checks", {
+  signal: "github.check.completed",
+  schema: z.object({ conclusion: z.string() }),
+});
+```
+
+Missing:
+
+- append `signal.waiting`
+- suspend the runner pass
+
+Pending:
+
+- append nothing
+- suspend until a matching `signal.received` event exists
+
+Received:
+
+- validate `signal.received.payload.data` with the current schema
+- return the validated payload and continue agent execution
+
+Delivery:
+
+- `ThreadService.deliverSignal({ threadId, signal, payload, waitId? })` appends `signal.received` for a previously recorded wait
+- delivery is idempotent for the same wait and same payload hash
+- delivering a different payload to an already satisfied wait raises `ReplayMismatchError`
+
+Waits versus related primitives:
+
+- use `ctx.waitForSignal` for an external fact that may arrive later from an integration or API
+- use `ctx.gate` for explicit approval or denial by a human/control process
+- use `ctx.sleep` for time passing
+- use `integrationEvent(...)` to type integration handlers; it does not itself wait a thread
+
 ## Safe Code Inside agent.run
 
 Inside `agent.run`, do not perform external side effects directly. Use durable `ctx.*` operations.
@@ -326,6 +366,7 @@ Safe:
 - `ctx.tool`
 - `ctx.emit`
 - `ctx.sleep`
+- `ctx.waitForSignal`
 - `ctx.checkpoint`
 - `ctx.gate`
 - later `ctx.spawn`

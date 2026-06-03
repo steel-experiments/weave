@@ -48,6 +48,10 @@ A thread-native pause point that represents pending approval, human input, or an
 
 A thread-native durable sleep point. Timers are recorded as `timer.scheduled`, become due at `fireAt`, and resume agents through `timer.fired` rather than in-process JavaScript timers.
 
+## Signal Wait
+
+A thread-native durable wait for a named external signal. Signal waits are recorded as `signal.waiting` and are satisfied by `signal.received` events delivered through `ThreadService.deliverSignal(...)`.
+
 ## Interrupt
 
 A signal that normal execution should pause, wait, or be redirected.

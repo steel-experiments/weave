@@ -66,6 +66,7 @@ const echoAgent = agent({
   tools: [echoTool],
   async run(ctx, input) {
     await ctx.sleep("brief-wait", { milliseconds: 0 });
+    await ctx.waitForSignal("external-ok", { signal: "public-api.ok", schema: z.object({ ok: z.literal(true) }) });
     return ctx.tool("echo", echoTool, input);
   },
 });

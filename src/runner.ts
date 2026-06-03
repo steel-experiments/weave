@@ -25,6 +25,7 @@ export type AgentPlan = {
     | "tool-completed"
     | "gate-resolved"
     | "timer-fired"
+    | "signal-received"
     | "child-spawned"
     | "child-completed"
     | "child-failed";

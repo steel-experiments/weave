@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-core`
 
@@ -34,13 +34,13 @@ As an agent author, I can wait durably for a named external signal and resume th
 ## Proposed Public API Sketch
 
 ```ts
-const payload = await ctx.waitFor("wait-for-webhook", {
+const payload = await ctx.waitForSignal("wait-for-webhook", {
   signal: "github.check.completed",
   schema: z.object({ conclusion: z.string() }),
 });
 ```
 
-Final syntax should be chosen during implementation.
+Final syntax is `ctx.waitForSignal(key, { signal, schema })`.
 
 ## Implementation Plan
 
@@ -64,34 +64,39 @@ Final syntax should be chosen during implementation.
 
 ## Acceptance Criteria
 
-- [ ] Durable wait helper exists.
-- [ ] External signal delivery path exists.
-- [ ] Waits are replay-safe and idempotent.
-- [ ] Signal payloads are schema-validated.
-- [ ] Pending waits do not duplicate events.
-- [ ] Received signals resume agent execution.
-- [ ] Docs explain waits versus gates, timers, and integrations.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Durable wait helper exists.
+- [x] External signal delivery path exists.
+- [x] Waits are replay-safe and idempotent.
+- [x] Signal payloads are schema-validated.
+- [x] Pending waits do not duplicate events.
+- [x] Received signals resume agent execution.
+- [x] Docs explain waits versus gates, timers, and integrations.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Design wait/signal taxonomy.
-- [ ] Implement context helper.
-- [ ] Implement signal delivery path.
-- [ ] Add tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Design wait/signal taxonomy.
+- [x] Implement context helper.
+- [x] Implement signal delivery path.
+- [x] Add tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+- Added `ctx.waitForSignal(key, { signal, schema })` for named external signal waits.
+- Added `signal.waiting` and `signal.received` event schemas.
+- Added `ThreadService.deliverSignal(...)` as the integration/API delivery path for satisfying a recorded wait.
+- Replay behavior matches other durable effects: missing waits record `signal.waiting`, pending waits append nothing, and received signals validate payload data before returning it.
+- Duplicate delivery for the same wait and same payload hash is idempotent; different payload delivery for an already satisfied wait raises `ReplayMismatchError`.
+- `signal.received` wakes the runner and uses the `signal-received` resume reason.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/architecture.md`
-- [ ] `docs/glossary.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/architecture.md`
+- [x] `docs/glossary.md`

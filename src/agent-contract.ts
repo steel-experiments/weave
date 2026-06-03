@@ -60,6 +60,11 @@ export type SleepTarget =
   | { minutes: number }
   | { until: string | Date };
 
+export type WaitForSignalOptions<Payload> = {
+  signal: string;
+  schema: z.ZodType<Payload>;
+};
+
 export type AgentRun<Output = unknown> =
   | {
       status: "completed";
@@ -172,6 +177,7 @@ export type AgentContext<
   cancelChild(key: string, thread: ThreadRef, options?: CancelChildOptions): Promise<void>;
   children(options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
   sleep(key: string, target: SleepTarget): Promise<void>;
+  waitForSignal<Payload>(key: string, options: WaitForSignalOptions<Payload>): Promise<Payload>;
   checkpoint<Value>(key: string, compute: () => MaybePromise<Value>): Promise<Value>;
   emit(key: string, event: EventInstance): Promise<void>;
   id(key: string): string;

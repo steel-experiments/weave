@@ -13,6 +13,7 @@ import type {
   SpawnOptions,
   ThreadRef,
   ToolCallOptions,
+  WaitForSignalOptions,
 } from "./agent-contract.js";
 import {
   ChildThreadFailedError,
@@ -57,6 +58,8 @@ type SuspensionReason =
   | "timer-scheduled"
   | "timer-pending"
   | "timer-fired"
+  | "signal-waiting"
+  | "signal-pending"
   | "spawn-created"
   | "join-pending"
   | "cancel-child-created";
@@ -575,6 +578,48 @@ class ReplayAgentContext implements AgentContext {
     this.suspend("timer", key, "timer-scheduled", [this.timerScheduledEvent(key, targetIdentity)]);
   }
 
+  async waitForSignal<Payload>(key: string, options: WaitForSignalOptions<Payload>): Promise<Payload> {
+    const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
+    if (matchingEvent && matchingEvent.type !== "signal.waiting") {
+      throw new ReplayMismatchError("Durable step key was previously used for a different effect kind", {
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        existingType: matchingEvent.type,
+        requestedType: "signal.waiting",
+      });
+    }
+
+    const waiting = matchingEvent?.type === "signal.waiting" ? matchingEvent : undefined;
+    if (waiting) {
+      if (waiting.payload.signalName !== options.signal) {
+        throw new ReplayMismatchError("Durable signal wait key was previously used with a different signal", {
+          scopeKey: this.scopeKey,
+          stepKey: key,
+          previousSignal: waiting.payload.signalName,
+          nextSignal: options.signal,
+        });
+      }
+
+      const received = findSignalReceivedEvent(this.options.events, waiting.payload.waitId);
+      if (received) {
+        const payloadResult = options.schema.safeParse(received.payload.data);
+        if (!payloadResult.success) {
+          throw new ReplayMismatchError("Stored signal payload failed the current signal schema", {
+            scopeKey: this.scopeKey,
+            stepKey: key,
+            signalName: options.signal,
+            error: payloadResult.error,
+          });
+        }
+        return payloadResult.data;
+      }
+
+      this.suspend("signal", key, "signal-pending", []);
+    }
+
+    this.suspend("signal", key, "signal-waiting", [this.signalWaitingEvent(key, options.signal)]);
+  }
+
   async checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value> {
     const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
     if (matchingEvent) {
@@ -1076,6 +1121,27 @@ class ReplayAgentContext implements AgentContext {
     };
   }
 
+  private signalWaitingEvent(key: string, signalName: string): Extract<ThreadEvent, { type: "signal.waiting" }> {
+    const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
+    return {
+      eventId: eventKey(this.threadId, "signal.waiting", `${this.scopeKey}:${key}`),
+      threadId: this.threadId,
+      type: "signal.waiting",
+      occurredAt: nowIso(),
+      correlationId: cause?.correlationId,
+      causationId: cause?.eventId,
+      scopeKey: this.scopeKey,
+      stepKey: key,
+      actor: this.actor,
+      payload: {
+        waitId: deterministicUuid("signal-wait", this.threadId, this.scopeKey, key, signalName),
+        signalName,
+        scopeKey: this.scopeKey,
+        stepKey: key,
+      },
+    };
+  }
+
   private spawnExpectedPayload(
     key: string,
     childAgentName: string,
@@ -1193,6 +1259,16 @@ function findTimerFiredEvent(
   return events.find(
     (event): event is Extract<ThreadEvent, { type: "timer.fired" }> =>
       event.type === "timer.fired" && event.payload.timerId === timerId,
+  );
+}
+
+function findSignalReceivedEvent(
+  events: readonly ThreadEvent[],
+  waitId: string,
+): Extract<ThreadEvent, { type: "signal.received" }> | undefined {
+  return events.find(
+    (event): event is Extract<ThreadEvent, { type: "signal.received" }> =>
+      event.type === "signal.received" && event.payload.waitId === waitId,
   );
 }
 
@@ -1318,6 +1394,10 @@ function resumeReasonFor(event: ThreadEvent | undefined): AgentPlan["resumeReaso
 
   if (event?.type === "timer.scheduled" || event?.type === "timer.fired") {
     return "timer-fired";
+  }
+
+  if (event?.type === "signal.received") {
+    return "signal-received";
   }
 
   if (event?.type === "child_thread.spawned") {

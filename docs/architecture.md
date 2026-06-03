@@ -128,6 +128,10 @@ A thread-native object representing work paused on approval, human input, or ano
 
 A thread-native durable sleep point. `ctx.sleep` records `timer.scheduled`, the inbox delays runner visibility until `fireAt`, and the runner records `timer.fired` before replaying past the sleep.
 
+### Signal Wait
+
+A thread-native wait for a named external signal. `ctx.waitForSignal` records `signal.waiting`; integrations or APIs call `ThreadService.deliverSignal(...)` to append `signal.received` and wake the runner.
+
 ### Capability
 
 A typed declaration of scoped access intent. Capability contracts can be attached to tools as static metadata or requested from tool input with `.request(params)`.

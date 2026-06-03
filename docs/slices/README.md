@@ -65,5 +65,5 @@ The slice document should stay alive after implementation. It becomes the compac
 - `43-typed-integration-event-handlers.md`: shipped slice adding schema-backed typed integration event handlers.
 - `44-effect-internals-runner-policy-tool.md`: shipped slice expanding Effect-style internals into agent runner and policy evaluation paths.
 - `45-durable-timers-and-ctx-sleep.md`: shipped slice adding durable timer semantics and `ctx.sleep`.
-- `46-durable-waits-and-external-signals.md`: planned slice adding durable waits for external signals.
+- `46-durable-waits-and-external-signals.md`: shipped slice adding durable waits for external signals.
 - `47-prompt-driven-workflow-example.md`: planned slice for a prompt-generated workflow plan example using child agents and an OpenCode-backed harness.
