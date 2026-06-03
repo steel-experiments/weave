@@ -25,6 +25,10 @@ export interface WeaveModuleBoundary {
   integration<const Name extends string, const Tools extends readonly AnyToolContract[]>(
     contract: IntegrationContract<Name, Tools>,
   ): IntegrationContract<Name, Tools>;
+  integrationEvent<const Type extends ThreadEvent["type"]>(options: {
+    type: Type;
+    handle(event: Extract<ThreadEvent, { type: Type }>, context: IntegrationRuntimeContext): Promise<void> | void;
+  }): TypedIntegrationEventHandler<Type>;
   approvalPolicy<Input>(definition: ApprovalPolicyDefinition<Input>): ApprovalPolicy<Input>;
   defineApprovalPolicy<Input>(definition: ApprovalPolicyDefinition<Input>): ApprovalPolicy<Input>;
   policy<const Name extends string, Request extends PolicyRequest = PolicyRequest>(
@@ -393,6 +397,11 @@ interface IntegrationRuntimeContext {
 interface IntegrationEventHandler {
   eventTypes?: readonly string[];
   handle(event: ThreadEvent, context: IntegrationRuntimeContext): Promise<void> | void;
+}
+
+interface TypedIntegrationEventHandler<Type extends string = string> extends IntegrationEventHandler {
+  eventTypes: readonly [Type];
+  handle(event: Extract<ThreadEvent, { type: Type }>, context: IntegrationRuntimeContext): Promise<void> | void;
 }
 
 type ApiRouteHandler = (request: unknown, response: unknown) => Promise<boolean> | boolean;

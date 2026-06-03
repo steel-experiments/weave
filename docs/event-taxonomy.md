@@ -72,6 +72,21 @@ await ctx.emit("final-response", {
 });
 ```
 
+## Typed Integration Handlers
+
+Integrations can use `integrationEvent({ type, handle })` to handle known event types with inferred payload types:
+
+```ts
+const responseHandler = integrationEvent({
+  type: "agent.response.produced",
+  handle(event) {
+    event.payload.message;
+  },
+});
+```
+
+The helper validates incoming events with `ThreadEventSchema` before invoking the typed handler. This also preserves current payload normalization, such as legacy `tool.completed` payloads being decoded to the canonical `output` shape.
+
 ## Event Set
 
 The PoC uses this event set.

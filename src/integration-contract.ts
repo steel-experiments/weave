@@ -1,6 +1,6 @@
 import type { ApiRouteHandler } from "./api-server.js";
 import type { ThreadEngine } from "./contracts.js";
-import type { ThreadEvent, ThreadEventType } from "./events.js";
+import { ThreadEventSchema, type ThreadEvent, type ThreadEventType } from "./events.js";
 import type { ThreadService } from "./thread-service.js";
 import type { AnyToolContract } from "./tool-contract.js";
 
@@ -14,6 +14,28 @@ export type IntegrationEventHandler = {
   eventTypes?: readonly ThreadEventType[];
   handle(event: ThreadEvent, context: IntegrationRuntimeContext): Promise<void> | void;
 };
+
+export type TypedIntegrationEventHandler<Type extends ThreadEventType = ThreadEventType> = IntegrationEventHandler & {
+  eventTypes: readonly [Type];
+  handle(event: Extract<ThreadEvent, { type: Type }>, context: IntegrationRuntimeContext): Promise<void> | void;
+};
+
+export function integrationEvent<const Type extends ThreadEventType>(options: {
+  type: Type;
+  handle(event: Extract<ThreadEvent, { type: Type }>, context: IntegrationRuntimeContext): Promise<void> | void;
+}): TypedIntegrationEventHandler<Type> {
+  return {
+    eventTypes: [options.type],
+    handle(event, context) {
+      const parsed = ThreadEventSchema.parse(event);
+      if (parsed.type !== options.type) {
+        throw new Error(`Integration handler expected ${options.type}, received ${parsed.type}`);
+      }
+
+      return options.handle(parsed as Extract<ThreadEvent, { type: Type }>, context);
+    },
+  };
+}
 
 export type IntegrationContract<
   Name extends string = string,

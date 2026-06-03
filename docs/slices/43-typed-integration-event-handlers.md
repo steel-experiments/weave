@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-core`
 
@@ -51,31 +51,37 @@ As an integration author, I can declare handlers for specific Weave event types 
 
 ## Acceptance Criteria
 
-- [ ] Typed integration event handler API exists.
-- [ ] Handler payload type is inferred from event type.
-- [ ] Runtime validation behavior is documented.
-- [ ] Existing integrations remain compatible.
-- [ ] Docs explain how typed handlers relate to typed event factories.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Typed integration event handler API exists.
+- [x] Handler payload type is inferred from event type.
+- [x] Runtime validation behavior is documented.
+- [x] Existing integrations remain compatible.
+- [x] Docs explain how typed handlers relate to typed event factories.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Audit current integration event handling.
-- [ ] Design helper and types.
-- [ ] Implement compatibility path.
-- [ ] Add tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Audit current integration event handling.
+- [x] Design helper and types.
+- [x] Implement compatibility path.
+- [x] Add tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+- Added `integrationEvent({ type, handle })` typed event handler helper.
+- Handler payload type is inferred from the selected `ThreadEvent["type"]`.
+- The helper validates events with `ThreadEventSchema` before invoking handler logic.
+- Existing raw `IntegrationEventHandler` objects remain compatible in `integration({ eventHandlers })`.
+- Added tests for typed `agent.response.produced` payloads, legacy `tool.completed` normalization, invalid payload rejection, wrong event type rejection, and public exports.
+- Updated `docs/declarative-api.md` and `docs/event-taxonomy.md`.
+- Verified with `npm test` and `npm run typecheck`.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] integration examples if public guidance changes
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`
+- [x] integration examples if public guidance changes

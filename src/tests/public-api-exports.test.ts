@@ -12,6 +12,7 @@ import {
   defineWeaveApp,
   event,
   integration,
+  integrationEvent,
   isCapabilityRequest,
   policy,
   tool,
@@ -84,6 +85,14 @@ const denyNothingPolicy = definePolicy({
 const echoIntegration = integration({
   name: "public-api.integration",
   tools: [echoTool],
+  eventHandlers: [
+    integrationEvent({
+      type: "agent.response.produced",
+      handle(event) {
+        assert.equal(event.payload.message.length > 0, true);
+      },
+    }),
+  ],
 });
 
 const echoApp = weave({
@@ -161,5 +170,6 @@ assert.equal(typeof MockAsyncToolWorker, "function");
 
 assert.equal(echoApp.agents[0]?.name, "public-api.agent");
 assert.equal(echoApp.integrations?.[0]?.name, "public-api.integration");
+assert.deepEqual(echoIntegration.eventHandlers?.[0]?.eventTypes, ["agent.response.produced"]);
 
 console.log("Public API export smoke test passed");

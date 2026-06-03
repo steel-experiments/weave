@@ -24,6 +24,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `agent` with `planner` | Compatibility escape hatch |
 | `weave` | Current app registry API |
 | `integration` | Current integration API |
+| `integrationEvent` | Current typed integration event handler helper |
 | `ctx.tool` | First durable effect |
 | `ctx.emit` | Current replay-safe event helper |
 | `event` | Current typed event contract/factory helper |
@@ -46,12 +47,41 @@ The runtime turns durable operations into thread events, worker work, resumable 
 - `agent`: declares an agent using the new `run(ctx, input)` authoring model or the lower-level planner model.
 - `weave`: composes agents, tools, integrations, and runtime dependencies into an application registry.
 - `integration`: declares external route and event handling adapters.
+- `integrationEvent`: declares a schema-validated handler for a specific thread event type.
 - `capability`: declares scoped access intent for tools and exposes capability names to request policy evaluation.
 - `policy`: declares runtime request policy rules for tool requests.
 
 The older `defineTool`, `defineAgent`, `defineWeaveApp`, `defineIntegration`, `defineCapability`, and `definePolicy` names remain exported for compatibility. New examples should prefer the shorter authoring names.
 
 Capability contracts are metadata by themselves. They affect runtime behavior only when request policies inspect them.
+
+## Integration Event Handlers
+
+`integrationEvent({...})` declares a typed event handler for a known thread event type. The handler receives the narrowed event payload type for the selected event.
+
+```ts
+const notifyOnResponse = integrationEvent({
+  type: "agent.response.produced",
+  async handle(event, context) {
+    await sendNotification(event.payload.message, context.integrationName);
+  },
+});
+
+const slackIntegration = integration({
+  name: "slack",
+  eventHandlers: [notifyOnResponse],
+});
+```
+
+Semantics:
+
+- `eventTypes` is populated with the single handled event type
+- event payload type is inferred from the selected event type
+- `ThreadEventSchema` validates and normalizes events before invoking the typed handler
+- wrong event types or invalid payloads are rejected before handler logic runs
+- existing raw `eventHandlers` remain compatible
+
+Typed integration handlers do not add an event bus or subscription runtime by themselves. They are a typed contract for integrations and future dispatchers.
 
 ## App Definition
 

@@ -35,6 +35,7 @@ import { ThreadService } from "../thread-service.js";
 import { toMermaidTimeline, toTextTimeline } from "../timeline.js";
 import { RetryableToolError, tool, type AnyToolContract } from "../tool-contract.js";
 import { ContractToolWorker } from "../tool-worker.js";
+import { integrationEvent } from "../integration-contract.js";
 
 const inputSchema = z.object({ query: z.string().min(1) });
 const outputSchema = z.object({
@@ -1087,6 +1088,74 @@ async function testRawEmitCompatibility(): Promise<void> {
   const plan = await planner.plan("raw-emit-compatibility", initialHistory("raw-emit-compatibility"));
   assert(plan);
   assert.deepEqual(plan.events[0]?.payload, { message: "raw still works" });
+}
+
+async function testTypedIntegrationEventHandlers(): Promise<void> {
+  const messages: string[] = [];
+  const responseHandler = integrationEvent({
+    type: "agent.response.produced",
+    handle(event) {
+      messages.push(event.payload.message);
+    },
+  });
+  assert.deepEqual(responseHandler.eventTypes, ["agent.response.produced"]);
+
+  const responseEvent: Extract<ThreadEvent, { type: "agent.response.produced" }> = {
+    eventId: eventKey("integration-handler", "agent.response.produced", "response"),
+    threadId: "integration-handler",
+    type: "agent.response.produced",
+    occurredAt: nowIso(),
+    actor: { type: "agent", id: "test" },
+    payload: { message: "hello" },
+  };
+  await responseHandler.handle(responseEvent, integrationRuntimeContext("integration-handler"));
+  assert.deepEqual(messages, ["hello"]);
+
+  const outputs: unknown[] = [];
+  const toolCompletedHandler = integrationEvent({
+    type: "tool.completed",
+    handle(event) {
+      outputs.push(event.payload.output);
+    },
+  });
+  await toolCompletedHandler.handle(
+    {
+      eventId: eventKey("integration-handler", "tool.completed", "legacy-tool"),
+      threadId: "integration-handler",
+      type: "tool.completed",
+      occurredAt: nowIso(),
+      actor: { type: "worker", id: "test" },
+      payload: {
+        toolCallId: deterministicUuid("tool-call", "integration-handler", "legacy-tool"),
+        summary: "legacy",
+        requiresManualApproval: false,
+        data: { result: "ok" },
+      },
+    } as unknown as ThreadEvent,
+    integrationRuntimeContext("integration-handler"),
+  );
+  assert.deepEqual(outputs, [{ summary: "legacy", requiresManualApproval: false, data: { result: "ok" } }]);
+
+  assert.throws(() => {
+    responseHandler.handle(
+      {
+        ...responseEvent,
+        payload: { message: "" },
+      } as ThreadEvent,
+      integrationRuntimeContext("integration-handler"),
+    );
+  });
+
+  assert.throws(() => {
+    responseHandler.handle(
+      {
+        ...responseEvent,
+        type: "agent.failed",
+        payload: { errorCode: "FAILED", message: "failed" },
+      } as ThreadEvent,
+      integrationRuntimeContext("integration-handler"),
+    );
+  }, /Integration handler expected agent\.response\.produced, received agent\.failed/);
 }
 
 function typedOutput(events: readonly ThreadEvent[]): {
@@ -3156,6 +3225,15 @@ function requestedEventForTool(threadId: string, toolName: string): Extract<Thre
   };
 }
 
+function integrationRuntimeContext(threadId: string) {
+  const engine = new MemoryThreadEngine(initialHistory(threadId));
+  return {
+    engine,
+    service: new ThreadService(engine),
+    integrationName: "test.integration",
+  };
+}
+
 class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
   private readonly threads = new Map<string, CreateThreadOptions & { rootThreadId: string }>();
 
@@ -3297,6 +3375,7 @@ await testTypedEventFactoryPayloadMismatch();
 await testTypedEventFactorySchemaValidation();
 await testContextIdStabilityAndUuidAlias();
 await testRawEmitCompatibility();
+await testTypedIntegrationEventHandlers();
 await testEmitReplayDoesNotDuplicateEvent();
 await testCheckpointReplay();
 await testCheckpointMismatch();
