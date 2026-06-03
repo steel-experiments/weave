@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-examples`
 
@@ -81,35 +81,66 @@ The adapter should still expose a normal Weave `agent(...)` contract. It should 
 
 ## Acceptance Criteria
 
-- [ ] A reusable bounded harness exists for one repo task per child thread.
-- [ ] Harness uses registered Weave tools only.
-- [ ] Repo access is read-only by default.
-- [ ] File writes are not available.
-- [ ] Arbitrary shell mutation is not available.
-- [ ] Network and shell access are policy-gated.
-- [ ] Child outputs are schema-validated.
-- [ ] Prompt workflow example can use the harness for claim checking.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] A reusable bounded harness exists for one repo task per child thread.
+- [x] Harness uses registered Weave tools only.
+- [x] Repo access is read-only by default.
+- [x] File writes are not available.
+- [x] Arbitrary shell mutation is not available.
+- [x] Network and shell access are policy-gated.
+- [x] Child outputs are schema-validated.
+- [x] Prompt workflow example can use the harness for claim checking.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Design harness boundary.
-- [ ] Implement read-only repo tools.
-- [ ] Implement bounded task adapter.
-- [ ] Wire example claim checker through adapter.
-- [ ] Add tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Design harness boundary.
+- [x] Implement read-only repo tools.
+- [x] Implement bounded task adapter.
+- [x] Wire example claim checker through adapter.
+- [x] Add tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+### Shipped Behavior
+
+- Added `examples/prompt-workflow-review/src/opencode-harness.ts`, an example-local bounded OpenCode-style repo task harness.
+- Added `opencodeRepoTaskAgent(...)`, which returns a normal Weave `agent(...)` contract and runs one bounded repo task per child thread.
+- Added read-only repo tools: `repo.searchText` and `repo.readFile`.
+- Added explicit capability declarations for `repo.read`, `repo.write`, `network.access`, and `shell.exec`.
+- Kept only `repo.read` available by default; mutable/network/shell capabilities are denied by the example policy helper.
+- Added `maxToolCalls` and `timeoutMs` checks inside the harness boundary.
+- Wired `workflow.claimChecker` through the harness instead of the older single-purpose `repo.searchEvidence` tool.
+- Kept child output validation through the normal Weave agent `output` schema.
+
+### Implementation Files
+
+- `examples/prompt-workflow-review/src/opencode-harness.ts`
+- `examples/prompt-workflow-review/src/workflow.ts`
+- `examples/prompt-workflow-review/src/workflow.test.ts`
+
+### Tests And Commands Run
+
+- `npm --workspace weave-prompt-workflow-review run test`
+- `npm --workspace weave-prompt-workflow-review run typecheck`
+- `npm test`
+- `npm run typecheck`
+- `git diff --check`
+- `npm --workspace weave-prompt-workflow-review run demo`
+
+### Known Gaps
+
+- The harness is still example-local, not a shared `weave` public helper or package export.
+- The repo catalog is deterministic test data, not a live OpenCode process.
+- Network and shell capabilities are represented and denied/gated by policy, but no network/shell tools ship in this slice.
+- File writes remain unavailable.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/agent-adapters.md` if the harness becomes reusable beyond the example
-- [ ] `docs/declarative-api.md` only if public helpers are exposed
-- [ ] `examples/prompt-workflow-review` docs or README if added
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/agent-adapters.md` not updated because the harness is example-local, not reusable beyond the example
+- [x] `docs/declarative-api.md` not updated because no public helpers are exposed
+- [x] `examples/prompt-workflow-review` docs or README not added in this slice

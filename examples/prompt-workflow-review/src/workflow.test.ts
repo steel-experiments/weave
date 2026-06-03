@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { RepoReadFileInputSchema, RepoSearchTextInputSchema, hasMutableHarnessCapability, workflowCapabilityDecision } from "./opencode-harness.js";
 import { compileWorkflowPlan, defaultWorkflowInput, extractClaims, planRequiresApproval, runPromptWorkflowReviewDemo, workflowPlanHash } from "./workflow.js";
 
 const input = defaultWorkflowInput();
@@ -22,6 +23,16 @@ assert.equal(planRequiresApproval(unsafePlan), true);
 assert.equal(unsafePlan.requiredCapabilities.some((capability) => capability.name === "network.access"), true);
 assert.equal(unsafePlan.requiredCapabilities.some((capability) => capability.name === "repo.write"), true);
 
+assert.deepEqual(RepoReadFileInputSchema.parse({ path: "docs/declarative-api.md" }), { path: "docs/declarative-api.md" });
+assert.deepEqual(RepoSearchTextInputSchema.parse({ query: "child thread lineage" }), { query: "child thread lineage" });
+assert.equal(workflowCapabilityDecision(["repo.read"]), "allow");
+assert.equal(workflowCapabilityDecision(["network.access"]), "deny");
+assert.equal(workflowCapabilityDecision(["shell.exec"]), "deny");
+assert.equal(workflowCapabilityDecision(["repo.write"]), "deny");
+assert.equal(hasMutableHarnessCapability("network.access"), true);
+assert.equal(hasMutableHarnessCapability("shell.exec"), true);
+assert.equal(hasMutableHarnessCapability("repo.write"), true);
+
 const result = await runPromptWorkflowReviewDemo(input);
 assert.equal(result.report.recommendation, "do-not-publish");
 assert.equal(result.report.claims.length, 3);
@@ -29,7 +40,9 @@ assert(result.childThreadIds.length >= 5);
 assert(result.events.some((event) => event.type === "checkpoint.completed"));
 assert(result.events.some((event) => event.type === "agent.finding.produced"));
 assert(result.allEvents.some((event) => event.type === "policy.evaluated"));
-assert(result.allEvents.some((event) => event.type === "tool.requested" && event.payload.toolName === "repo.searchEvidence"));
+assert(result.allEvents.some((event) => event.type === "tool.requested" && event.payload.toolName === "repo.searchText"));
+assert(result.allEvents.some((event) => event.type === "tool.requested" && event.payload.toolName === "repo.readFile"));
+assert(result.allEvents.some((event) => event.type === "checkpoint.completed" && event.stepKey === "opencode-harness-limits"));
 assert.equal(result.events.filter((event) => event.type === "child_thread.spawned").length, new Set(result.childThreadIds).size);
 
 console.log("Prompt workflow review example tests passed");

@@ -1,14 +1,12 @@
 import {
   ThreadService,
   agent,
-  capability,
   deterministicUuid,
   event,
   eventKey,
   nowIso,
   policy,
   stableJsonHash,
-  tool,
   weave,
   type AppendOptions,
   type AppendResult,
@@ -22,7 +20,6 @@ import {
   type ThreadProjection,
 } from "weave";
 import { ContractToolWorker, ThreadRunner, createRuntimeAgentPlanner } from "weave/runtime";
-import { z } from "zod";
 import {
   ClaimCheckInputSchema,
   ClaimCheckOutputSchema,
@@ -31,8 +28,6 @@ import {
   ClaimVerificationInputSchema,
   ClaimVerificationOutputSchema,
   FinalReportSchema,
-  RepoEvidenceInputSchema,
-  RepoEvidenceOutputSchema,
   SynthesisInputSchema,
   WorkflowInputSchema,
   WorkflowPlanSchema,
@@ -43,28 +38,16 @@ import {
   type WorkflowInput,
   type WorkflowPlan,
 } from "./schemas.js";
+import {
+  opencodeRepoTaskAgent,
+  repoReadCapability,
+  repoReadFileTool,
+  repoSearchTextTool,
+  workflowCapabilityDecision,
+  type RepoSearchTextOutput,
+} from "./opencode-harness.js";
 
 const SAFE_CAPABILITIES = new Set(["repo.read"]);
-
-export const repoReadCapability = capability({
-  name: "repo.read",
-  description: "Read repository files and documentation for claim verification.",
-  scopes: z.object({ repository: z.string().min(1) }),
-});
-
-export const repoEvidenceTool = tool({
-  name: "repo.searchEvidence",
-  description: "Search the repository evidence catalog for support for one claim.",
-  input: RepoEvidenceInputSchema,
-  output: RepoEvidenceOutputSchema,
-  capabilities: [repoReadCapability],
-  summarize(output) {
-    return `${output.status} confidence=${output.confidence}`;
-  },
-  run(ctx) {
-    return lookupEvidence(ctx.input.claim);
-  },
-});
 
 export const claimExtractorAgent = agent({
   name: "workflow.claimExtractor",
@@ -75,13 +58,19 @@ export const claimExtractorAgent = agent({
   },
 });
 
-export const claimCheckerAgent = agent({
+export const claimCheckerAgent = opencodeRepoTaskAgent({
   name: "workflow.claimChecker",
+  description: "Bounded OpenCode-style claim checker using read-only repository tools.",
   input: ClaimCheckInputSchema,
   output: ClaimCheckOutputSchema,
-  tools: [repoEvidenceTool],
-  async run(ctx, input) {
-    const evidence = await ctx.tool(`repo-evidence:${input.claim.key}`, repoEvidenceTool, { claim: input.claim.text });
+  limits: { maxToolCalls: 4, timeoutMs: 120_000 },
+  async runTask(input, tools) {
+    const search = await tools.searchText(`repo-search:${input.claim.key}`, input.claim.text);
+    const primaryEvidence = search.matches[0];
+    if (primaryEvidence) {
+      await tools.readFile(`repo-read:${input.claim.key}`, primaryEvidence.path);
+    }
+    const evidence = classifyClaimEvidence(input.claim.text, search);
     return {
       claim: input.claim.text,
       status: evidence.status,
@@ -186,16 +175,17 @@ export const workflowCustomizeAgent = agent({
 export const promptWorkflowReviewApp = weave({
   name: "prompt-workflow-review",
   agents: [workflowCustomizeAgent, claimExtractorAgent, claimCheckerAgent, claimVerifierAgent, synthesizerAgent],
-  tools: [repoEvidenceTool],
+  tools: [repoSearchTextTool, repoReadFileTool],
   policies: [
     policy({
       name: "prompt-workflow.repo-read-only",
       evaluate(request) {
         const capabilityNames = request.capabilities.map((capability) => capability.name);
-        if (capabilityNames.some((name) => name !== "repo.read")) {
+        const decision = workflowCapabilityDecision(capabilityNames);
+        if (decision === "deny") {
           return { outcome: "deny", reason: `Unsupported workflow capability: ${capabilityNames.join(", ")}` };
         }
-        return capabilityNames.includes("repo.read") ? { outcome: "allow", reason: "Repository reads are allowed for claim checking." } : undefined;
+        return decision === "allow" ? { outcome: "allow", reason: "Repository reads are allowed for claim checking." } : undefined;
       },
     }),
   ],
@@ -218,7 +208,7 @@ export async function runPromptWorkflowReviewDemo(input: WorkflowInput = default
     createRuntimeAgentPlanner(promptWorkflowReviewApp, workflowCustomizeAgent.name, service),
     "prompt-workflow-runner",
   );
-  const toolWorker = new ContractToolWorker(engine, [repoEvidenceTool], "prompt-workflow-tool-worker");
+  const toolWorker = new ContractToolWorker(engine, [repoSearchTextTool, repoReadFileTool], "prompt-workflow-tool-worker");
   const session = await service.startSession({
     prompt: input.prompt,
     agentName: workflowCustomizeAgent.name,
@@ -328,13 +318,13 @@ export function defaultWorkflowInput(): WorkflowInput {
   };
 }
 
-function lookupEvidence(claim: string) {
+function classifyClaimEvidence(claim: string, search: RepoSearchTextOutput) {
   const normalized = claim.toLowerCase();
   if (normalized.includes("child threads") || normalized.includes("lineage")) {
     return {
       status: "verified" as const,
       confidence: 0.91,
-      evidence: ["docs/declarative-api.md: child thread lineage and ctx.spawn/ctx.join semantics", "src/thread-service.ts: parent/root lineage fields"],
+      evidence: evidenceReferences(search),
       notes: "Repository docs and service code support child lineage preservation.",
     };
   }
@@ -342,7 +332,7 @@ function lookupEvidence(claim: string) {
     return {
       status: "verified" as const,
       confidence: 0.86,
-      evidence: ["docs/declarative-api.md: request policy and gate semantics", "src/agent-runner.ts: policy approval gates before tool.requested"],
+      evidence: evidenceReferences(search),
       notes: "Policy approval behavior is implemented in the request planning path.",
     };
   }
@@ -360,6 +350,11 @@ function lookupEvidence(claim: string) {
     evidence: [],
     notes: "No matching repository evidence was found in the deterministic demo catalog.",
   };
+}
+
+function evidenceReferences(search: RepoSearchTextOutput): string[] {
+  const references = search.matches.slice(0, 2).map((match) => `${match.path}:${match.line} ${match.text}`);
+  return references.length > 0 ? references : ["repo.searchText: no direct line match found in demo catalog"];
 }
 
 function synthesizeReport(
