@@ -30,6 +30,7 @@ import {
   type SessionMetadata,
   type ThreadEvent,
 } from "./events.js";
+import { isCapabilityRequest, normalizeCapabilityDeclarations, type CapabilityDeclaration } from "./capability-contract.js";
 import type { AgentPlan, AgentPlanner } from "./runner.js";
 import type { ThreadService } from "./thread-service.js";
 import type { ToolContract } from "./tool-contract.js";
@@ -626,6 +627,7 @@ class ReplayAgentContext implements AgentContext {
     options: ToolCallOptions,
   ): void {
     const requestIdentity = this.policyRequestIdentity(key, tool, input, options);
+    const capabilities = resolveToolCapabilities(tool, input);
     const existing = this.findPolicyEvaluations(key);
     if (existing.length > 0) {
       for (const event of existing) {
@@ -650,7 +652,7 @@ class ReplayAgentContext implements AgentContext {
       toolName: tool.name,
       input,
       options,
-      capabilities: tool.capabilities ?? [],
+      capabilities,
     };
 
     for (const policy of policies) {
@@ -839,7 +841,7 @@ class ReplayAgentContext implements AgentContext {
     input: Input,
     options: ToolCallOptions,
   ): PolicyRequestIdentity {
-    const capabilityDescriptions = capabilityDescriptors(tool);
+    const capabilityDescriptions = capabilityDescriptors(resolveToolCapabilities(tool, input));
     const capabilityNames = capabilityDescriptions.map((capability) => capability.name);
     const requestKind = "tool.requested";
     const requestHash = stableJsonHash({
@@ -1088,9 +1090,27 @@ type PolicyRequestIdentity = {
   policyStepKey(policyName: string): string;
 };
 
-function capabilityDescriptors(tool: ToolContract<string, any, any>): Array<{ name: string; description: string }> {
-  return [...(tool.capabilities ?? [])]
-    .map((capability) => ({ name: capability.name, description: capability.description }))
+function resolveToolCapabilities<Input, Output>(
+  tool: ToolContract<string, Input, Output>,
+  input: Input,
+): CapabilityDeclaration[] {
+  return typeof tool.capabilities === "function"
+    ? normalizeCapabilityDeclarations(tool.capabilities({ input }))
+    : normalizeCapabilityDeclarations(tool.capabilities);
+}
+
+function capabilityDescriptors(capabilities: readonly CapabilityDeclaration[]): Array<{
+  name: string;
+  description: string;
+  params?: unknown;
+  credential?: unknown;
+}> {
+  return [...capabilities]
+    .map((capability) => ({
+      name: capability.name,
+      description: capability.description,
+      ...(isCapabilityRequest(capability) ? { params: capability.params, credential: capability.credential } : {}),
+    }))
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 

@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-core`
 
@@ -86,34 +86,42 @@ Final syntax may change during implementation, but capability-mediated credentia
 
 ## Acceptance Criteria
 
-- [ ] Capability contracts can produce scoped capability requests.
-- [ ] Tool contracts can declare capability requests derived from input.
-- [ ] Capability requests participate in policy evaluation and replay hashing.
-- [ ] Capability-mediated credentials resolve through existing credential provider boundaries.
-- [ ] Existing credential behavior remains compatible.
-- [ ] Docs explain capabilities versus credentials.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Capability contracts can produce scoped capability requests.
+- [x] Tool contracts can declare capability requests derived from input.
+- [x] Capability requests participate in policy evaluation and replay hashing.
+- [x] Capability-mediated credentials resolve through existing credential provider boundaries.
+- [x] Existing credential behavior remains compatible.
+- [x] Docs explain capabilities versus credentials.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Finalize capability request API.
-- [ ] Implement request objects and validation.
-- [ ] Integrate with policy context and request hashing.
-- [ ] Integrate with credential resolution.
-- [ ] Add tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Finalize capability request API.
+- [x] Implement request objects and validation.
+- [x] Integrate with policy context and request hashing.
+- [x] Integrate with credential resolution.
+- [x] Add tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+- Added requestable capability contracts through `capability({...}).request(params)`.
+- Added optional `params` and `scope(params)` fields to capability definitions.
+- Capability requests validate params and map to existing `CredentialRequest` objects.
+- Tool `capabilities` now supports static declarations or input-derived declarations via `capabilities({ input })`.
+- Policy evaluation receives capability requests and request hashing includes request params and mapped credential metadata.
+- Tool workers resolve capability-mediated credentials through the existing `CredentialProvider` boundary before running the tool.
+- Preserved raw `credentials(...)` compatibility.
+- Added tests for capability request validation, policy context visibility, credential provider mapping, missing credentials, request hash mismatch, and public exports.
+- Verified with `npm test` and `npm run typecheck`.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/architecture.md`
-- [ ] `docs/glossary.md`
-- [ ] `docs/migration/api-refactor.md` if author guidance changes
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/architecture.md`
+- [x] `docs/glossary.md`
+- [x] `docs/migration/api-refactor.md` if author guidance changes

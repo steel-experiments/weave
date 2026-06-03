@@ -6,12 +6,12 @@ export interface WeaveModuleBoundary {
     contract: ToolContract<Name, Input, Output>,
   ): ToolContract<Name, Input, Output>;
   createToolRegistry(tools: readonly AnyToolContract[]): ToolRegistry;
-  defineCapability<const Name extends string, Scope>(
-    contract: CapabilityContract<Name, Scope>,
-  ): CapabilityContract<Name, Scope>;
-  capability<const Name extends string, Scope>(
-    contract: CapabilityContract<Name, Scope>,
-  ): CapabilityContract<Name, Scope>;
+  defineCapability<const Name extends string, Scope, Params = Scope>(
+    contract: CapabilityDefinition<Name, Scope, Params>,
+  ): CapabilityContract<Name, Scope, Params>;
+  capability<const Name extends string, Scope, Params = Scope>(
+    contract: CapabilityDefinition<Name, Scope, Params>,
+  ): CapabilityContract<Name, Scope, Params>;
 
   defineAgent<const Name extends string, Input, Output, const Tools extends readonly AnyToolContract[]>(
     contract: AgentContract<Name, Input, Output, Tools>,
@@ -188,7 +188,7 @@ interface ToolPolicyRequest<Input = unknown> {
   toolName: string;
   input: Input;
   options?: ToolCallOptions;
-  capabilities: readonly AnyCapabilityContract[];
+  capabilities: readonly CapabilityDeclaration[];
 }
 
 type PolicyRequest = ToolPolicyRequest;
@@ -217,7 +217,9 @@ interface ToolContract<
   input: Schema<Input>;
   output: Schema<Output>;
   summarize?(output: Output): string;
-  capabilities?: readonly AnyCapabilityContract[];
+  capabilities?:
+    | readonly CapabilityDeclaration[]
+    | ((context: { input: Input }) => CapabilityDeclaration | readonly CapabilityDeclaration[] | undefined);
   gate?(context: { input: Input }): ManualToolGate | undefined;
   credentials?(context: { input: Input }): CredentialRequest | readonly CredentialRequest[] | undefined;
   run(context: ToolRunContext<Input>): Promise<Output> | Output;
@@ -225,13 +227,41 @@ interface ToolContract<
 
 type AnyToolContract = ToolContract<string, unknown, unknown>;
 
-interface CapabilityContract<Name extends string = string, Scope = unknown> {
+interface CapabilityContract<Name extends string = string, Scope = unknown, Params = Scope> {
   name: Name;
   description: string;
-  scopes: Schema<Scope>;
+  scopes?: Schema<Scope>;
+  params?: Schema<Params>;
+  scope?(params: Params): CapabilityCredentialScope;
+  request(params: Params): CapabilityRequest<Name, Params>;
 }
 
-type AnyCapabilityContract = CapabilityContract<string, unknown>;
+type CapabilityDefinition<Name extends string = string, Scope = unknown, Params = Scope> = Omit<
+  CapabilityContract<Name, Scope, Params>,
+  "request"
+>;
+
+interface CapabilityCredentialScope {
+  credentialName?: string;
+  kind?: "secret" | "delegated-identity" | "scoped-token" | "browser-session";
+  provider?: string;
+  resource?: string;
+  permissions?: readonly string[];
+  reason?: string;
+  scope?: Record<string, string>;
+}
+
+interface CapabilityRequest<Name extends string = string, Params = unknown> {
+  type: "capability.request";
+  name: Name;
+  description: string;
+  params: Params;
+  credential: CredentialRequest;
+}
+
+type AnyCapabilityContract = CapabilityContract<string, any, any>;
+type AnyCapabilityRequest = CapabilityRequest<string, unknown>;
+type CapabilityDeclaration = AnyCapabilityContract | AnyCapabilityRequest;
 
 interface ThreadEngine {
   createThread(threadId: string, options?: CreateThreadOptions): Promise<void>;

@@ -4,7 +4,7 @@ import { agent, event } from "../agent-contract.js";
 import { createAgentPlanner } from "../agent-runner.js";
 import { createApiServer } from "../api-server.js";
 import { weave } from "../app-contract.js";
-import { capability } from "../capability-contract.js";
+import { capability, isCapabilityRequest } from "../capability-contract.js";
 import type { CredentialProvider, CredentialRequest, CredentialResolution, CredentialResolutionContext } from "../credentials.js";
 import type {
   AppendOptions,
@@ -115,6 +115,7 @@ async function testCapabilityMetadataDoesNotAffectToolPlanning(): Promise<void> 
   const plan = await planner.plan("capability-metadata-inert", history);
 
   assert(plan);
+  assert(Array.isArray(lookupTool.capabilities));
   assert.equal(lookupTool.capabilities?.[0], testLookupRead);
   assert.equal(plan.events.length, 1);
   assert.equal(plan.events[0]?.type, "tool.requested");
@@ -354,6 +355,161 @@ async function testPolicyCapabilityDeclarationMismatch(): Promise<void> {
   await assert.rejects(
     async () => {
       await createAgentPlanner(writeAgent, writeAgent.name, { policies: [allow] }).plan("policy-capability-mismatch", [
+        ...history,
+        firstPlan.events[0]!,
+      ]);
+    },
+    ReplayMismatchError,
+  );
+}
+
+async function testCapabilityRequestValidationPolicyAndCredentialResolution(): Promise<void> {
+  const githubRepoWrite = capability({
+    name: "github.repo.write",
+    description: "Write to a GitHub repository.",
+    params: z.object({ owner: z.string().min(1), repo: z.string().min(1) }),
+    scope(params) {
+      return {
+        credentialName: "github-write-token",
+        provider: "github",
+        resource: `${params.owner}/${params.repo}`,
+        permissions: ["pull_requests:write"],
+      };
+    },
+  });
+
+  assert.throws(() => {
+    githubRepoWrite.request({ owner: "acme" } as { owner: string; repo: string });
+  }, /Invalid params for capability github\.repo\.write/);
+
+  const capabilityTool = tool({
+    name: "test.capabilityCredential",
+    description: "Capability-mediated credential tool.",
+    input: inputSchema,
+    output: z.object({ token: z.string().min(1) }),
+    capabilities({ input }) {
+      return [githubRepoWrite.request({ owner: "acme", repo: input.query })];
+    },
+    run(ctx) {
+      return { token: ctx.credentials.value("github-write-token") };
+    },
+  });
+  const capabilityAgent = agent({
+    name: "capability-credential-agent",
+    input: inputSchema,
+    tools: [capabilityTool],
+    async run(ctx, input) {
+      return ctx.tool("capability-credential", capabilityTool, input);
+    },
+  });
+  const seenCapabilities: string[] = [];
+  const allowCapability = policy({
+    name: "test.allow-capability-credential",
+    evaluate(request) {
+      const requested = request.capabilities.find(isCapabilityRequest);
+      assert(requested);
+      const params = requested.params as { repo: string };
+      seenCapabilities.push(`${requested.name}:${params.repo}`);
+      return { outcome: "allow" };
+    },
+  });
+
+  const plan = await createAgentPlanner(capabilityAgent, capabilityAgent.name, { policies: [allowCapability] }).plan(
+    "capability-policy-context",
+    initialHistory("capability-policy-context"),
+  );
+  assert(plan);
+  assert.deepEqual(seenCapabilities, ["github.repo.write:hello"]);
+  assert.equal(plan.events[0]?.type, "policy.evaluated");
+  assert.deepEqual(plan.events[0]?.payload.capabilityNames, ["github.repo.write"]);
+
+  const provider = new CapturingCredentialProvider({ "github-write-token": "secret-token" });
+  const completed = await runToolToTerminal(capabilityTool.name, capabilityTool, provider);
+  assert.equal(completed.terminal.type, "tool.completed");
+  assert.deepEqual(completed.terminal.payload.output, { token: "secret-token" });
+  assert.equal(provider.requests[0]?.name, "github-write-token");
+  assert.equal(provider.requests[0]?.kind, "scoped-token");
+  assert.equal(provider.requests[0]?.provider, "github");
+  assert.deepEqual(provider.requests[0]?.scopes, ["pull_requests:write"]);
+  assert.deepEqual(provider.requests[0]?.scope, {
+    capability: "github.repo.write",
+    resource: "acme/hello",
+  });
+
+  const missingCredential = await runToolToTerminal(capabilityTool.name, capabilityTool);
+  assert.equal(missingCredential.terminal.type, "tool.failed");
+  assert.equal(missingCredential.terminal.payload.errorCode, "credential_resolution_failed");
+  assert(
+    missingCredential.events.some(
+      (event) => event.type === "credential.failed" && event.payload.credentialName === "github-write-token",
+    ),
+  );
+}
+
+async function testCapabilityRequestHashMismatch(): Promise<void> {
+  const githubRepoWrite = capability({
+    name: "github.repo.write",
+    description: "Write to a GitHub repository.",
+    params: z.object({ owner: z.string().min(1), repo: z.string().min(1) }),
+    scope(params) {
+      return {
+        credentialName: "github-write-token",
+        provider: "github",
+        resource: `${params.owner}/${params.repo}`,
+        permissions: ["pull_requests:write"],
+      };
+    },
+  });
+  const firstTool = tool({
+    name: "test.capabilityHash",
+    description: "Capability hash test tool.",
+    input: inputSchema,
+    output: outputSchema,
+    capabilities({ input }) {
+      return [githubRepoWrite.request({ owner: "acme", repo: input.query })];
+    },
+    run() {
+      return { summary: "ok", requiresManualApproval: false, data: { result: "ok" } };
+    },
+  });
+  const changedTool = tool({
+    ...firstTool,
+    capabilities({ input }) {
+      return [githubRepoWrite.request({ owner: "other", repo: input.query })];
+    },
+  });
+  const firstAgent = agent({
+    name: "capability-hash-agent",
+    input: inputSchema,
+    tools: [firstTool],
+    async run(ctx, input) {
+      return ctx.tool("capability-hash", firstTool, input);
+    },
+  });
+  const changedAgent = agent({
+    name: "capability-hash-agent",
+    input: inputSchema,
+    tools: [changedTool],
+    async run(ctx, input) {
+      return ctx.tool("capability-hash", changedTool, input);
+    },
+  });
+  const allow = policy({
+    name: "test.capability-hash-policy",
+    evaluate() {
+      return { outcome: "allow" };
+    },
+  });
+  const history = initialHistory("capability-request-hash-mismatch");
+  const firstPlan = await createAgentPlanner(firstAgent, firstAgent.name, { policies: [allow] }).plan(
+    "capability-request-hash-mismatch",
+    history,
+  );
+  assert(firstPlan);
+
+  await assert.rejects(
+    async () => {
+      await createAgentPlanner(changedAgent, changedAgent.name, { policies: [allow] }).plan("capability-request-hash-mismatch", [
         ...history,
         firstPlan.events[0]!,
       ]);
@@ -2955,6 +3111,30 @@ class ThrowingCredentialProvider implements CredentialProvider {
   }
 }
 
+class CapturingCredentialProvider implements CredentialProvider {
+  readonly requests: CredentialRequest[] = [];
+
+  constructor(private readonly values: Record<string, string>) {}
+
+  async resolve(
+    request: CredentialRequest,
+    _context: CredentialResolutionContext,
+  ): Promise<CredentialResolution | null> {
+    this.requests.push(request);
+    const value = this.values[request.name];
+    if (value === undefined) {
+      return null;
+    }
+
+    return {
+      name: request.name,
+      kind: request.kind,
+      source: "capturing-test",
+      value,
+    };
+  }
+}
+
 function requestedEventForTool(threadId: string, toolName: string): Extract<ThreadEvent, { type: "tool.requested" }> {
   return {
     eventId: eventKey(threadId, "tool.requested", `agent:test-agent:worker:${toolName}`),
@@ -3098,6 +3278,8 @@ await testPolicyApprovalRequiredCreatesGateThenRequestsTool();
 await testPolicyApprovalDeniedFailsAgent();
 await testPolicyEvaluationInputMismatch();
 await testPolicyCapabilityDeclarationMismatch();
+await testCapabilityRequestValidationPolicyAndCredentialResolution();
+await testCapabilityRequestHashMismatch();
 await testPolicyOrderingAllowThenDeny();
 await testPolicyOrderingAllowThenApproval();
 await testPolicyVersionAuditDoesNotBreakReplay();

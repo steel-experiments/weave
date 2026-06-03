@@ -477,9 +477,9 @@ Current boundary:
 - explicit `ctx.gate` calls remain agent-authored approval flows
 - credential resolution remains separate from policy evaluation
 
-## Capability Contracts
+## Capability Contracts And Requests
 
-`capability({...})` declares scoped access intent. It is auditable metadata attached to tools and exposed to runtime request policies. It does not grant credentials by itself.
+`capability({...})` declares scoped access intent. Static capability metadata is attached to tools and exposed to runtime request policies. Capability requests can also map scoped access intent into existing credential resolution.
 
 ```ts
 const githubRead = capability({
@@ -490,22 +490,46 @@ const githubRead = capability({
     repo: z.string().min(1),
   }),
 });
+```
 
+Static metadata form:
+
+```ts
 const inspectIssue = tool({
   name: "github.issue.inspect",
-  description: "Read a GitHub issue.",
-  input: z.object({
+  // ...
+  capabilities: [githubRead],
+});
+```
+
+Credential-mediated request form:
+
+```ts
+const githubRepoWrite = capability({
+  name: "github.repo.write",
+  description: "Write to a GitHub repository.",
+  params: z.object({
     owner: z.string().min(1),
     repo: z.string().min(1),
-    issueNumber: z.number().int(),
   }),
-  output: z.object({
-    title: z.string(),
-    body: z.string(),
-  }),
-  capabilities: [githubRead],
+  scope(params) {
+    return {
+      credentialName: "github-write-token",
+      provider: "github",
+      resource: `${params.owner}/${params.repo}`,
+      permissions: ["pull_requests:write"],
+    };
+  },
+});
+
+const createPullRequest = tool({
+  name: "github.pr.create",
+  // ...
+  capabilities({ input }) {
+    return [githubRepoWrite.request({ owner: input.owner, repo: input.repo })];
+  },
   async run(ctx) {
-    return inspectIssueWithGitHub(ctx.credentials.value("github.read"), ctx.input);
+    return createPullRequestWithGitHub(ctx.credentials.value("github-write-token"), ctx.input);
   },
 });
 ```
@@ -514,9 +538,12 @@ Semantics:
 
 - `name` is the stable policy-facing capability identifier
 - `description` explains the intended access
-- `scopes` is a schema for policy-facing scope metadata, not a credential grant
-- tool execution is unchanged when capabilities are present unless a runtime `policy` evaluates them
-- credentials still resolve secret material separately through credential providers
+- `scopes` supports static policy-facing scope metadata
+- `params` validates request parameters for `.request(params)`
+- `scope(params)` maps a capability request to provider, resource, permissions, and credential name metadata
+- capability requests participate in policy request hashing and policy context
+- capability requests resolve through the existing `CredentialProvider` boundary as `CredentialRequest`s
+- raw `credentials(...)` remains supported for compatibility
 
 ## Event Factories And Replay Helpers
 

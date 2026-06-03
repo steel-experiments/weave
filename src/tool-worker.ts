@@ -10,6 +10,7 @@ import {
 } from "./credentials.js";
 import { eventKey, nowIso, type ThreadEvent } from "./events.js";
 import { internalTryPromise, runInternalEffect } from "./internal-effect.js";
+import { isCapabilityRequest, normalizeCapabilityDeclarations, type CapabilityDeclaration } from "./capability-contract.js";
 import {
   NoopObservabilitySink,
   ToolObserver,
@@ -245,7 +246,14 @@ export class ContractToolWorker {
     | { failed: false; events: ThreadEvent[]; credentials: ResolvedCredentials }
     | { failed: true; events: ThreadEvent[]; credentials: ResolvedCredentials; message: string }
   > {
-    const credentialRequests = normalizeCredentialRequests(tool.credentials?.({ input }));
+    const capabilityDeclarations = resolveToolCapabilities(tool, input);
+    const capabilityCredentialRequests = capabilityDeclarations
+      .filter(isCapabilityRequest)
+      .map((capability) => capability.credential);
+    const credentialRequests = [
+      ...capabilityCredentialRequests,
+      ...normalizeCredentialRequests(tool.credentials?.({ input })),
+    ];
     const events: ThreadEvent[] = [];
     const resolutions: CredentialResolution[] = [];
 
@@ -568,6 +576,12 @@ function normalizeCredentialRequests(
     return [...requests];
   }
   return [requests as CredentialRequest];
+}
+
+function resolveToolCapabilities(tool: AnyToolContract, input: unknown): CapabilityDeclaration[] {
+  return typeof tool.capabilities === "function"
+    ? normalizeCapabilityDeclarations(tool.capabilities({ input }))
+    : normalizeCapabilityDeclarations(tool.capabilities);
 }
 
 function summarizeToolOutput(tool: AnyToolContract, output: unknown): string | undefined {

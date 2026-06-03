@@ -12,6 +12,7 @@ import {
   defineWeaveApp,
   event,
   integration,
+  isCapabilityRequest,
   policy,
   tool,
   weave,
@@ -99,6 +100,10 @@ assert.equal(defineIntegration(echoIntegration), echoIntegration);
 assert.equal(defineWeaveApp(echoApp), echoApp);
 assert.equal(githubRead.name, "github.read");
 assert.equal(definedGitHubWrite.name, "github.write");
+const githubReadRequest = githubRead.request({ owner: "acme", repo: "agent-mailbox" });
+assert.equal(isCapabilityRequest(githubReadRequest), true);
+assert.equal(githubReadRequest.credential.name, "github.read");
+assert(Array.isArray(echoTool.capabilities));
 assert.equal(echoTool.capabilities?.[0], githubRead);
 assert.equal(allowEchoPolicy.name, "public-api.allow-echo");
 assert.equal(denyNothingPolicy.name, "public-api.deny-nothing");

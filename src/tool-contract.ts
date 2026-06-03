@@ -3,7 +3,7 @@ import type { ThreadArtifactStore } from "./artifacts.js";
 import type { CredentialRequest, ResolvedCredentials } from "./credentials.js";
 import type { ThreadEvent } from "./events.js";
 import type { ToolObserver } from "./observability.js";
-import type { AnyCapabilityContract } from "./capability-contract.js";
+import type { CapabilityDeclaration } from "./capability-contract.js";
 
 export type ToolCompletionOutput = {
   summary: string;
@@ -52,7 +52,9 @@ export type ToolContract<
   input: z.ZodType<Input>;
   output: z.ZodType<Output>;
   summarize?: (output: Output) => string;
-  capabilities?: readonly AnyCapabilityContract[];
+  capabilities?:
+    | readonly CapabilityDeclaration[]
+    | ((context: { input: Input }) => CapabilityDeclaration | readonly CapabilityDeclaration[] | undefined);
   gate?: (context: { input: Input }) => ManualToolGate | undefined;
   credentials?: (context: { input: Input }) => CredentialRequest | readonly CredentialRequest[] | undefined;
   run(context: ToolRunContext<Input>): Promise<Output> | Output;

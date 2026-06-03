@@ -126,11 +126,11 @@ A thread-native object representing work paused on approval, human input, or ano
 
 ### Capability
 
-A typed declaration of scoped access intent. Capability contracts can be attached to tools as metadata today so future policy enforcement can evaluate which resource scopes a tool may need.
+A typed declaration of scoped access intent. Capability contracts can be attached to tools as static metadata or requested from tool input with `.request(params)`.
 
-Capability contracts are not credentials. Credentials resolve secret material; capabilities describe authorized access intent and expected scope shape.
+Capability contracts are not credentials. Credentials resolve secret material; capabilities describe authorized access intent and expected scope shape. Capability requests map to existing credential provider requests when a tool needs secret material.
 
-Runtime request policies can inspect capability names during `ctx.tool` planning. Tool workers do not re-evaluate policies in the current architecture slice.
+Runtime request policies can inspect capability declarations and capability requests during `ctx.tool` planning. Tool workers do not re-evaluate policies; they use capability requests only to resolve credential material through the configured provider.
 
 ### Policy
 

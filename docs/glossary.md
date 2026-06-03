@@ -54,11 +54,15 @@ An observer or controller that listens to thread events and may trigger actions 
 
 ## Capability
 
-A typed declaration of scoped access intent, such as `github.read` for a specific owner and repository. Capabilities are metadata attached to tools and can be inspected by runtime request policies.
+A typed declaration of scoped access intent, such as `github.read` for a specific owner and repository. Capabilities can be static metadata attached to tools or input-derived capability requests inspected by runtime request policies.
 
 ## Capability Contract
 
-The formal declaration of a capability name, description, and schema-backed scope shape. Policy enforcement can later evaluate these contracts before allowing tool or integration work.
+The formal declaration of a capability name, description, and schema-backed scope or params shape. Capability contracts can produce scoped capability requests with `.request(params)`.
+
+## Capability Request
+
+An input-derived request for a capability. Capability requests validate params, participate in policy request hashing, and map to existing credential provider requests when a tool needs secret material.
 
 ## Policy
 
