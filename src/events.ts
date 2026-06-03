@@ -107,6 +107,33 @@ export const ToolFailedPayloadSchema = z.object({
   message: z.string().min(1),
 });
 
+export const TimerTargetSchema = z.union([
+  z.object({
+    type: z.literal("duration"),
+    durationMs: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("until"),
+    until: z.string().datetime(),
+  }),
+]);
+
+export const TimerScheduledPayloadSchema = z.object({
+  timerId: z.string().uuid(),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  requestedAt: z.string().datetime(),
+  fireAt: z.string().datetime(),
+  target: TimerTargetSchema,
+});
+
+export const TimerFiredPayloadSchema = z.object({
+  timerId: z.string().uuid(),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  fireAt: z.string().datetime(),
+});
+
 export const PolicyEvaluatedPayloadSchema = z.object({
   policyEvaluationId: z.string().uuid(),
   requestType: z.literal("tool").optional(),
@@ -174,6 +201,7 @@ export const RunnerResumedPayloadSchema = z.object({
     "new-prompt",
     "tool-completed",
     "gate-resolved",
+    "timer-fired",
     "child-spawned",
     "child-completed",
     "child-failed",
@@ -299,6 +327,16 @@ const ToolFailedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: ToolFailedPayloadSchema,
 });
 
+const TimerScheduledEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("timer.scheduled"),
+  payload: TimerScheduledPayloadSchema,
+});
+
+const TimerFiredEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("timer.fired"),
+  payload: TimerFiredPayloadSchema,
+});
+
 const PolicyEvaluatedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("policy.evaluated"),
   payload: PolicyEvaluatedPayloadSchema,
@@ -390,6 +428,8 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   ToolProgressEventSchema,
   ToolCompletedEventSchema,
   ToolFailedEventSchema,
+  TimerScheduledEventSchema,
+  TimerFiredEventSchema,
   PolicyEvaluatedEventSchema,
   CredentialRequestedEventSchema,
   CredentialResolvedEventSchema,

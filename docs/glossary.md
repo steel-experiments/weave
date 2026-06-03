@@ -44,6 +44,10 @@ The formal description of how a tool is invoked, how it reports progress, and ho
 
 A thread-native pause point that represents pending approval, human input, or another external dependency.
 
+## Timer
+
+A thread-native durable sleep point. Timers are recorded as `timer.scheduled`, become due at `fireAt`, and resume agents through `timer.fired` rather than in-process JavaScript timers.
+
 ## Interrupt
 
 A signal that normal execution should pause, wait, or be redirected.

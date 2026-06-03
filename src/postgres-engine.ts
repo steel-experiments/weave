@@ -495,6 +495,8 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       case "tool.requested":
       case "tool.completed":
       case "gate.resolved":
+      case "timer.scheduled":
+      case "timer.fired":
       case "child_thread.spawned":
       case "child_thread.completed":
       case "child_thread.failed":
@@ -543,14 +545,14 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
     seq: number,
     event: ThreadEvent,
   ): Promise<void> {
-    const consumers = consumersForEvent(event);
+    const routes = inboxRoutesForEvent(event);
 
-    for (const consumer of consumers) {
+    for (const route of routes) {
       await client.query(
-        `insert into weave.thread_inbox(thread_id, consumer, event_seq, state)
-         values ($1, $2, $3, 'pending')
+        `insert into weave.thread_inbox(thread_id, consumer, event_seq, state, visible_at)
+         values ($1, $2, $3, 'pending', coalesce($4::timestamptz, now()))
          on conflict (thread_id, consumer, event_seq) do nothing`,
-        [threadId, consumer, seq],
+        [threadId, route.consumer, seq, route.visibleAt ?? null],
       );
     }
   }
@@ -577,17 +579,25 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
   }
 }
 
-function consumersForEvent(event: ThreadEvent): InboxConsumer[] {
+type InboxRoute = {
+  consumer: InboxConsumer;
+  visibleAt?: string;
+};
+
+function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
   switch (event.type) {
     case "prompt.received":
     case "tool.completed":
     case "gate.resolved":
+    case "timer.fired":
     case "child_thread.spawned":
     case "child_thread.completed":
     case "child_thread.failed":
-      return ["runner"];
+      return [{ consumer: "runner" }];
+    case "timer.scheduled":
+      return [{ consumer: "runner", visibleAt: event.payload.fireAt }];
     case "tool.requested":
-      return ["tool-worker"];
+      return [{ consumer: "tool-worker" }];
     case "session.started":
     case "runner.resumed":
     case "agent.step.started":

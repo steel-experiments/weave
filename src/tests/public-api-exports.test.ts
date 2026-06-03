@@ -65,6 +65,7 @@ const echoAgent = agent({
   output: outputSchema,
   tools: [echoTool],
   async run(ctx, input) {
+    await ctx.sleep("brief-wait", { milliseconds: 0 });
     return ctx.tool("echo", echoTool, input);
   },
 });

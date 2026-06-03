@@ -134,6 +134,7 @@ interface AgentContext<Tools extends readonly AnyToolContract[] = readonly AnyTo
   join<Output>(key: string, thread: ThreadRef<Output>, options?: JoinOptions): Promise<AgentRun<Output>>;
   cancelChild(key: string, thread: ThreadRef, options?: CancelChildOptions): Promise<void>;
   children(options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
+  sleep(key: string, target: SleepTarget): Promise<void>;
   checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value>;
   emit(key: string, event: AgentEventInput): Promise<void>;
   id(key: string): string;
@@ -484,6 +485,7 @@ type SpawnOptions = {
 type JoinOptions = { throwOnFailure?: boolean };
 type ChildrenOptions = { includeDetached?: boolean; agentName?: string | readonly string[]; status?: ThreadProjection["status"] | readonly ThreadProjection["status"][] };
 type CancelChildOptions = { reason?: string; actor?: Actor };
+type SleepTarget = { milliseconds: number } | { seconds: number } | { minutes: number } | { until: string | Date };
 type CancelChildThreadInput = { parentThreadId: string; childThreadId: string; childAgentName?: string; parentScopeKey?: string; parentStepKey?: string; reason?: string; actor?: Actor };
 type CancelChildThreadResult = { childThreadId: string; cancelled: boolean; errorCode: "CHILD_CANCELLED" };
 type AgentRun<Output = unknown> =

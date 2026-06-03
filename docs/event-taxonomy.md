@@ -105,6 +105,8 @@ The PoC uses this event set.
 - `tool.progress`
 - `tool.completed`
 - `tool.failed`
+- `timer.scheduled`
+- `timer.fired`
 - `policy.evaluated`
 - `credential.requested`
 - `credential.resolved`
@@ -232,6 +234,45 @@ const ToolFailedPayload = z.object({
   message: z.string().min(1),
 })
 ```
+
+### Timer scheduled
+
+```ts
+const TimerTarget = z.union([
+  z.object({
+    type: z.literal("duration"),
+    durationMs: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("until"),
+    until: z.string().datetime(),
+  }),
+])
+
+const TimerScheduledPayload = z.object({
+  timerId: z.string().uuid(),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  requestedAt: z.string().datetime(),
+  fireAt: z.string().datetime(),
+  target: TimerTarget,
+})
+```
+
+`timer.scheduled` records a durable `ctx.sleep` request. For duration sleeps, `target.durationMs` is the replay identity and `fireAt` is derived from the first recorded `requestedAt`, not recomputed on replay.
+
+### Timer fired
+
+```ts
+const TimerFiredPayload = z.object({
+  timerId: z.string().uuid(),
+  scopeKey: z.string().min(1),
+  stepKey: z.string().min(1),
+  fireAt: z.string().datetime(),
+})
+```
+
+`timer.fired` records that a scheduled timer became due. It wakes the runner and lets `ctx.sleep` return on the next replay pass.
 
 ### Policy evaluated
 
@@ -368,6 +409,7 @@ const RunnerResumedPayload = z.object({
     "new-prompt",
     "tool-completed",
     "gate-resolved",
+    "timer-fired",
     "child-spawned",
     "child-completed",
     "child-failed",
@@ -496,6 +538,16 @@ const ToolCompletedEvent = EventEnvelopeBase.extend({
 const ToolFailedEvent = EventEnvelopeBase.extend({
   type: z.literal("tool.failed"),
   payload: ToolFailedPayload,
+})
+
+const TimerScheduledEvent = EventEnvelopeBase.extend({
+  type: z.literal("timer.scheduled"),
+  payload: TimerScheduledPayload,
+})
+
+const TimerFiredEvent = EventEnvelopeBase.extend({
+  type: z.literal("timer.fired"),
+  payload: TimerFiredPayload,
 })
 
 const CredentialRequestedEvent = EventEnvelopeBase.extend({

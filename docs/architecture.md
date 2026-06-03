@@ -124,6 +124,10 @@ An ephemeral process that acquires a thread, replays state, does bounded work, a
 
 A thread-native object representing work paused on approval, human input, or another external decision.
 
+### Timer
+
+A thread-native durable sleep point. `ctx.sleep` records `timer.scheduled`, the inbox delays runner visibility until `fireAt`, and the runner records `timer.fired` before replaying past the sleep.
+
 ### Capability
 
 A typed declaration of scoped access intent. Capability contracts can be attached to tools as static metadata or requested from tool input with `.request(params)`.

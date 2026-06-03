@@ -31,6 +31,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | `ctx.id` | Current deterministic ID helper |
 | `ctx.uuid` | Compatibility alias for `ctx.id` |
 | `ctx.gate` | Current approval effect |
+| `ctx.sleep` | Current durable timer effect |
 | `ctx.checkpoint` | Current local durable effect |
 | `ctx.spawn` | Current child-thread effect |
 | `ctx.join` | Current child-thread wait effect |
@@ -182,7 +183,7 @@ When an agent calls `await ctx.tool(...)`, the authoring model looks like ordina
 
 The thread is suspended. The JavaScript stack is not.
 
-When a relevant event arrives, such as `tool.completed`, the runner wakes and re-executes `agent.run` from the beginning. Completed durable effects return their recorded outputs. Pending effects suspend again. Missing effects append new events.
+When a relevant event arrives, such as `tool.completed`, `gate.resolved`, or `timer.fired`, the runner wakes and re-executes `agent.run` from the beginning. Completed durable effects return their recorded outputs. Pending effects suspend again. Missing effects append new events.
 
 Execution trace:
 
@@ -212,7 +213,7 @@ Pass 3:
   -> append final agent events
 ```
 
-A pending durable effect should not cause the runner to poll. The runner wakes when a relevant event is appended, such as `tool.completed` or `gate.resolved`. In V1, `tool.failed` is terminal for the thread and does not wake the runner.
+A pending durable effect should not cause the runner to poll. The runner wakes when a relevant event is appended, such as `tool.completed`, `gate.resolved`, or `timer.fired`. For `ctx.sleep`, the Postgres inbox delays the runner wake until the scheduled fire time. In V1, `tool.failed` is terminal for the thread and does not wake the runner.
 
 After a run-first agent appends terminal response or output events, later runner passes are idempotent and should append no duplicate terminal events.
 
@@ -278,6 +279,41 @@ Mismatch:
 
 - throw `ReplayMismatchError`
 
+## ctx.sleep Semantics
+
+`ctx.sleep(key, target)` records a durable timer and lets the runner resume after the target time. Supported targets are `{ milliseconds }`, `{ seconds }`, `{ minutes }`, and `{ until }` where `until` is an ISO datetime string or `Date`.
+
+```ts
+await ctx.sleep("cooldown", { seconds: 30 });
+await ctx.sleep("wait-for-window", { until: "2026-06-03T15:00:00.000Z" });
+```
+
+Missing:
+
+- append `timer.scheduled`
+- enqueue a delayed runner wake for the timer fire time when using the Postgres inbox
+- suspend the runner pass
+
+Pending:
+
+- append nothing
+- suspend again until the scheduled fire time
+
+Due:
+
+- append `timer.fired`
+- suspend the runner pass so the fired event becomes durable before continuing
+
+Fired:
+
+- return from `ctx.sleep` and continue agent execution
+
+Replay safety:
+
+- the stable key is reconciled like other durable effects
+- changing the timer target for an existing key raises `ReplayMismatchError`
+- duration targets store the original duration, not a moving wall-clock deadline, so replay does not mismatch just because time advanced
+
 ## Safe Code Inside agent.run
 
 Inside `agent.run`, do not perform external side effects directly. Use durable `ctx.*` operations.
@@ -289,6 +325,7 @@ Safe:
 - deterministic transformations
 - `ctx.tool`
 - `ctx.emit`
+- `ctx.sleep`
 - `ctx.checkpoint`
 - `ctx.gate`
 - later `ctx.spawn`

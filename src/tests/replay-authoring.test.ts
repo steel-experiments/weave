@@ -674,6 +674,95 @@ async function testPolicyEvaluationThrownErrorRecordsAgentFailure(): Promise<voi
   assert.equal(events.some((event) => event.type === "tool.requested"), false);
 }
 
+async function testSleepSchedulesAndPendingReplayDoesNotDuplicate(): Promise<void> {
+  const sleeper = agent({
+    name: "sleep-pending-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.sleep("cooldown", { until: "2999-01-01T00:00:00.000Z" });
+      return "awake";
+    },
+  });
+  const planner = createAgentPlanner(sleeper);
+  const history = initialHistory("sleep-pending");
+
+  const firstPlan = await planner.plan("sleep-pending", history);
+
+  assert(firstPlan);
+  assert.equal(firstPlan.events.length, 1);
+  const scheduled = firstPlan.events[0];
+  assert.equal(scheduled?.type, "timer.scheduled");
+  assert.equal(scheduled.scopeKey, "agent:sleep-pending-agent");
+  assert.equal(scheduled.stepKey, "cooldown");
+  assert.equal(scheduled.payload.fireAt, "2999-01-01T00:00:00.000Z");
+  assert.deepEqual(scheduled.payload.target, { type: "until", until: "2999-01-01T00:00:00.000Z" });
+
+  const replay = await planner.plan("sleep-pending", [...history, ...firstPlan.events]);
+  assert.equal(replay, null);
+}
+
+async function testSleepFiredResumesAgent(): Promise<void> {
+  const sleeper = agent({
+    name: "sleep-fired-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.sleep("cooldown", { until: "2000-01-01T00:00:00.000Z" });
+      return "awake";
+    },
+  });
+  const threadId = "sleep-fired";
+  const engine = new MemoryThreadEngine(initialHistory(threadId));
+  const runner = new ThreadRunner(engine, engine, createAgentPlanner(sleeper), "test-runner");
+
+  const scheduledRun = await runner.runOnce(threadId);
+  assert.equal(scheduledRun.acted, true);
+  assert.equal(scheduledRun.reason, "new-prompt");
+  let events = await engine.read(threadId);
+  assert.equal(events.some((event) => event.type === "timer.scheduled"), true);
+  assert.equal(events.some((event) => event.type === "timer.fired"), false);
+
+  const firedRun = await runner.runOnce(threadId);
+  assert.equal(firedRun.acted, true);
+  assert.equal(firedRun.reason, "timer-fired");
+  events = await engine.read(threadId);
+  assert.equal(events.filter((event) => event.type === "timer.fired").length, 1);
+  assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+
+  const completedRun = await runner.runOnce(threadId);
+  assert.equal(completedRun.acted, true);
+  assert.equal(completedRun.reason, "timer-fired");
+  events = await engine.read(threadId);
+  assert.equal(events.filter((event) => event.type === "timer.fired").length, 1);
+  assert.equal(events.some((event) => event.type === "agent.response.produced"), true);
+}
+
+async function testSleepTargetMismatch(): Promise<void> {
+  const firstSleeper = agent({
+    name: "sleep-mismatch-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.sleep("cooldown", { seconds: 30 });
+      return "awake";
+    },
+  });
+  const changedSleeper = agent({
+    name: "sleep-mismatch-agent",
+    input: inputSchema,
+    async run(ctx) {
+      await ctx.sleep("cooldown", { seconds: 60 });
+      return "awake";
+    },
+  });
+  const history = initialHistory("sleep-mismatch");
+  const firstPlan = await createAgentPlanner(firstSleeper).plan("sleep-mismatch", history);
+  assert(firstPlan);
+
+  await assert.rejects(
+    async () => createAgentPlanner(changedSleeper).plan("sleep-mismatch", [...history, ...firstPlan.events]),
+    (error: unknown) => error instanceof ReplayMismatchError && error.message.includes("different target"),
+  );
+}
+
 async function testCompletedRunFirstAgentIsTerminal(): Promise<void> {
   const threadId = "completed-run-first-agent-is-terminal";
   const terminalAgent = agent({
@@ -3392,6 +3481,9 @@ await testPolicyOrderingAllowThenDeny();
 await testPolicyOrderingAllowThenApproval();
 await testPolicyVersionAuditDoesNotBreakReplay();
 await testPolicyEvaluationThrownErrorRecordsAgentFailure();
+await testSleepSchedulesAndPendingReplayDoesNotDuplicate();
+await testSleepFiredResumesAgent();
+await testSleepTargetMismatch();
 await testCompletedRunFirstAgentIsTerminal();
 await testRunnerReadsFullReplayHistory();
 await testDecodeFailure();

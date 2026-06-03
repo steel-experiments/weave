@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-core`
 
@@ -61,33 +61,38 @@ Final syntax should be chosen during implementation.
 
 ## Acceptance Criteria
 
-- [ ] `ctx.sleep` or equivalent durable timer helper exists.
-- [ ] Timer identity is stable and replay-safe.
-- [ ] Pending timers do not duplicate events.
-- [ ] Fired timers resume agent execution.
-- [ ] Timer mismatch raises `ReplayMismatchError`.
-- [ ] Docs explain durable timer limitations.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] `ctx.sleep` or equivalent durable timer helper exists.
+- [x] Timer identity is stable and replay-safe.
+- [x] Pending timers do not duplicate events.
+- [x] Fired timers resume agent execution.
+- [x] Timer mismatch raises `ReplayMismatchError`.
+- [x] Docs explain durable timer limitations.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Design timer event taxonomy.
-- [ ] Implement context helper.
-- [ ] Implement wake/resume path.
-- [ ] Add tests.
-- [ ] Update docs.
-- [ ] Run verification.
+- [x] Design timer event taxonomy.
+- [x] Implement context helper.
+- [x] Implement wake/resume path.
+- [x] Add tests.
+- [x] Update docs.
+- [x] Run verification.
 
 ## Completion Notes
 
-Fill this in when shipped.
+- Added `ctx.sleep(key, target)` with `{ milliseconds }`, `{ seconds }`, `{ minutes }`, and `{ until }` targets.
+- Added `timer.scheduled` and `timer.fired` event schemas.
+- Replay behavior matches other durable effects: missing sleeps schedule and suspend, pending sleeps append nothing, due sleeps append `timer.fired`, and fired sleeps return.
+- Duration sleeps store the original duration in the scheduled event, so replay does not mismatch only because wall-clock time advanced.
+- Changed timer targets for an existing key raise `ReplayMismatchError`.
+- Postgres inbox routing gives `timer.scheduled` a delayed runner-visible inbox item at `fireAt`; `timer.fired` wakes the runner immediately for the continuation pass.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/architecture.md`
-- [ ] `docs/glossary.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/architecture.md`
+- [x] `docs/glossary.md`

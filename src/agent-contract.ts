@@ -54,6 +54,12 @@ export type CancelChildOptions = {
   actor?: Actor;
 };
 
+export type SleepTarget =
+  | { milliseconds: number }
+  | { seconds: number }
+  | { minutes: number }
+  | { until: string | Date };
+
 export type AgentRun<Output = unknown> =
   | {
       status: "completed";
@@ -165,6 +171,7 @@ export type AgentContext<
   join<Output>(key: string, thread: ThreadRef<Output>, options?: JoinOptions): Promise<AgentRun<Output>>;
   cancelChild(key: string, thread: ThreadRef, options?: CancelChildOptions): Promise<void>;
   children(options?: ChildrenOptions): Promise<readonly ThreadRef[]>;
+  sleep(key: string, target: SleepTarget): Promise<void>;
   checkpoint<Value>(key: string, compute: () => MaybePromise<Value>): Promise<Value>;
   emit(key: string, event: EventInstance): Promise<void>;
   id(key: string): string;

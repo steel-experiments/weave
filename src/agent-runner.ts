@@ -9,6 +9,7 @@ import type {
   GateRequest,
   GateResolution,
   JoinOptions,
+  SleepTarget,
   SpawnOptions,
   ThreadRef,
   ToolCallOptions,
@@ -53,6 +54,9 @@ type SuspensionReason =
   | "tool-pending"
   | "gate-created"
   | "gate-pending"
+  | "timer-scheduled"
+  | "timer-pending"
+  | "timer-fired"
   | "spawn-created"
   | "join-pending"
   | "cancel-child-created";
@@ -535,6 +539,42 @@ class ReplayAgentContext implements AgentContext {
     return this.options.service.listChildren(this.threadId, options);
   }
 
+  async sleep(key: string, target: SleepTarget): Promise<void> {
+    const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
+    if (matchingEvent && matchingEvent.type !== "timer.scheduled") {
+      throw new ReplayMismatchError("Durable step key was previously used for a different effect kind", {
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        existingType: matchingEvent.type,
+        requestedType: "timer.scheduled",
+      });
+    }
+
+    const targetIdentity = normalizeSleepTarget(target);
+    const scheduled = matchingEvent?.type === "timer.scheduled" ? matchingEvent : undefined;
+    if (scheduled) {
+      if (canonicalJson(scheduled.payload.target) !== canonicalJson(targetIdentity.target)) {
+        throw new ReplayMismatchError("Durable timer key was previously used with a different target", {
+          scopeKey: this.scopeKey,
+          stepKey: key,
+          eventType: "timer.scheduled",
+        });
+      }
+
+      if (findTimerFiredEvent(this.options.events, scheduled.payload.timerId)) {
+        return;
+      }
+
+      if (Date.parse(scheduled.payload.fireAt) <= Date.now()) {
+        this.suspend("timer", key, "timer-fired", [this.timerFiredEvent(scheduled)]);
+      }
+
+      this.suspend("timer", key, "timer-pending", []);
+    }
+
+    this.suspend("timer", key, "timer-scheduled", [this.timerScheduledEvent(key, targetIdentity)]);
+  }
+
   async checkpoint<Value>(key: string, compute: () => Promise<Value> | Value): Promise<Value> {
     const matchingEvent = findEventByDurableIdentity(this.options.events, this.scopeKey, key);
     if (matchingEvent) {
@@ -988,6 +1028,54 @@ class ReplayAgentContext implements AgentContext {
     };
   }
 
+  private timerScheduledEvent(
+    key: string,
+    targetIdentity: NormalizedSleepTarget,
+  ): Extract<ThreadEvent, { type: "timer.scheduled" }> {
+    const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
+    return {
+      eventId: eventKey(this.threadId, "timer.scheduled", `${this.scopeKey}:${key}`),
+      threadId: this.threadId,
+      type: "timer.scheduled",
+      occurredAt: targetIdentity.requestedAt,
+      correlationId: cause?.correlationId,
+      causationId: cause?.eventId,
+      scopeKey: this.scopeKey,
+      stepKey: key,
+      actor: this.actor,
+      payload: {
+        timerId: deterministicUuid("timer", this.threadId, this.scopeKey, key),
+        scopeKey: this.scopeKey,
+        stepKey: key,
+        requestedAt: targetIdentity.requestedAt,
+        fireAt: targetIdentity.fireAt,
+        target: targetIdentity.target,
+      },
+    };
+  }
+
+  private timerFiredEvent(
+    scheduled: Extract<ThreadEvent, { type: "timer.scheduled" }>,
+  ): Extract<ThreadEvent, { type: "timer.fired" }> {
+    return {
+      eventId: eventKey(this.threadId, "timer.fired", `${this.scopeKey}:${scheduled.stepKey ?? scheduled.payload.stepKey}:${scheduled.payload.timerId}`),
+      threadId: this.threadId,
+      type: "timer.fired",
+      occurredAt: nowIso(),
+      correlationId: scheduled.correlationId,
+      causationId: scheduled.eventId,
+      scopeKey: this.scopeKey,
+      stepKey: scheduled.stepKey ?? scheduled.payload.stepKey,
+      actor: { type: "system", id: "timer" },
+      payload: {
+        timerId: scheduled.payload.timerId,
+        scopeKey: scheduled.payload.scopeKey,
+        stepKey: scheduled.payload.stepKey,
+        fireAt: scheduled.payload.fireAt,
+      },
+    };
+  }
+
   private spawnExpectedPayload(
     key: string,
     childAgentName: string,
@@ -1098,6 +1186,66 @@ function findGateResolvedEvent(
   );
 }
 
+function findTimerFiredEvent(
+  events: readonly ThreadEvent[],
+  timerId: string,
+): Extract<ThreadEvent, { type: "timer.fired" }> | undefined {
+  return events.find(
+    (event): event is Extract<ThreadEvent, { type: "timer.fired" }> =>
+      event.type === "timer.fired" && event.payload.timerId === timerId,
+  );
+}
+
+type NormalizedSleepTarget = {
+  requestedAt: string;
+  fireAt: string;
+  target: Extract<ThreadEvent, { type: "timer.scheduled" }>["payload"]["target"];
+};
+
+function normalizeSleepTarget(target: SleepTarget): NormalizedSleepTarget {
+  const requestedAt = nowIso();
+  const targetRecord = target as Record<string, unknown>;
+  const present = ["milliseconds", "seconds", "minutes", "until"].filter((key) => targetRecord[key] !== undefined);
+  if (present.length !== 1) {
+    throw new WeaveError("TIMER_TARGET_INVALID", "ctx.sleep target must specify exactly one time target", { target });
+  }
+
+  if (targetRecord.until !== undefined) {
+    const until = targetRecord.until instanceof Date ? targetRecord.until : new Date(String(targetRecord.until));
+    if (Number.isNaN(until.getTime())) {
+      throw new WeaveError("TIMER_TARGET_INVALID", "ctx.sleep until target must be a valid datetime", { target });
+    }
+    const fireAt = until.toISOString();
+    return {
+      requestedAt,
+      fireAt,
+      target: { type: "until", until: fireAt },
+    };
+  }
+
+  const durationMs = durationMilliseconds(targetRecord);
+  const fireAt = new Date(Date.parse(requestedAt) + durationMs).toISOString();
+  return {
+    requestedAt,
+    fireAt,
+    target: { type: "duration", durationMs },
+  };
+}
+
+function durationMilliseconds(target: Record<string, unknown>): number {
+  const multiplier = target.milliseconds !== undefined ? 1 : target.seconds !== undefined ? 1_000 : 60_000;
+  const value = target.milliseconds ?? target.seconds ?? target.minutes;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new WeaveError("TIMER_TARGET_INVALID", "ctx.sleep duration target must be a non-negative number", { target });
+  }
+
+  const durationMs = value * multiplier;
+  if (!Number.isInteger(durationMs)) {
+    throw new WeaveError("TIMER_TARGET_INVALID", "ctx.sleep duration target must resolve to whole milliseconds", { target });
+  }
+  return durationMs;
+}
+
 type EvaluatedPolicyDecision = {
   policy: AnyPolicyRule;
   decision: PolicyDecision;
@@ -1166,6 +1314,10 @@ function resumeReasonFor(event: ThreadEvent | undefined): AgentPlan["resumeReaso
 
   if (event?.type === "gate.resolved") {
     return "gate-resolved";
+  }
+
+  if (event?.type === "timer.scheduled" || event?.type === "timer.fired") {
+    return "timer-fired";
   }
 
   if (event?.type === "child_thread.spawned") {

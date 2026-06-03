@@ -20,7 +20,14 @@ export type RunnerStepResult = {
 };
 
 export type AgentPlan = {
-  resumeReason: "new-prompt" | "tool-completed" | "gate-resolved" | "child-spawned" | "child-completed" | "child-failed";
+  resumeReason:
+    | "new-prompt"
+    | "tool-completed"
+    | "gate-resolved"
+    | "timer-fired"
+    | "child-spawned"
+    | "child-completed"
+    | "child-failed";
   events: ThreadEvent[];
 };
 
