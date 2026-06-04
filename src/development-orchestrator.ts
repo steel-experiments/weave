@@ -24,6 +24,7 @@ import {
   DevSliceStartedPayloadSchema,
   DevVerificationCompletedPayloadSchema,
   DevCommandResultSchema,
+  type DevReviewFinding,
 } from "./events.js";
 import { tool } from "./tool-contract.js";
 import { WorkspaceRefSchema, workspaceDiffCapability } from "./workspace-provider.js";
@@ -312,16 +313,20 @@ export type SliceDecision = z.infer<typeof SliceDecisionSchema>;
 
 export const RepairAgentInputSchema = z.object({
   branch: NonEmptyStringSchema,
+  workspaceRef: WorkspaceRefSchema,
   slice: DevelopmentSliceInputSchema,
   attempt: z.number().int().nonnegative(),
+  maxAttempts: z.number().int().positive().default(2),
   failingCommands: z.array(DevCommandResultSchema).default([]),
   findings: z.array(DevReviewFindingSchema),
 });
-export type RepairAgentInput = z.infer<typeof RepairAgentInputSchema>;
+export type RepairAgentInput = z.input<typeof RepairAgentInputSchema>;
 
 export const RepairResultSchema = z.object({
   status: z.enum(["completed", "failed", "blocked"]),
   attempt: z.number().int().nonnegative(),
+  branch: NonEmptyStringSchema.optional(),
+  workspaceRef: WorkspaceRefSchema.optional(),
   filesChanged: z.array(NonEmptyStringSchema).default([]),
   fixesAttempted: z.array(NonEmptyStringSchema).default([]),
   findingsAddressed: z.array(DevReviewFindingSchema).default([]),
@@ -329,6 +334,24 @@ export const RepairResultSchema = z.object({
   summary: NonEmptyStringSchema,
 });
 export type RepairResult = z.infer<typeof RepairResultSchema>;
+
+export const RepairLoopDecisionSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("attempt-repair"),
+    attempt: z.number().int().nonnegative(),
+    repairKey: NonEmptyStringSchema,
+  }),
+  z.object({
+    status: z.literal("human-gate"),
+    reason: NonEmptyStringSchema,
+    findings: z.array(DevReviewFindingSchema).default([]),
+  }),
+]);
+export type RepairLoopDecision = z.infer<typeof RepairLoopDecisionSchema>;
+
+export type RepairRunner = {
+  run(input: z.infer<typeof RepairAgentInputSchema>): Promise<RepairResult> | RepairResult;
+};
 
 export const PrDraftResultSchema = z.object({
   title: NonEmptyStringSchema,
@@ -494,6 +517,34 @@ export function createReviewerTool(runner: ReviewerRunner) {
     async run(ctx) {
       const result = await runner.run(ReviewerAgentInputSchema.parse(ctx.input));
       return ReviewResultSchema.parse(result);
+    },
+  });
+}
+
+export function createRepairTool(runner: RepairRunner) {
+  return tool({
+    name: "dev.opencode.repair",
+    description: "Run OpenCode to repair only supplied verification failures and reviewer findings.",
+    input: RepairAgentInputSchema,
+    output: RepairResultSchema,
+    capabilities(context) {
+      return [
+        repoReadCapability.request({ repo: context.input.workspaceRef.repo, paths: [context.input.workspaceRef.path] }),
+        repoWriteBranchCapability.request({
+          repo: context.input.workspaceRef.repo,
+          branch: context.input.branch,
+          workspaceId: context.input.workspaceRef.workspaceId,
+        }),
+        opencodeRunCapability.request({ workspaceId: context.input.workspaceRef.workspaceId, agentRole: "repair" }),
+        boundedShellCapability.request({ workspaceId: context.input.workspaceRef.workspaceId, purpose: "repair" }),
+      ];
+    },
+    summarize(output) {
+      return output.summary;
+    },
+    async run(ctx) {
+      const result = await runner.run(RepairAgentInputSchema.parse(ctx.input));
+      return RepairResultSchema.parse(result);
     },
   });
 }
@@ -842,6 +893,115 @@ export function createVerificationAgent(options: {
         }),
       );
       return checkpointed;
+    },
+  });
+}
+
+export function repairAttemptKey(attempt: number): string {
+  return `repair:${attempt}`;
+}
+
+export function decideRepairLoop(input: {
+  currentAttempt: number;
+  maxAttempts: number;
+  findings: readonly DevReviewFinding[];
+  highRiskFiles?: readonly string[];
+}): RepairLoopDecision {
+  const highRiskFinding = input.findings.find((finding) => {
+    if (finding.severity === "high") {
+      return true;
+    }
+    return Boolean(finding.file && input.highRiskFiles?.some((highRiskFile) => pathMatchesAllowedFile(finding.file!, highRiskFile)));
+  });
+
+  if (highRiskFinding) {
+    return RepairLoopDecisionSchema.parse({
+      status: "human-gate",
+      reason: `High-risk repair requires human approval: ${highRiskFinding.issue}`,
+      findings: input.findings,
+    });
+  }
+
+  if (input.currentAttempt >= input.maxAttempts) {
+    return RepairLoopDecisionSchema.parse({
+      status: "human-gate",
+      reason: `Repair attempts exhausted after ${input.currentAttempt} attempt(s).`,
+      findings: input.findings,
+    });
+  }
+
+  return RepairLoopDecisionSchema.parse({
+    status: "attempt-repair",
+    attempt: input.currentAttempt,
+    repairKey: repairAttemptKey(input.currentAttempt),
+  });
+}
+
+export function createRepairAgent(options: {
+  name?: string;
+  description?: string;
+  runner: RepairRunner;
+}) {
+  const repairTool = createRepairTool(options.runner);
+
+  return agent({
+    name: options.name ?? "weave.opencodeRepair",
+    description: options.description ?? "Runs bounded OpenCode repair for supplied verification failures and reviewer findings.",
+    input: RepairAgentInputSchema,
+    output: RepairResultSchema,
+    tools: [repairTool],
+    async run(ctx, rawInput) {
+      const input = RepairAgentInputSchema.parse(rawInput);
+      const attemptCount = await ctx.checkpoint(DevelopmentCheckpointKeys.repairAttemptCount, () => input.attempt);
+      const decision = decideRepairLoop({
+        currentAttempt: attemptCount,
+        maxAttempts: input.maxAttempts,
+        findings: input.findings,
+        highRiskFiles: ["src/events.ts", "src/postgres-engine.ts", "src/capability-contract.ts", "src/policy-contract.ts"],
+      });
+
+      if (decision.status === "human-gate") {
+        await ctx.gate("repair-stop", {
+          reason: "repair-stop",
+          proposedAction: decision.reason,
+        });
+        return RepairResultSchema.parse({
+          status: "blocked",
+          attempt: input.attempt,
+          branch: input.branch,
+          workspaceRef: input.workspaceRef,
+          summary: decision.reason,
+          limitations: ["Repair stopped for human decision."],
+        });
+      }
+
+      await ctx.emit(
+        `repair-started:${input.slice.id}:${decision.repairKey}`,
+        developmentEvents.repairStarted({
+          sliceId: input.slice.id,
+          branch: input.branch,
+          attempt: decision.attempt,
+          findings: input.findings,
+        }),
+      );
+
+      const repairResult = await ctx.tool(decision.repairKey, repairTool, input);
+      await ctx.emit(
+        `repair-completed:${input.slice.id}:${decision.repairKey}`,
+        developmentEvents.repairCompleted({
+          sliceId: input.slice.id,
+          branch: input.branch,
+          attempt: repairResult.attempt,
+          status: repairResult.status,
+          summary: repairResult.summary,
+        }),
+      );
+
+      return RepairResultSchema.parse({
+        ...repairResult,
+        branch: repairResult.branch ?? input.branch,
+        workspaceRef: repairResult.workspaceRef ?? input.workspaceRef,
+      });
     },
   });
 }

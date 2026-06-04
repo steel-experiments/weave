@@ -26,11 +26,15 @@ import {
   weaveSliceRunner,
   createOpenCodeImplementerAgent,
   createOpenCodeImplementationTool,
+  createRepairAgent,
+  createRepairTool,
   createReviewerAgent,
   createVerificationAgent,
+  decideRepairLoop,
   GitWorktreeWorkspaceProvider,
   WorkspaceRefSchema,
   createWorkspaceAllocateTool,
+  repairAttemptKey,
 } from "weave";
 import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
@@ -142,6 +146,10 @@ assert.equal(typeof createOpenCodeImplementerAgent, "function");
 assert.equal(typeof createOpenCodeImplementationTool, "function");
 assert.equal(typeof createVerificationAgent, "function");
 assert.equal(typeof createReviewerAgent, "function");
+assert.equal(typeof createRepairAgent, "function");
+assert.equal(typeof createRepairTool, "function");
+assert.equal(repairAttemptKey(1), "repair:1");
+assert.equal(decideRepairLoop({ currentAttempt: 0, maxAttempts: 1, findings: [{ severity: "low", issue: "test" }] }).status, "attempt-repair");
 assert.equal(typeof GitWorktreeWorkspaceProvider, "function");
 assert.equal(typeof WorkspaceRefSchema.parse, "function");
 assert.equal(createWorkspaceAllocateTool(new GitWorktreeWorkspaceProvider()).name, "workspace.allocate");

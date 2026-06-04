@@ -12,6 +12,8 @@ import {
   buildDevelopmentSlicePlan,
   createOpenCodeImplementationTool,
   createOpenCodeImplementerAgent,
+  createRepairAgent,
+  createRepairTool,
   createReviewerAgent,
   createReviewerTool,
   createVerificationAgent,
@@ -19,11 +21,13 @@ import {
   developmentBranchStateReadTool,
   developmentRepoContextReadTool,
   developmentEvents,
+  decideRepairLoop,
   evaluateOpenCodeImplementerInput,
   evaluateSliceReadinessForCompletion,
   evaluateSliceBranchState,
   outOfScopeImplementationFiles,
   readDevelopmentRepoContext,
+  repairAttemptKey,
   weaveMaintainer,
   weaveSliceRunner,
 } from "../development-orchestrator.js";
@@ -158,6 +162,8 @@ assert.equal(
 const repair = RepairResultSchema.parse({
   status: "completed",
   attempt: 0,
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
   fixesAttempted: ["Added min length validation."],
   findingsAddressed: review.findings,
   summary: "Validation fixed.",
@@ -628,6 +634,136 @@ assert.equal(
   }).status,
   "blocked",
 );
+
+assert.equal(repairAttemptKey(0), "repair:0");
+assert.deepEqual(decideRepairLoop({ currentAttempt: 0, maxAttempts: 2, findings: review.findings }), {
+  status: "attempt-repair",
+  attempt: 0,
+  repairKey: "repair:0",
+});
+assert.equal(decideRepairLoop({ currentAttempt: 2, maxAttempts: 2, findings: review.findings }).status, "human-gate");
+assert.equal(
+  decideRepairLoop({
+    currentAttempt: 0,
+    maxAttempts: 2,
+    findings: [{ severity: "high", issue: "Touches credentials.", file: "src/credentials.ts" }],
+  }).status,
+  "human-gate",
+);
+
+const repairInput = {
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
+  slice: initiative.slices[0]!,
+  attempt: 0,
+  maxAttempts: 2,
+  failingCommands: verificationResult.commands,
+  findings: review.findings,
+};
+const repairResult = {
+  status: "completed" as const,
+  attempt: 0,
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
+  filesChanged: ["src/example.ts"],
+  fixesAttempted: ["Fixed validation."],
+  findingsAddressed: review.findings,
+  limitations: [],
+  summary: "Repair completed.",
+};
+const repairTool = createRepairTool({
+  run(input) {
+    assert.equal(input.workspaceRef.workspaceId, workspaceRef.workspaceId);
+    assert.equal(input.attempt, 0);
+    return repairResult;
+  },
+});
+assert.equal(repairTool.name, "dev.opencode.repair");
+
+const repairAgent = createRepairAgent({ runner: { run: () => repairResult } });
+const repairThreadId = "repair-agent-boundary";
+const repairHistory = createInitialHistory(repairThreadId, repairInput, repairAgent.name);
+const repairPlanner = createAgentPlanner(repairAgent);
+const repairFirstPlan = await repairPlanner.plan(repairThreadId, repairHistory);
+assert(repairFirstPlan);
+assert.equal(repairFirstPlan.events.some((candidate) => candidate.type === "dev.repair.started"), true);
+const repairRequest = repairFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(repairRequest);
+assert.equal(repairRequest.stepKey, "repair:0");
+assert.equal(repairRequest.payload.toolName, "dev.opencode.repair");
+
+const repairCompletedTool: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(repairThreadId, "tool.completed", "repair:0"),
+  threadId: repairThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: repairRequest.correlationId,
+  causationId: repairRequest.eventId,
+  scopeKey: repairRequest.scopeKey,
+  stepKey: repairRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: repairRequest.payload.toolCallId,
+    output: repairResult,
+  },
+};
+const repairFinishedPlan = await repairPlanner.plan(repairThreadId, [...repairHistory, ...repairFirstPlan.events, repairCompletedTool]);
+assert(repairFinishedPlan);
+assert.equal(repairFinishedPlan.events.some((candidate) => candidate.type === "dev.repair.completed"), true);
+const repairOutput = repairFinishedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(repairOutput);
+assert.equal((repairOutput.payload.output as { status: string }).status, "completed");
+
+const exhaustedRepairAgent = createRepairAgent({
+  runner: {
+    run() {
+      throw new Error("runner should not execute after exhausted attempts");
+    },
+  },
+});
+const exhaustedThreadId = "repair-agent-exhausted";
+const exhaustedInput = { ...repairInput, attempt: 2, maxAttempts: 2 };
+const exhaustedHistory = createInitialHistory(exhaustedThreadId, exhaustedInput, exhaustedRepairAgent.name);
+const exhaustedFirstPlan = await createAgentPlanner(exhaustedRepairAgent).plan(exhaustedThreadId, exhaustedHistory);
+assert(exhaustedFirstPlan);
+assert.equal(exhaustedFirstPlan.events.some((candidate) => candidate.type === "tool.requested"), false);
+const repairGate = exhaustedFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
+  candidate.type === "gate.created",
+);
+assert(repairGate);
+assert.equal(repairGate.payload.reason, "repair-stop");
+
+const repairGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  eventId: eventKey(exhaustedThreadId, "gate.resolved", "repair-stop"),
+  threadId: exhaustedThreadId,
+  type: "gate.resolved",
+  occurredAt: nowIso(),
+  correlationId: repairGate.correlationId,
+  causationId: repairGate.eventId,
+  scopeKey: repairGate.scopeKey,
+  stepKey: repairGate.stepKey,
+  actor: { type: "human", id: "maintainer" },
+  payload: {
+    gateId: repairGate.payload.gateId,
+    resolution: "denied",
+    comment: "stop repair",
+  },
+};
+const exhaustedFinishedPlan = await createAgentPlanner(exhaustedRepairAgent).plan(exhaustedThreadId, [
+  ...exhaustedHistory,
+  ...exhaustedFirstPlan.events,
+  repairGateResolved,
+]);
+assert(exhaustedFinishedPlan);
+const exhaustedOutput = exhaustedFinishedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(exhaustedOutput);
+assert.equal((exhaustedOutput.payload.output as { status: string }).status, "blocked");
 
 console.log("Development orchestrator contract tests passed");
 
