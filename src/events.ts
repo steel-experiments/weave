@@ -324,6 +324,47 @@ export const DevInitiativeStartedPayloadSchema = z.object({
   contextFiles: z.array(z.string().min(1)),
 });
 
+export const DevInitiativeSpecReceivedPayloadSchema = z.object({
+  title: z.string().min(1),
+  source: z.enum(["prd", "statement-of-work", "prompt", "markdown", "manual"]),
+  summary: z.string().min(1).optional(),
+  goals: z.array(z.string().min(1)).default([]),
+  acceptanceCriteria: z.array(z.string().min(1)).default([]),
+  contextFiles: z.array(z.string().min(1)).default([]),
+});
+
+export const DevInitiativePlanProposedPayloadSchema = z.object({
+  initiative: z.string().min(1),
+  repo: z.string().min(1),
+  workingBranch: z.string().min(1),
+  revision: z.number().int().positive(),
+  sliceCount: z.number().int().positive(),
+  summary: z.string().min(1),
+});
+
+export const DevInitiativePlanRevisedPayloadSchema = z.object({
+  initiative: z.string().min(1),
+  revision: z.number().int().positive(),
+  sliceCount: z.number().int().positive(),
+  summary: z.string().min(1),
+  reason: z.string().min(1),
+});
+
+export const DevInitiativePlanApprovedPayloadSchema = z.object({
+  initiative: z.string().min(1),
+  revision: z.number().int().positive(),
+  approvedBy: z.string().min(1),
+  sliceCount: z.number().int().positive(),
+  summary: z.string().min(1),
+});
+
+export const DevInitiativePlanRejectedPayloadSchema = z.object({
+  initiative: z.string().min(1),
+  revision: z.number().int().positive(),
+  rejectedBy: z.string().min(1),
+  reason: z.string().min(1),
+});
+
 export const DevSliceProposedPayloadSchema = z.object({
   sliceId: z.string().min(1),
   title: z.string().min(1),
@@ -579,6 +620,31 @@ const DevInitiativeStartedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: DevInitiativeStartedPayloadSchema,
 });
 
+const DevInitiativeSpecReceivedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.initiative.spec_received"),
+  payload: DevInitiativeSpecReceivedPayloadSchema,
+});
+
+const DevInitiativePlanProposedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.initiative.plan_proposed"),
+  payload: DevInitiativePlanProposedPayloadSchema,
+});
+
+const DevInitiativePlanRevisedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.initiative.plan_revised"),
+  payload: DevInitiativePlanRevisedPayloadSchema,
+});
+
+const DevInitiativePlanApprovedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.initiative.plan_approved"),
+  payload: DevInitiativePlanApprovedPayloadSchema,
+});
+
+const DevInitiativePlanRejectedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.initiative.plan_rejected"),
+  payload: DevInitiativePlanRejectedPayloadSchema,
+});
+
 const DevSliceProposedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("dev.slice.proposed"),
   payload: DevSliceProposedPayloadSchema,
@@ -681,6 +747,11 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   ChildThreadCompletedEventSchema,
   ChildThreadFailedEventSchema,
   DevInitiativeStartedEventSchema,
+  DevInitiativeSpecReceivedEventSchema,
+  DevInitiativePlanProposedEventSchema,
+  DevInitiativePlanRevisedEventSchema,
+  DevInitiativePlanApprovedEventSchema,
+  DevInitiativePlanRejectedEventSchema,
   DevSliceProposedEventSchema,
   DevSliceApprovedEventSchema,
   DevSliceStartedEventSchema,

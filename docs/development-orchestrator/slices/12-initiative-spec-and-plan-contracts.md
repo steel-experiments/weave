@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
@@ -72,30 +72,38 @@ The first contract should support:
 
 ## Acceptance Criteria
 
-- [ ] `InitiativeSpec` schema exists and is exported from the development orchestrator boundary.
-- [ ] `InitiativePlan` schema exists and includes ordered slice proposals.
-- [ ] Plan proposal, revision, approval, and rejection events are documented or typed.
-- [ ] Checkpoints for spec, proposed plan, approved plan, and decision state are documented or implemented.
-- [ ] Tests cover valid and invalid specs/plans.
-- [ ] Existing orchestrator behavior remains unchanged.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `git diff --check` passes.
+- [x] `InitiativeSpec` schema exists and is exported from the development orchestrator boundary.
+- [x] `InitiativePlan` schema exists and includes ordered slice proposals.
+- [x] Plan proposal, revision, approval, and rejection events are documented or typed.
+- [x] Checkpoints for spec, proposed plan, approved plan, and decision state are documented or implemented.
+- [x] Tests cover valid and invalid specs/plans.
+- [x] Existing orchestrator behavior remains unchanged.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `git diff --check` passes.
 
 ## Progress
 
-- [ ] Add schemas.
-- [ ] Add event/checkpoint vocabulary.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Add schemas.
+- [x] Add event/checkpoint vocabulary.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `InitiativeSpecSchema` for PRD/SOW intake with title, raw statement of work, goals, non-goals, constraints, acceptance criteria, risks, implementation hints, affected areas, context files, source, and metadata.
+- Added `InitiativePlanSchema` as the orchestrator-authored plan contract over the existing development slice plan shape.
+- Extended development slice proposals with `expectedTouchpoints` and `verificationStrategy` defaults.
+- Added plan-level metadata for spec title, goals, non-goals, constraints, acceptance criteria, risks, affected areas, revision, revision history, approval status, and decision state.
+- Added checkpoint keys: `initiative-spec`, `proposed-initiative-plan`, `approved-initiative-plan`, and `latest-plan-decision`.
+- Added typed planning events: `dev.initiative.spec_received`, `dev.initiative.plan_proposed`, `dev.initiative.plan_revised`, `dev.initiative.plan_approved`, and `dev.initiative.plan_rejected`.
+- Added contract tests for valid/invalid specs, enriched plans, planning checkpoints, and planning events in `ThreadEventSchema`.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: this slice defines contracts only. Slice 13 will add the PRD-to-slices compiler that produces these plans.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `README.md`
-- [ ] event taxonomy docs if new public events are added
+- [x] this slice document
+- [x] `../README.md`
+- [x] `README.md`
+- [x] event taxonomy docs if new public events are added

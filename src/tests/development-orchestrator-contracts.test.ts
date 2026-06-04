@@ -5,6 +5,8 @@ import {
   DevelopmentBlockedRunnerError,
   DevelopmentSlicePlanSchema,
   DevelopmentWorkspacePolicySchema,
+  InitiativePlanSchema,
+  InitiativeSpecSchema,
   InitiativeExecutionStateSchema,
   SliceExecutionStateSchema,
   SliceRunnerInputSchema,
@@ -74,6 +76,38 @@ const initiative = DevelopmentInitiativeInputSchema.parse({
 assert.equal(initiative.slices?.[0]?.status, "proposed");
 assert.deepEqual(initiative.slices?.[0]?.constraints, []);
 assert.deepEqual(initiative.slices?.[0]?.riskNotes, []);
+assert.deepEqual(initiative.slices?.[0]?.expectedTouchpoints, []);
+assert.deepEqual(initiative.slices?.[0]?.verificationStrategy, []);
+
+const initiativeSpec = InitiativeSpecSchema.parse({
+  title: "Automate PRD-backed development initiatives",
+  statementOfWork: "Accept a PRD, propose slices, wait for approval, execute slices, and produce a PR handoff.",
+  source: "prd",
+  goals: ["Compile PRDs into slices", "Require human approval before execution"],
+  nonGoals: ["Do not build the dashboard yet"],
+  constraints: ["Keep OpenCode as a bounded worker"],
+  acceptanceCriteria: ["Generated plans are schema validated"],
+  risks: ["Generated slices may be too large"],
+  implementationHints: ["Reuse development orchestrator contracts"],
+  affectedAreas: ["src/development-orchestrator.ts", "docs/development-orchestrator/slices/"],
+  contextFiles: ["docs/development-orchestrator/README.md"],
+});
+
+assert.equal(initiativeSpec.source, "prd");
+assert.deepEqual(
+  InitiativeSpecSchema.parse({
+    title: "Small SOW",
+    statementOfWork: "Do one bounded thing.",
+  }).goals,
+  [],
+);
+assert.equal(
+  InitiativeSpecSchema.safeParse({
+    title: "Missing body",
+    statementOfWork: "",
+  }).success,
+  false,
+);
 
 assert.equal(
   DevelopmentInitiativeInputSchema.safeParse({
@@ -91,12 +125,36 @@ const plan = DevelopmentSlicePlanSchema.parse({
   repo: initiative.repo,
   baseBranch: initiative.baseBranch,
   workingBranch: initiative.workingBranch,
+  specTitle: initiativeSpec.title,
+  goals: initiativeSpec.goals,
+  constraints: initiativeSpec.constraints,
+  acceptanceCriteria: initiativeSpec.acceptanceCriteria,
+  risks: initiativeSpec.risks,
+  affectedAreas: initiativeSpec.affectedAreas,
   slices: [validSlice],
   approvalRequired: true,
   summary: "One bounded contracts slice.",
+  revisionHistory: [{ revision: 1, reason: "Initial compiler proposal.", changedBy: "weave.maintainer" }],
 });
 
 assert.equal(plan.slices.length, 1);
+assert.equal(plan.status, "proposed");
+assert.equal(plan.revision, 1);
+assert.equal(plan.specTitle, initiativeSpec.title);
+assert.deepEqual(plan.goals, initiativeSpec.goals);
+assert.equal(InitiativePlanSchema.safeParse({ ...plan, slices: [] }).success, false);
+assert.equal(
+  InitiativePlanSchema.parse({
+    ...plan,
+    status: "approved",
+    decision: { status: "approved", decidedBy: "human-maintainer", note: "Plan looks safe." },
+  }).decision?.status,
+  "approved",
+);
+assert.equal(DevelopmentCheckpointKeys.initiativeSpec, "initiative-spec");
+assert.equal(DevelopmentCheckpointKeys.proposedInitiativePlan, "proposed-initiative-plan");
+assert.equal(DevelopmentCheckpointKeys.approvedInitiativePlan, "approved-initiative-plan");
+assert.equal(DevelopmentCheckpointKeys.latestPlanDecision, "latest-plan-decision");
 assert.equal(DevelopmentCheckpointKeys.approvedSlicePlan, "approved-slice-plan");
 assert.equal(DevelopmentCheckpointKeys.workspaceRef, "workspace-ref");
 assert.equal(buildDevelopmentSlicePlan(initiative).summary, "Plan 1 development slice for Build Weave Maintainer.");
@@ -236,6 +294,59 @@ const parsedThreadEvent = ThreadEventSchema.parse({
 
 assert.equal(parsedThreadEvent.type, "dev.slice.completed");
 assert.equal(parsedThreadEvent.payload.testsPassed, true);
+
+const specReceived = developmentEvents.initiativeSpecReceived({
+  title: initiativeSpec.title,
+  source: initiativeSpec.source,
+  summary: initiativeSpec.summary,
+  goals: initiativeSpec.goals,
+  acceptanceCriteria: initiativeSpec.acceptanceCriteria,
+  contextFiles: initiativeSpec.contextFiles,
+});
+
+assert.equal(specReceived.type, "dev.initiative.spec_received");
+
+const planProposed = developmentEvents.initiativePlanProposed({
+  initiative: plan.initiative,
+  repo: plan.repo,
+  workingBranch: plan.workingBranch,
+  revision: plan.revision,
+  sliceCount: plan.slices.length,
+  summary: plan.summary,
+});
+
+assert.equal(planProposed.type, "dev.initiative.plan_proposed");
+
+const parsedPlanEvent = ThreadEventSchema.parse({
+  eventId: eventKey("dev-thread", "dev.initiative.plan_proposed", "plan-proposed"),
+  threadId: "dev-thread",
+  type: "dev.initiative.plan_proposed",
+  occurredAt: nowIso(),
+  actor: { type: "agent", id: "weave.maintainer" },
+  payload: planProposed.payload,
+});
+
+assert.equal(parsedPlanEvent.type, "dev.initiative.plan_proposed");
+assert.equal(parsedPlanEvent.payload.sliceCount, 1);
+assert.equal(
+  developmentEvents.initiativePlanApproved({
+    initiative: plan.initiative,
+    revision: plan.revision,
+    approvedBy: "human-maintainer",
+    sliceCount: plan.slices.length,
+    summary: plan.summary,
+  }).type,
+  "dev.initiative.plan_approved",
+);
+assert.equal(
+  developmentEvents.initiativePlanRejected({
+    initiative: plan.initiative,
+    revision: plan.revision,
+    rejectedBy: "human-maintainer",
+    reason: "Too broad.",
+  }).type,
+  "dev.initiative.plan_rejected",
+);
 
 const reviewCompleted = developmentEvents.reviewCompleted({
   sliceId: validSlice.id,

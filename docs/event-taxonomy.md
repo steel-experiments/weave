@@ -124,6 +124,11 @@ The PoC uses this event set.
 - `runner.resumed`
 - `agent.response.produced`
 - `dev.initiative.started`
+- `dev.initiative.spec_received`
+- `dev.initiative.plan_proposed`
+- `dev.initiative.plan_revised`
+- `dev.initiative.plan_approved`
+- `dev.initiative.plan_rejected`
 - `dev.slice.proposed`
 - `dev.slice.approved`
 - `dev.slice.started`
@@ -140,6 +145,8 @@ The PoC uses this event set.
 - `dev.pr.ready_for_review`
 
 Development workflow events are internal audit facts for Weave-managed implementation initiatives. They are valid `ThreadEvent` records, but they do not wake runners or tool workers by default.
+
+The PRD/SOW planning events record compact lifecycle facts only. Full `InitiativeSpec` and `InitiativePlan` data belongs in checkpoints such as `initiative-spec`, `proposed-initiative-plan`, `approved-initiative-plan`, and `latest-plan-decision`.
 
 ## Typed Payload Schemas
 

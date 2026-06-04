@@ -8,6 +8,11 @@ import { capability } from "./capability-contract.js";
 import {
   DevImplementationCompletedPayloadSchema,
   DevImplementationStartedPayloadSchema,
+  DevInitiativePlanApprovedPayloadSchema,
+  DevInitiativePlanProposedPayloadSchema,
+  DevInitiativePlanRejectedPayloadSchema,
+  DevInitiativePlanRevisedPayloadSchema,
+  DevInitiativeSpecReceivedPayloadSchema,
   DevInitiativeStartedPayloadSchema,
   DevPrOpenedPayloadSchema,
   DevPrReadyForReviewPayloadSchema,
@@ -42,6 +47,10 @@ const NonEmptyStringSchema = z.string().min(1);
 const execFileAsync = promisify(execFile);
 
 export const DevelopmentCheckpointKeys = {
+  initiativeSpec: "initiative-spec",
+  proposedInitiativePlan: "proposed-initiative-plan",
+  approvedInitiativePlan: "approved-initiative-plan",
+  latestPlanDecision: "latest-plan-decision",
   initiativeContext: "initiative-context",
   repoContext: "repo-context",
   slicePlan: "slice-plan",
@@ -91,12 +100,50 @@ export const DevelopmentSliceStatusSchema = z.enum([
 ]);
 export type DevelopmentSliceStatus = z.infer<typeof DevelopmentSliceStatusSchema>;
 
+export const InitiativeSpecSourceSchema = z.enum(["prd", "statement-of-work", "prompt", "markdown", "manual"]);
+export type InitiativeSpecSource = z.infer<typeof InitiativeSpecSourceSchema>;
+
+export const InitiativeSpecSchema = z.object({
+  title: NonEmptyStringSchema,
+  statementOfWork: NonEmptyStringSchema,
+  source: InitiativeSpecSourceSchema.default("statement-of-work"),
+  summary: NonEmptyStringSchema.optional(),
+  goals: z.array(NonEmptyStringSchema).default([]),
+  nonGoals: z.array(NonEmptyStringSchema).default([]),
+  constraints: z.array(NonEmptyStringSchema).default([]),
+  acceptanceCriteria: z.array(NonEmptyStringSchema).default([]),
+  risks: z.array(NonEmptyStringSchema).default([]),
+  implementationHints: z.array(NonEmptyStringSchema).default([]),
+  affectedAreas: z.array(NonEmptyStringSchema).default([]),
+  contextFiles: z.array(NonEmptyStringSchema).default([]),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+});
+export type InitiativeSpec = z.infer<typeof InitiativeSpecSchema>;
+
+export const InitiativePlanDecisionSchema = z.object({
+  status: z.enum(["approved", "rejected", "revision-requested"]),
+  decidedBy: NonEmptyStringSchema,
+  decidedAt: z.string().datetime().optional(),
+  note: NonEmptyStringSchema.optional(),
+});
+export type InitiativePlanDecision = z.infer<typeof InitiativePlanDecisionSchema>;
+
+export const InitiativePlanRevisionSchema = z.object({
+  revision: z.number().int().positive(),
+  reason: NonEmptyStringSchema,
+  changedBy: NonEmptyStringSchema,
+  changedAt: z.string().datetime().optional(),
+});
+export type InitiativePlanRevision = z.infer<typeof InitiativePlanRevisionSchema>;
+
 export const DevelopmentSliceInputSchema = z.object({
   id: NonEmptyStringSchema,
   title: NonEmptyStringSchema,
   objective: NonEmptyStringSchema,
   acceptanceCriteria: z.array(NonEmptyStringSchema).min(1),
   allowedFiles: z.array(NonEmptyStringSchema).optional(),
+  expectedTouchpoints: z.array(NonEmptyStringSchema).default([]),
+  verificationStrategy: z.array(NonEmptyStringSchema).default([]),
   constraints: z.array(NonEmptyStringSchema).default([]),
   requiredReviewers: z.array(DevelopmentReviewerRoleSchema).default([]),
   riskNotes: z.array(NonEmptyStringSchema).default([]),
@@ -174,11 +221,24 @@ export const DevelopmentSlicePlanSchema = z.object({
   repo: NonEmptyStringSchema,
   baseBranch: NonEmptyStringSchema,
   workingBranch: NonEmptyStringSchema,
+  specTitle: NonEmptyStringSchema.optional(),
+  goals: z.array(NonEmptyStringSchema).default([]),
+  nonGoals: z.array(NonEmptyStringSchema).default([]),
+  constraints: z.array(NonEmptyStringSchema).default([]),
+  acceptanceCriteria: z.array(NonEmptyStringSchema).default([]),
+  risks: z.array(NonEmptyStringSchema).default([]),
+  affectedAreas: z.array(NonEmptyStringSchema).default([]),
   slices: z.array(DevelopmentSliceInputSchema).min(1),
   approvalRequired: z.literal(true),
   summary: NonEmptyStringSchema,
+  status: z.enum(["proposed", "approved", "rejected", "revision-requested"]).default("proposed"),
+  revision: z.number().int().positive().default(1),
+  revisionHistory: z.array(InitiativePlanRevisionSchema).default([]),
+  decision: InitiativePlanDecisionSchema.optional(),
 });
 export type DevelopmentSlicePlan = z.infer<typeof DevelopmentSlicePlanSchema>;
+export const InitiativePlanSchema = DevelopmentSlicePlanSchema;
+export type InitiativePlan = DevelopmentSlicePlan;
 
 export const InitiativePlannerOutputSchema = z.object({
   status: z.enum(["approved", "denied", "completed", "blocked"]),
@@ -865,6 +925,41 @@ export const developmentEvents = {
     visibility: "internal",
     version: 1,
     description: "A development initiative thread started.",
+  }),
+  initiativeSpecReceived: event({
+    type: "dev.initiative.spec_received",
+    payload: DevInitiativeSpecReceivedPayloadSchema,
+    visibility: "internal",
+    version: 1,
+    description: "A PRD or statement of work was recorded for planning.",
+  }),
+  initiativePlanProposed: event({
+    type: "dev.initiative.plan_proposed",
+    payload: DevInitiativePlanProposedPayloadSchema,
+    visibility: "internal",
+    version: 1,
+    description: "A schema-valid initiative plan was proposed for human approval.",
+  }),
+  initiativePlanRevised: event({
+    type: "dev.initiative.plan_revised",
+    payload: DevInitiativePlanRevisedPayloadSchema,
+    visibility: "internal",
+    version: 1,
+    description: "A proposed initiative plan was revised before approval.",
+  }),
+  initiativePlanApproved: event({
+    type: "dev.initiative.plan_approved",
+    payload: DevInitiativePlanApprovedPayloadSchema,
+    visibility: "internal",
+    version: 1,
+    description: "A proposed initiative plan was approved for execution.",
+  }),
+  initiativePlanRejected: event({
+    type: "dev.initiative.plan_rejected",
+    payload: DevInitiativePlanRejectedPayloadSchema,
+    visibility: "internal",
+    version: 1,
+    description: "A proposed initiative plan was rejected before execution.",
   }),
   sliceProposed: event({
     type: "dev.slice.proposed",

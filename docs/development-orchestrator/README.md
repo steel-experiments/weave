@@ -168,6 +168,12 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 9. Initiative-Level Sequencing | Shipped | `slices/09-initiative-level-sequencing.md` | Approved plans execute slices serially and stop on failure before producing a PR draft. |
 | 10. Workspace Lifecycle Ownership | Shipped | `slices/10-workspace-lifecycle-ownership.md` | Initiatives explicitly allocate, reuse, preserve, and clean up workspaces through `WorkspaceRef`. |
 | 11. Real OpenCode Runner Adapter | Shipped | `slices/11-real-opencode-runner-adapter.md` | OpenCode implementation and repair runners execute in selected workspaces behind existing boundaries. |
+| 12. Initiative Spec And Plan Contracts | Shipped | `slices/12-initiative-spec-and-plan-contracts.md` | Stable PRD/SOW input and initiative-plan contracts define what automation stores, proposes, approves, and executes. |
+| 13. PRD To Slices Compiler | Planned | `slices/13-prd-to-slices-compiler.md` | A compiler turns a pasted PRD/SOW into schema-valid proposed slices without executing them. |
+| 14. Slice Plan Approval And Operator CLI | Planned | `slices/14-slice-plan-approval-and-operator-cli.md` | Operator commands list initiatives and gates, inspect proposed plans, and durably approve or reject them. |
+| 15. Resumable Initiative Runner Command | Planned | `slices/15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
+| 16. PR Draft Handoff Automation | Planned | `slices/16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
+| 17. Local Workflow Dashboard | Planned | `slices/17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
 
 ## Auth Execution Readiness Path
 

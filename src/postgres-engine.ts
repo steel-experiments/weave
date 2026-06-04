@@ -625,6 +625,11 @@ function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
     case "agent.remediation.proposed":
     case "agent.incident_report.produced":
     case "dev.initiative.started":
+    case "dev.initiative.spec_received":
+    case "dev.initiative.plan_proposed":
+    case "dev.initiative.plan_revised":
+    case "dev.initiative.plan_approved":
+    case "dev.initiative.plan_rejected":
     case "dev.slice.proposed":
     case "dev.slice.approved":
     case "dev.slice.started":
