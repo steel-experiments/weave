@@ -102,6 +102,17 @@ Responsibilities:
 - translate external signals into thread events
 - translate thread events into external actions
 
+### 6. Auth Gateway Layer
+
+The auth gateway sits between HTTP ingress and the thread service. It is a composition of two swappable parts:
+
+- **Identity provider**: authenticates a request and produces a normalized `Principal` and `AuthContext`.
+- **Access controller**: authorizes a `WeaveAction` (starting with `thread.start` and `agent.run`) for the authenticated context.
+
+The first protected HTTP path is `POST /threads`. When an `AuthGateway` is configured on the API server, `thread.start` requests are authenticated and authorized before any session is created. Denied requests return 401 or 403 without appending events. Accepted requests record a safe auth summary (`principalId`, `provider`, `source`) in `session.started.payload.metadata.auth`. No raw access tokens, raw ID tokens, refresh tokens, or full provider claims are stored by default.
+
+When no auth gateway is configured, the API server preserves the existing unauthenticated local behavior. Provider-specific SDKs (Better Auth, Clerk, Okta, OpenAuth, etc.) live outside core and adapt to the `IdentityProvider` interface.
+
 ## Core Primitives
 
 ### Thread

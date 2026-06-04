@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z } from "zod";
 import type { ThreadArtifactStore } from "./artifacts.js";
 import type { WeaveAppDefinition } from "./app-contract.js";
+import type { AuthGateway, AuthSummary } from "./auth-gateway.js";
+import { authRequestFromIncoming, toAuthSummary } from "./auth-gateway.js";
 import type { ThreadEngine } from "./contracts.js";
 import {
   ActorSchema,
@@ -48,6 +50,7 @@ export type ApiServerOptions = {
   observability?: ObservabilitySink;
   observabilityReader?: ObservabilityReader;
   beforeRoutes?: readonly ApiRouteHandler[];
+  auth?: AuthGateway;
 };
 
 export function createApiServer(engine: ThreadEngine, service: ThreadService, options: ApiServerOptions = {}): Server {
@@ -71,6 +74,7 @@ export function createApiServer(engine: ThreadEngine, service: ThreadService, op
         options.observabilityReader,
         observability,
         span,
+        options.auth,
       );
       statusCode = response.statusCode;
       await safeEmitLog(observability, {
@@ -110,6 +114,7 @@ async function routeRequest(
   observabilityReader: ObservabilityReader | undefined,
   observability: ObservabilitySink,
   span: { traceId: string; spanId: string; threadId?: string },
+  auth: AuthGateway | undefined,
 ): Promise<void> {
   for (const route of beforeRoutes ?? []) {
     if (await route(request, response)) {
@@ -128,10 +133,35 @@ async function routeRequest(
 
   if (method === "POST" && path === "/threads") {
     const body = CreateThreadBodySchema.parse(await readJson(request));
+
+    let authSummary: AuthSummary | undefined;
+    if (auth) {
+      const authRequest = authRequestFromIncoming(request);
+      const authResult = await auth.authenticate(authRequest);
+      if (!authResult.authenticated) {
+        writeJson(response, 401, { error: "Unauthorized", reason: authResult.reason });
+        return;
+      }
+      const decision = await auth.authorize({
+        context: authResult.context,
+        action: { type: "thread.start", agentName: body.agentName },
+      });
+      if (!decision.allowed) {
+        writeJson(response, 403, { error: "Forbidden", reason: decision.reason });
+        return;
+      }
+      authSummary = toAuthSummary(authResult.context);
+    }
+
+    const mergedMetadata = authSummary
+      ? { ...body.metadata, auth: authSummary }
+      : body.metadata;
+
     const session = await service.startSession({
       ...body,
       source: body.source ?? "api",
       actor: body.actor ?? { type: "user", id: "api-user" },
+      metadata: mergedMetadata,
     });
     const projection = await engine.getProjection(session.threadId);
     await safeEmitLog(observability, {
@@ -140,7 +170,7 @@ async function routeRequest(
       timestamp: nowIso(),
       level: "info",
       message: "Thread session created",
-      attributes: { hasProjection: projection !== null },
+      attributes: { hasProjection: projection !== null, hasAuth: authSummary !== undefined },
     });
     writeJson(response, 201, { ...session, projection });
     return;

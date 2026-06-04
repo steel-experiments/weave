@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
-- Last updated: `2026-06-03`
+- Status: `Shipped`
+- Last updated: `2026-06-04`
 - Owner: `weave-core`
 
 ## Goal
@@ -88,31 +88,37 @@ export interface AuthGateway {
 
 ## Acceptance Criteria
 
-- [ ] `weave/auth` exports core auth gateway interfaces and constructors.
-- [ ] Identity providers and access controllers are separate swappable parts.
-- [ ] `POST /threads` can be protected by `authGateway(...)`.
-- [ ] Denied `thread.start` requests do not create sessions.
-- [ ] Accepted `thread.start` requests record principal id, provider, and source in safe session metadata.
-- [ ] No raw access tokens, raw ID tokens, refresh tokens, or full provider claims are stored by default.
-- [ ] Existing examples and tests can run with explicit anonymous or no-op auth behavior.
+- [x] `weave/auth` exports core auth gateway interfaces and constructors.
+- [x] Identity providers and access controllers are separate swappable parts.
+- [x] `POST /threads` can be protected by `authGateway(...)`.
+- [x] Denied `thread.start` requests do not create sessions.
+- [x] Accepted `thread.start` requests record principal id, provider, and source in safe session metadata.
+- [x] No raw access tokens, raw ID tokens, refresh tokens, or full provider claims are stored by default.
+- [x] Existing examples and tests can run with explicit anonymous or no-op auth behavior.
 
 ## Progress
 
-- [ ] Define auth contracts.
-- [ ] Implement minimal identity helpers.
-- [ ] Implement minimal access policy helpers.
-- [ ] Wire HTTP thread start.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Define auth contracts.
+- [x] Implement minimal identity helpers.
+- [x] Implement minimal access policy helpers.
+- [x] Wire HTTP thread start.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+Shipped as a dry-run slice implementation.
+
+- `weave/auth` subpath exports `authGateway`, `anonymousAuth`, `bearerTokenAuth`, `weaveAccessPolicy`, access rule helpers (`allowService`, `allowUser`, `allowGroup`, `allowEveryone`, `denyEveryone`), `toAuthSummary`, and `authRequestFromIncoming`.
+- `createApiServer` accepts an optional `auth: AuthGateway` option.
+- When auth is configured, `POST /threads` authenticates then authorizes `thread.start`. Denied requests return 401/403 before any session is created.
+- Accepted requests record `{ principalId, provider, source }` in `session.started.payload.metadata.auth`. No raw tokens, refresh tokens, or full claims are stored.
+- When auth is not configured, existing unauthenticated behavior is preserved.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/architecture.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md` if session metadata schema changes
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/architecture.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md` if session metadata schema changes
