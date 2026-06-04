@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
@@ -63,32 +63,41 @@ Initial command names can be adjusted during implementation, but the workflow sh
 
 ## Acceptance Criteria
 
-- [ ] Operator can list pending gates.
-- [ ] Operator can inspect a slice-plan approval gate in readable form.
-- [ ] Operator can approve a gate durably.
-- [ ] Operator can reject a gate durably with a note.
-- [ ] Operator can view initiative status without reading raw events.
-- [ ] CLI output includes clear next-step guidance.
-- [ ] Commands are documented.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `git diff --check` passes.
+- [x] Operator can list pending gates.
+- [x] Operator can inspect a slice-plan approval gate in readable form.
+- [x] Operator can approve a gate durably.
+- [x] Operator can reject a gate durably with a note.
+- [x] Operator can view initiative status without reading raw events.
+- [x] CLI output includes clear next-step guidance.
+- [x] Commands are documented.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `git diff --check` passes.
 
 ## Progress
 
-- [ ] Add gate list/show commands.
-- [ ] Add gate approve/reject commands.
-- [ ] Add initiative list/status commands.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Add gate list/show commands.
+- [x] Add gate approve/reject commands.
+- [x] Add initiative list/status commands.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `src/development-operator.ts` with Postgres-backed read helpers for pending gates, gate details, initiative lists, initiative status, latest proposed plan lookup, and gate resolution delegation through `ThreadService.resolveGate`.
+- Added formatting helpers for gate lists, gate details, initiative lists, and initiative status output.
+- Added `src/scripts/development-operator.ts` as one subcommand entrypoint.
+- Added package commands: `gates:list`, `gates:show`, `gates:approve`, `gates:reject`, `initiatives:list`, and `initiative:status`.
+- Gate approval/rejection discovers the owning thread from `weave.thread_gate`, then uses the existing durable gate resolution path.
+- Gate detail rendering includes a proposed plan summary when the thread has a `proposed-initiative-plan` or legacy `slice-plan` checkpoint.
+- Initiative status output shows root status, branch, current slice, child threads, pending gates, and recent events.
+- Added `src/tests/development-operator.test.ts` for operator formatting and status rendering.
+- Commands run: `npm exec -- tsx src/tests/development-operator.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: this CLI reads directly from Postgres. A later dashboard/API slice can expose the same operator read model over HTTP.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `README.md`
-- [ ] dashboard slice if command vocabulary changes
+- [x] this slice document
+- [x] `../README.md`
+- [x] `README.md`
+- [x] dashboard slice if command vocabulary changes

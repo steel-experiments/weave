@@ -43,6 +43,8 @@ Required interpretation of `DESIGN.md`:
 
 The first dashboard should feel like an operational tool, not a generic admin template.
 
+The dashboard should mirror the shipped operator CLI vocabulary from slice 14: gate list/show/approve/reject and initiative list/status. UI labels should make it obvious which dashboard action corresponds to `npm run gates:list`, `npm run gates:show`, `npm run gates:approve`, `npm run gates:reject`, `npm run initiatives:list`, and `npm run initiative:status`.
+
 ## Architecture Impact
 
 - Adds a local dashboard route or server entrypoint over existing Weave HTTP/runtime surfaces.

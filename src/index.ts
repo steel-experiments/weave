@@ -22,6 +22,7 @@ export * from "./runner.js";
 export * from "./summary.js";
 export * from "./credentials.js";
 export * from "./development-orchestrator.js";
+export * from "./development-operator.js";
 export * from "./observability.js";
 export * from "./opencode-runner.js";
 export * from "./otlp-observability.js";
