@@ -271,7 +271,12 @@ export class GitWorktreeWorkspaceProvider implements WorkspaceProvider {
     const baseCommit = input.baseCommit ?? (await git(repoRoot, ["rev-parse", input.baseBranch])).trim();
     const existing = await gitWorktreePathExists(repoRoot, workspacePath);
     if (!existing) {
-      await git(repoRoot, ["worktree", "add", "-B", input.workingBranch, workspacePath, baseCommit]);
+      const branchExists = await gitBranchExists(repoRoot, input.workingBranch);
+      if (branchExists) {
+        await git(repoRoot, ["worktree", "add", workspacePath, input.workingBranch]);
+      } else {
+        await git(repoRoot, ["worktree", "add", "-b", input.workingBranch, workspacePath, baseCommit]);
+      }
     }
 
     const currentBranch = (await git(workspacePath, ["branch", "--show-current"])).trim();
@@ -359,6 +364,15 @@ export class GitWorktreeWorkspaceProvider implements WorkspaceProvider {
 async function git(cwd: string, args: readonly string[]): Promise<string> {
   const { stdout } = await execFileAsync("git", [...args], { cwd });
   return String(stdout);
+}
+
+async function gitBranchExists(cwd: string, branch: string): Promise<boolean> {
+  try {
+    await git(cwd, ["show-ref", "--verify", `refs/heads/${branch}`]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function gitWorktreePathExists(repoRoot: string, workspacePath: string): Promise<boolean> {

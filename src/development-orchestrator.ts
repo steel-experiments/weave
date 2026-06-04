@@ -2037,6 +2037,7 @@ export function createSliceRunnerAgent(options: SliceRunnerAgentOptions = {}) {
       const workingBranch = await ctx.checkpoint(DevelopmentCheckpointKeys.workingBranch, () => input.branch);
       const branchState = await ctx.tool("read-branch-state", developmentBranchStateReadTool, {
         repo: input.repo,
+        repoRoot: input.workspaceRef?.path,
       });
       const branchDecision = evaluateSliceBranchState({ ...input, branch: workingBranch }, branchState);
 

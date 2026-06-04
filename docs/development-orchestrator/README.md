@@ -173,6 +173,30 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 
 The orchestrator foundation needed before auth work is shipped. Next, dry-run only `../../slices/51-auth-gateway-thread-start.md` first. Do not run auth slices `51` through `56` unattended until one low-risk auth slice has completed implementation, verification, review, repair handling if needed, and a human gate.
 
+## Auth Slice 51 Dry Run
+
+Use `npm run auth:dry-run` to start or inspect the idempotent single-slice dry run. The script migrates the configured Postgres database without resetting it, starts Weave runtime daemons locally, proposes only `51-auth-gateway-thread-start`, and stops at the mandatory slice-plan approval gate by default.
+
+To approve that gate and let OpenCode run the slice, use `npm run auth:dry-run -- --approve-plan`.
+
+Defaults:
+
+- `baseBranch`: current checkout branch
+- `workingBranch`: `auth-gateway-slice-51-dry-run`, or `auth-gateway-slice-51-dry-run-workspace` when the current branch already has the dry-run name
+- `workspaceRoot`: `/tmp/weave-development-workspaces`
+- `workspaceMode`: initiative-scoped git worktree
+- `cleanupOnSuccess`: false, so the workspace is preserved for inspection
+- `github`: disabled; the PR agent creates a local draft summary and stops at `pr-review-approval`
+- required reviewers: `security-reviewer`, `replay-safety-reviewer`, `compatibility-reviewer`, `docs-reviewer`
+
+Useful overrides:
+
+- `npm run auth:dry-run -- --base-branch weave-development-orchestrator --working-branch auth-gateway-slice-51-dry-run`
+- `npm run auth:dry-run -- --workspace-root /tmp/weave-auth-workspaces`
+- `WEAVE_DRY_RUN_OPENCODE_COMMAND=opencode npm run auth:dry-run -- --approve-plan`
+
+The script prints the root thread id, child thread tree, pending gate ids, workspace root, and root timeline. Inspect any preserved workspace with `git -C <workspace-path> status` and `git -C <workspace-path> diff` before proceeding to slices `52` through `56`.
+
 ## Completion Rule
 
 When a development-orchestrator slice ships, update:

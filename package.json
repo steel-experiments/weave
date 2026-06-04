@@ -32,6 +32,7 @@
     "db:migrate": "tsx src/scripts/migrate.ts",
     "poc": "tsx src/scripts/poc.ts",
     "system:poc": "tsx src/scripts/system-poc.ts",
+    "auth:dry-run": "tsx src/scripts/auth-gateway-slice-51-dry-run.ts",
     "sre:demo": "tsx examples/sre-demo/src/index.ts",
     "assistant:demo": "tsx examples/simple-assistant/src/index.ts",
     "assistant:server": "tsx examples/simple-assistant/src/server.ts",
