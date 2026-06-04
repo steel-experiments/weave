@@ -23,6 +23,7 @@ import {
   ReviewResultSchema,
   VerificationResultSchema,
   buildPrDraft,
+  buildPrHandoffArtifact,
   buildWorkspaceAllocateInput,
   createGithubPrUpsertTool,
   buildDevelopmentSlicePlan,
@@ -1639,6 +1640,37 @@ assert.equal(builtPrDraft.repairAttempts, 1);
 assert.equal(builtPrDraft.mergeRequiresHumanApproval, true);
 assert.equal(builtPrDraft.body.includes("## Human Approval Checklist"), true);
 assert.equal(builtPrDraft.body.includes("Wire parent slice runner composition."), true);
+const builtHandoff = buildPrHandoffArtifact({
+  prInput: {
+    initiative: initiative.initiative,
+    repo: initiative.repo,
+    baseBranch: initiative.baseBranch,
+    branch: initiative.workingBranch,
+    shippedSlices: [completedSliceSummary],
+    github: { mode: "create", draft: true },
+  },
+  draft: builtPrDraft,
+});
+assert.equal(builtHandoff.remote.status, "pending-approval");
+assert.equal(builtHandoff.validation.status, "passed");
+assert.equal(builtHandoff.shippedSlices[0]?.status, "completed");
+assert.throws(
+  () =>
+    buildPrHandoffArtifact({
+      prInput: {
+        initiative: initiative.initiative,
+        repo: initiative.repo,
+        baseBranch: initiative.baseBranch,
+        branch: initiative.workingBranch,
+        shippedSlices: [completedSliceSummary],
+      },
+      draft: {
+        ...builtPrDraft,
+        tests: [{ command: "npm test", exitCode: 1, status: "failed", summary: "Tests failed." }],
+      },
+    }),
+  /failed validation/,
+);
 
 const githubTool = createGithubPrUpsertTool({
   run(input) {
@@ -1690,7 +1722,54 @@ const prPlanner = createAgentPlanner(prAgent);
 const prFirstPlan = await prPlanner.plan(prThreadId, prHistory);
 assert(prFirstPlan);
 assert.equal(prFirstPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "pr-draft"), true);
-const prRequest = prFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+assert.equal(prFirstPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "pr-handoff"), true);
+assert.equal(prFirstPlan.events.some((candidate) => candidate.type === "dev.pr.ready_for_review"), true);
+assert.equal(prFirstPlan.events.some((candidate) => candidate.type === "tool.requested"), false);
+const prGate = prFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
+  candidate.type === "gate.created",
+);
+assert(prGate);
+assert.equal(prGate.payload.reason, "pr-review-approval");
+
+const deniedPrGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  eventId: eventKey(`${prThreadId}:denied`, "gate.resolved", "pr-review-approval"),
+  threadId: prThreadId,
+  type: "gate.resolved",
+  occurredAt: nowIso(),
+  correlationId: prGate.correlationId,
+  causationId: prGate.eventId,
+  scopeKey: prGate.scopeKey,
+  stepKey: prGate.stepKey,
+  actor: { type: "human", id: "maintainer" },
+  payload: {
+    gateId: prGate.payload.gateId,
+    resolution: "denied",
+    comment: "not ready",
+  },
+};
+const deniedPrPlan = await prPlanner.plan(prThreadId, [...prHistory, ...prFirstPlan.events, deniedPrGateResolved]);
+assert(deniedPrPlan);
+assert.equal(deniedPrPlan.events.some((candidate) => candidate.type === "tool.requested"), false);
+
+const prGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  eventId: eventKey(prThreadId, "gate.resolved", "pr-review-approval"),
+  threadId: prThreadId,
+  type: "gate.resolved",
+  occurredAt: nowIso(),
+  correlationId: prGate.correlationId,
+  causationId: prGate.eventId,
+  scopeKey: prGate.scopeKey,
+  stepKey: prGate.stepKey,
+  actor: { type: "human", id: "maintainer" },
+  payload: {
+    gateId: prGate.payload.gateId,
+    resolution: "approved",
+    comment: "create draft PR",
+  },
+};
+const prApprovedPlan = await prPlanner.plan(prThreadId, [...prHistory, ...prFirstPlan.events, prGateResolved]);
+assert(prApprovedPlan);
+const prRequest = prApprovedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
   candidate.type === "tool.requested",
 );
 assert(prRequest);
@@ -1715,40 +1794,17 @@ const prCompletedTool: Extract<ThreadEvent, { type: "tool.completed" }> = {
     },
   },
 };
-const prGatePlan = await prPlanner.plan(prThreadId, [...prHistory, ...prFirstPlan.events, prCompletedTool]);
-assert(prGatePlan);
-assert.equal(prGatePlan.events.some((candidate) => candidate.type === "dev.pr.opened"), true);
-assert.equal(prGatePlan.events.some((candidate) => candidate.type === "dev.pr.ready_for_review"), true);
-const prGate = prGatePlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
-  candidate.type === "gate.created",
-);
-assert(prGate);
-assert.equal(prGate.payload.reason, "pr-review-approval");
-
-const prGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
-  eventId: eventKey(prThreadId, "gate.resolved", "pr-review-approval"),
-  threadId: prThreadId,
-  type: "gate.resolved",
-  occurredAt: nowIso(),
-  correlationId: prGate.correlationId,
-  causationId: prGate.eventId,
-  scopeKey: prGate.scopeKey,
-  stepKey: prGate.stepKey,
-  actor: { type: "human", id: "maintainer" },
-  payload: {
-    gateId: prGate.payload.gateId,
-    resolution: "approved",
-    comment: "ready to merge manually",
-  },
-};
-const prFinishedPlan = await prPlanner.plan(prThreadId, [...prHistory, ...prFirstPlan.events, prCompletedTool, ...prGatePlan.events, prGateResolved]);
+const prFinishedPlan = await prPlanner.plan(prThreadId, [...prHistory, ...prFirstPlan.events, prGateResolved, ...prApprovedPlan.events, prCompletedTool]);
 assert(prFinishedPlan);
+assert.equal(prFinishedPlan.events.some((candidate) => candidate.type === "dev.pr.opened"), true);
+assert.equal(prFinishedPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "pr-remote-handoff"), true);
 const prOutput = prFinishedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
   candidate.type === "agent.output.completed",
 );
 assert(prOutput);
 assert.equal((prOutput.payload.output as { humanApproval: string }).humanApproval, "approved");
 assert.equal((prOutput.payload.output as { prUrl: string }).prUrl, "https://github.com/acme/weave/pull/123");
+assert.equal((prOutput.payload.output as { handoffArtifact: { remote: { status: string } } }).handoffArtifact.remote.status, "created");
 
 const initialSliceState = createInitialSliceExecutionState({ ...sliceRunnerInput, workspaceRef, maxRepairAttempts: 1 });
 assert.equal(initialSliceState.phase, "workspace-ready");

@@ -64,6 +64,8 @@ export const DevelopmentCheckpointKeys = {
   reviewFindings: "review-findings",
   repairAttemptCount: "repair-attempt-count",
   prDraft: "pr-draft",
+  prHandoff: "pr-handoff",
+  prRemoteHandoff: "pr-remote-handoff",
   prUrl: "pr-url",
 } as const;
 export type DevelopmentCheckpointKey = (typeof DevelopmentCheckpointKeys)[keyof typeof DevelopmentCheckpointKeys];
@@ -610,8 +612,51 @@ export const PrDraftResultSchema = z.object({
   prUrl: z.string().url().optional(),
   mergeRequiresHumanApproval: z.literal(true).default(true),
   humanApproval: z.enum(["approved", "denied"]).optional(),
+  handoffArtifact: z.unknown().optional(),
 });
 export type PrDraftResult = z.infer<typeof PrDraftResultSchema>;
+
+export const PrHandoffArtifactSchema = z.object({
+  initiative: NonEmptyStringSchema,
+  repo: NonEmptyStringSchema,
+  baseBranch: NonEmptyStringSchema,
+  branch: NonEmptyStringSchema,
+  title: NonEmptyStringSchema,
+  body: NonEmptyStringSchema,
+  shippedSlices: z.array(
+    z.object({
+      sliceId: NonEmptyStringSchema,
+      title: NonEmptyStringSchema,
+      summary: NonEmptyStringSchema,
+      status: z.literal("completed"),
+    }),
+  ),
+  commits: z.array(
+    z.object({
+      sha: NonEmptyStringSchema,
+      title: NonEmptyStringSchema,
+    }),
+  ).default([]),
+  changedFiles: z.array(NonEmptyStringSchema).default([]),
+  docsChanged: z.array(NonEmptyStringSchema).default([]),
+  validation: z.object({
+    status: z.enum(["passed", "failed"]),
+    commands: z.array(DevCommandResultSchema),
+  }),
+  reviewers: z.array(ReviewResultSchema),
+  repairAttempts: z.number().int().nonnegative().default(0),
+  knownLimitations: z.array(NonEmptyStringSchema).default([]),
+  followUps: z.array(NonEmptyStringSchema).default([]),
+  remote: z.object({
+    mode: z.enum(["none", "create", "update"]),
+    draft: z.boolean(),
+    approved: z.boolean(),
+    status: z.enum(["not-requested", "pending-approval", "created", "updated", "skipped", "blocked"]).default("pending-approval"),
+    prUrl: z.string().url().optional(),
+    summary: NonEmptyStringSchema.optional(),
+  }),
+});
+export type PrHandoffArtifact = z.infer<typeof PrHandoffArtifactSchema>;
 
 export const InitiativeExecutionPhaseSchema = z.enum([
   "planned",
@@ -1652,6 +1697,56 @@ export function buildPrDraft(rawInput: PrDraftInput): PrDraftResult {
   });
 }
 
+export function buildPrHandoffArtifact(input: {
+  prInput: PrDraftInput;
+  draft: PrDraftResult;
+  remoteApproved?: boolean;
+  remoteResult?: GithubPrUpsertResult;
+}): PrHandoffArtifact {
+  const prInput = PrDraftInputSchema.parse(input.prInput);
+  const draft = PrDraftResultSchema.parse(input.draft);
+  const failedCommands = draft.tests.filter((command) => command.status === "failed");
+  if (failedCommands.length > 0) {
+    throw new Error(`Cannot create PR handoff with failed validation: ${failedCommands.map((command) => command.command).join(", ")}.`);
+  }
+
+  const remoteApproved = input.remoteApproved ?? false;
+  const remoteResult = input.remoteResult;
+  return PrHandoffArtifactSchema.parse({
+    initiative: prInput.initiative,
+    repo: prInput.repo,
+    baseBranch: prInput.baseBranch,
+    branch: prInput.branch,
+    title: draft.title,
+    body: draft.body,
+    shippedSlices: prInput.shippedSlices.map((slice) => ({
+      sliceId: slice.sliceId,
+      title: slice.title,
+      summary: slice.summary,
+      status: "completed",
+    })),
+    commits: [],
+    changedFiles: draft.filesChanged,
+    docsChanged: draft.docsChanged,
+    validation: {
+      status: "passed",
+      commands: draft.tests,
+    },
+    reviewers: draft.reviewerVerdicts,
+    repairAttempts: draft.repairAttempts,
+    knownLimitations: draft.knownLimitations,
+    followUps: draft.followUps,
+    remote: {
+      mode: prInput.github.mode,
+      draft: prInput.github.draft,
+      approved: remoteApproved,
+      status: remoteResult?.status ?? (prInput.github.mode === "none" ? "not-requested" : remoteApproved ? "blocked" : "pending-approval"),
+      prUrl: remoteResult?.url ?? draft.prUrl,
+      summary: remoteResult?.summary ?? (remoteApproved && prInput.github.mode !== "none" ? "Remote PR mode was approved, but no GitHub PR runner result was recorded." : undefined),
+    },
+  });
+}
+
 export function createInitialInitiativeExecutionState(input: {
   plan: DevelopmentSlicePlan;
   completedSlices?: CompletedDevelopmentSliceSummary[];
@@ -1757,8 +1852,34 @@ export function createPrAgent(options: {
     async run(ctx, rawInput) {
       const input = PrDraftInputSchema.parse(rawInput);
       const draft = await ctx.checkpoint(DevelopmentCheckpointKeys.prDraft, () => buildPrDraft(input));
+      const localHandoff = await ctx.checkpoint(DevelopmentCheckpointKeys.prHandoff, () =>
+        buildPrHandoffArtifact({ prInput: input, draft, remoteApproved: false }),
+      );
       let prUrl = draft.prUrl;
 
+      const localDraft = PrDraftResultSchema.parse({ ...draft, handoffArtifact: localHandoff });
+      await ctx.emit(
+        "pr-ready-for-review",
+        developmentEvents.prReadyForReview({
+          branch: input.branch,
+          url: prUrl,
+          summary: `PR handoff ready for ${input.initiative}.`,
+          shippedSlices: localDraft.shippedSlices,
+        }),
+      );
+
+      const gate = await ctx.gate("pr-review-approval", {
+        reason: "pr-review-approval",
+        proposedAction: input.github.mode === "none"
+          ? "Review the local PR handoff before merge. This agent cannot merge the PR."
+          : `Approve remote ${input.github.mode === "create" ? "draft PR creation" : "PR update"} for ${input.branch}.`,
+      });
+
+      if (gate.resolution !== "approved") {
+        return PrDraftResultSchema.parse({ ...localDraft, humanApproval: gate.resolution });
+      }
+
+      let remoteResult: GithubPrUpsertResult | undefined;
       if (input.github.mode !== "none" && githubTool) {
         const prResult = await ctx.tool("github-pr-upsert", githubTool, {
           repo: input.repo,
@@ -1769,6 +1890,7 @@ export function createPrAgent(options: {
           existingUrl: input.prUrl,
           draft: input.github.draft,
         });
+        remoteResult = prResult;
         prUrl = prResult.url ?? prUrl;
 
         if (prUrl) {
@@ -1790,23 +1912,16 @@ export function createPrAgent(options: {
         }
       }
 
-      const finalDraft = PrDraftResultSchema.parse({ ...draft, prUrl });
-      await ctx.emit(
-        "pr-ready-for-review",
-        developmentEvents.prReadyForReview({
-          branch: input.branch,
-          url: prUrl,
-          summary: `PR draft ready for ${input.initiative}.`,
-          shippedSlices: finalDraft.shippedSlices,
+      const remoteHandoff = await ctx.checkpoint(DevelopmentCheckpointKeys.prRemoteHandoff, () =>
+        buildPrHandoffArtifact({
+          prInput: input,
+          draft: PrDraftResultSchema.parse({ ...draft, prUrl }),
+          remoteApproved: true,
+          remoteResult: remoteResult ?? (input.github.mode === "none" ? { status: "skipped", summary: "Remote PR creation not requested." } : undefined),
         }),
       );
 
-      const gate = await ctx.gate("pr-review-approval", {
-        reason: "pr-review-approval",
-        proposedAction: "Review the PR draft before merge. This agent cannot merge the PR.",
-      });
-
-      return PrDraftResultSchema.parse({ ...finalDraft, humanApproval: gate.resolution });
+      return PrDraftResultSchema.parse({ ...draft, prUrl, humanApproval: gate.resolution, handoffArtifact: remoteHandoff });
     },
   });
 }

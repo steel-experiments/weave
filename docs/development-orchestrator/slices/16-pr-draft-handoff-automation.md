@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
@@ -67,33 +67,44 @@ The artifact should include:
 
 ## Acceptance Criteria
 
-- [ ] Completed initiatives produce a stable PR handoff artifact.
-- [ ] Handoff includes branch, commits, changed files, validation results, reviewer summary, and known gaps.
-- [ ] Remote push or draft PR creation is gated by explicit human approval.
-- [ ] Local-only handoff works without GitHub credentials.
-- [ ] Optional draft PR creation records the PR URL durably when used.
-- [ ] Failure cases are actionable and do not corrupt initiative state.
-- [ ] Tests cover artifact generation and final gate behavior.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `git diff --check` passes.
+- [x] Completed initiatives produce a stable PR handoff artifact.
+- [x] Handoff includes branch, commits, changed files, validation results, reviewer summary, and known gaps.
+- [x] Remote push or draft PR creation is gated by explicit human approval.
+- [x] Local-only handoff works without GitHub credentials.
+- [x] Optional draft PR creation records the PR URL durably when used.
+- [x] Failure cases are actionable and do not corrupt initiative state.
+- [x] Tests cover artifact generation and final gate behavior.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `git diff --check` passes.
 
 ## Progress
 
-- [ ] Define handoff artifact schema.
-- [ ] Generate local handoff summary.
-- [ ] Add final approval gate.
-- [ ] Add optional draft PR boundary.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Define handoff artifact schema.
+- [x] Generate local handoff summary.
+- [x] Add final approval gate.
+- [x] Add optional draft PR boundary.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `PrHandoffArtifactSchema` for stable PR-ready handoff data: initiative, repo, branch, title/body, shipped slices, commits, changed files, docs, validation commands, reviewers, repair attempts, known limitations, follow-ups, and remote PR state.
+- Added `buildPrHandoffArtifact(...)`, which rejects failed validation commands before a handoff can be produced for approval.
+- Added checkpoints `pr-handoff` and `pr-remote-handoff`.
+- Updated `createPrAgent(...)` so it now produces a local handoff and emits `dev.pr.ready_for_review` before asking for `pr-review-approval`.
+- Remote PR create/update through `dev.github.pr.upsert` now happens only after the final `pr-review-approval` gate is approved.
+- Denied final approval returns without remote side effects.
+- Local-only handoff mode works with `github.mode: "none"` and records `remote.status: "not-requested"` or `"skipped"`.
+- Missing GitHub runner after approval records a blocked remote handoff instead of silently pretending a PR was created.
+- Optional draft PR creation records the PR URL via the existing `pr-url` checkpoint and `dev.pr.opened` / `dev.pr.updated` events.
+- Added contract tests for handoff artifact generation, failed-validation rejection, no remote tool before approval, denied approval without side effects, and approved remote PR creation.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: commit list is present in the artifact but populated conservatively as an empty list until a git-summary provider is added.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `README.md`
-- [ ] dashboard slice if PR handoff fields change
+- [x] this slice document
+- [x] `../README.md`
+- [x] `README.md`
+- [x] dashboard slice if PR handoff fields change

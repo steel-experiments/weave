@@ -172,7 +172,7 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 13. PRD To Slices Compiler | Shipped | `slices/13-prd-to-slices-compiler.md` | A compiler turns a pasted PRD/SOW into schema-valid proposed slices without executing them. |
 | 14. Slice Plan Approval And Operator CLI | Shipped | `slices/14-slice-plan-approval-and-operator-cli.md` | Operator commands list initiatives and gates, inspect proposed plans, and durably approve or reject them. |
 | 15. Resumable Initiative Runner Command | Shipped | `slices/15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
-| 16. PR Draft Handoff Automation | Planned | `slices/16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
+| 16. PR Draft Handoff Automation | Shipped | `slices/16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
 | 17. Local Workflow Dashboard | Planned | `slices/17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
 
 ## Auth Execution Readiness Path
@@ -275,6 +275,17 @@ Useful options:
 - `--opencode-args "run --format json"`
 
 The command is local/Postgres-backed. It does not push, merge, or create a remote PR.
+
+## PR Handoff
+
+Completed initiatives produce a `pr-handoff` checkpoint before any remote PR side effect. The handoff includes shipped slices, changed files, validation commands, reviewer results, known limitations, follow-ups, suggested PR title/body, and remote PR state.
+
+Remote PR creation or update is behind the final `pr-review-approval` gate:
+
+- Before approval, `dev.github.pr.upsert` is not called.
+- If the final gate is denied, the workflow returns without remote side effects.
+- If approved and GitHub mode is enabled, the PR agent calls the configured GitHub runner and records `pr-url` plus `pr-remote-handoff`.
+- If GitHub mode is disabled, the local handoff remains the terminal review artifact.
 
 ## Completion Rule
 

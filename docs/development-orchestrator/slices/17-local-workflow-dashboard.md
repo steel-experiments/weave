@@ -68,7 +68,7 @@ The dashboard should mirror the shipped operator CLI vocabulary from slice 14: g
 - Shows the root initiative thread and ordered slice plan.
 - Shows each slice status: proposed, approved, running, repairing, blocked, failed, completed.
 - Shows child threads for implementer, verifier, reviewer, repair, and PR handoff.
-- Shows final PR handoff state when available.
+- Shows final PR handoff state when available, including the `pr-handoff` / `pr-remote-handoff` artifact fields for validation commands, reviewer results, changed files, known gaps, suggested PR title/body, and remote PR state.
 
 ### Gate Panel
 

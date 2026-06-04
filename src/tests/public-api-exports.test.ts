@@ -26,6 +26,7 @@ import {
   weaveMaintainer,
   weaveSliceRunner,
   buildPrDraft,
+  buildPrHandoffArtifact,
   buildWorkspaceAllocateInput,
   createWeaveMaintainerAgent,
   createGithubPrUpsertTool,
@@ -162,6 +163,7 @@ assert.equal(defineTool(echoTool), echoTool);
 assert.equal(defineAgent(echoAgent), echoAgent);
 assert.equal(titleFromMarkdown("# Public API"), "Public API");
 assert.equal(parseInitiativeRunOptions(["--from", "docs/prd.md"]).from, "docs/prd.md");
+assert.equal(typeof buildPrHandoffArtifact, "function");
 assert.equal(defineIntegration(echoIntegration), echoIntegration);
 assert.equal(defineWeaveApp(echoApp), echoApp);
 assert.equal(githubRead.name, "github.read");
