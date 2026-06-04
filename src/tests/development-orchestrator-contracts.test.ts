@@ -12,10 +12,15 @@ import {
   buildDevelopmentSlicePlan,
   createOpenCodeImplementationTool,
   createOpenCodeImplementerAgent,
+  createReviewerAgent,
+  createReviewerTool,
+  createVerificationAgent,
+  createVerificationTool,
   developmentBranchStateReadTool,
   developmentRepoContextReadTool,
   developmentEvents,
   evaluateOpenCodeImplementerInput,
+  evaluateSliceReadinessForCompletion,
   evaluateSliceBranchState,
   outOfScopeImplementationFiles,
   readDevelopmentRepoContext,
@@ -475,6 +480,154 @@ const blockedOutput = blockedPlan.events.find((candidate): candidate is Extract<
 );
 assert(blockedOutput);
 assert.equal((blockedOutput.payload.output as { status: string }).status, "blocked");
+
+const verificationInput = {
+  sliceId: validSlice.id,
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
+  commands: [{ command: "npm", args: ["test"], required: true, timeoutMs: 120_000 }],
+  maxOutputBytes: 32_000,
+};
+const verificationResult = {
+  status: "passed" as const,
+  commands: [
+    {
+      command: "npm test",
+      exitCode: 0,
+      status: "passed" as const,
+      durationMs: 100,
+      summary: "Tests passed.",
+      output: "ok",
+    },
+  ],
+};
+const verificationTool = createVerificationTool({
+  run(input) {
+    assert.equal(input.workspaceRef.workspaceId, workspaceRef.workspaceId);
+    return verificationResult;
+  },
+});
+assert.equal(verificationTool.name, "dev.verification.run");
+
+const verifier = createVerificationAgent({ runner: { run: () => verificationResult } });
+const verificationThreadId = "verification-agent-boundary";
+const verificationHistory = createInitialHistory(verificationThreadId, verificationInput, verifier.name);
+const verificationPlanner = createAgentPlanner(verifier);
+const verificationFirstPlan = await verificationPlanner.plan(verificationThreadId, verificationHistory);
+assert(verificationFirstPlan);
+const verificationRequest = verificationFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(verificationRequest);
+assert.equal(verificationRequest.payload.toolName, "dev.verification.run");
+
+const verificationCompletedTool: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(verificationThreadId, "tool.completed", "run-verification"),
+  threadId: verificationThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: verificationRequest.correlationId,
+  causationId: verificationRequest.eventId,
+  scopeKey: verificationRequest.scopeKey,
+  stepKey: verificationRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: verificationRequest.payload.toolCallId,
+    output: verificationResult,
+  },
+};
+const verificationFinishedPlan = await verificationPlanner.plan(verificationThreadId, [
+  ...verificationHistory,
+  ...verificationFirstPlan.events,
+  verificationCompletedTool,
+]);
+assert(verificationFinishedPlan);
+assert.equal(verificationFinishedPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "test-results"), true);
+assert.equal(verificationFinishedPlan.events.some((candidate) => candidate.type === "dev.verification.completed"), true);
+
+const reviewerInput = {
+  slice: initiative.slices[0]!,
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
+  reviewer: "architecture-reviewer" as const,
+  implementationSummary: implementation,
+  verificationResult,
+  diffSummary: "src/example.ts changed",
+};
+const passingReview = {
+  reviewer: "architecture-reviewer" as const,
+  verdict: "pass" as const,
+  findings: [],
+  summary: "Looks good.",
+};
+const reviewerTool = createReviewerTool({
+  run(input) {
+    assert.equal(input.reviewer, "architecture-reviewer");
+    return passingReview;
+  },
+});
+assert.equal(reviewerTool.name, "dev.review.run");
+
+const reviewerAgent = createReviewerAgent({ reviewer: "architecture-reviewer", runner: { run: () => passingReview } });
+const reviewThreadId = "review-agent-boundary";
+const reviewHistory = createInitialHistory(reviewThreadId, reviewerInput, reviewerAgent.name);
+const reviewPlanner = createAgentPlanner(reviewerAgent);
+const reviewFirstPlan = await reviewPlanner.plan(reviewThreadId, reviewHistory);
+assert(reviewFirstPlan);
+const reviewRequest = reviewFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(reviewRequest);
+assert.equal(reviewRequest.payload.toolName, "dev.review.run");
+
+const reviewCompletedTool: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(reviewThreadId, "tool.completed", "run-review"),
+  threadId: reviewThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: reviewRequest.correlationId,
+  causationId: reviewRequest.eventId,
+  scopeKey: reviewRequest.scopeKey,
+  stepKey: reviewRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: reviewRequest.payload.toolCallId,
+    output: passingReview,
+  },
+};
+const reviewFinishedPlan = await reviewPlanner.plan(reviewThreadId, [...reviewHistory, ...reviewFirstPlan.events, reviewCompletedTool]);
+assert(reviewFinishedPlan);
+assert.equal(
+  reviewFinishedPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "review-findings:architecture-reviewer"),
+  true,
+);
+assert.equal(reviewFinishedPlan.events.some((candidate) => candidate.type === "dev.review.completed"), true);
+
+assert.equal(
+  evaluateSliceReadinessForCompletion({ implementationSummary: implementation, verificationResult, reviewResults: [passingReview] }).status,
+  "completed",
+);
+assert.equal(
+  evaluateSliceReadinessForCompletion({
+    verificationResult: { status: "failed", commands: verificationResult.commands, failureSummary: "typecheck failed" },
+    reviewResults: [passingReview],
+  }).status,
+  "needs-repair",
+);
+assert.equal(
+  evaluateSliceReadinessForCompletion({
+    verificationResult,
+    reviewResults: [{ reviewer: "architecture-reviewer", verdict: "needs-fixes", findings: [{ severity: "medium", issue: "Fix this." }] }],
+  }).status,
+  "needs-repair",
+);
+assert.equal(
+  evaluateSliceReadinessForCompletion({
+    verificationResult,
+    reviewResults: [{ reviewer: "architecture-reviewer", verdict: "blocked", findings: [], summary: "Cannot review." }],
+  }).status,
+  "blocked",
+);
 
 console.log("Development orchestrator contract tests passed");
 

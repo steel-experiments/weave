@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
-- Last updated: `2026-06-03`
+- Status: `Shipped`
+- Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
 ## Goal
@@ -63,31 +63,40 @@ Follow-up reviewers:
 
 ## Acceptance Criteria
 
-- [ ] Verification agent runs bounded checks as a child thread.
-- [ ] Verification output includes command, exit status, duration, and bounded output.
-- [ ] Reviewer agent runs read-only as a child thread.
-- [ ] Reviewer output includes `pass`, `needs-fixes`, or `blocked` verdict and structured findings.
-- [ ] Slice cannot be marked completed unless required checks and reviewers pass.
-- [ ] Verification and review results are checkpointed or durably available to the parent.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Verification agent runs bounded checks as a child thread.
+- [x] Verification output includes command, exit status, duration, and bounded output.
+- [x] Reviewer agent runs read-only as a child thread.
+- [x] Reviewer output includes `pass`, `needs-fixes`, or `blocked` verdict and structured findings.
+- [x] Slice cannot be marked completed unless required checks and reviewers pass.
+- [x] Verification and review results are checkpointed or durably available to the parent.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Add verification schemas.
-- [ ] Add command runner integration.
-- [ ] Add reviewer schemas.
-- [ ] Add initial reviewer role.
-- [ ] Add slice decision logic.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Add verification schemas.
+- [x] Add command runner integration.
+- [x] Add reviewer schemas.
+- [x] Add initial reviewer role.
+- [x] Add slice decision logic.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `VerificationAgentInputSchema`, `VerificationCommandSpecSchema`, `VerificationResultSchema`, and `VerificationRunner` for bounded deterministic verification.
+- Added `createVerificationTool(...)` as `dev.verification.run` with `repo.runTests` and `shell.exec.bounded` capability intent.
+- Added `createVerificationAgent(...)`, which requests verification, checkpoints `test-results`, emits `dev.verification.completed`, and returns schema-validated verification output.
+- Added `ReviewerAgentInputSchema`, `ReviewResultSchema`, `ReviewerRunner`, `createReviewerTool(...)`, and `createReviewerAgent(...)` for read-only reviewer roles.
+- `dev.review.run` declares `repo.read` and `workspace.diff` capability intent and returns `pass`, `needs-fixes`, or `blocked` verdicts with structured findings.
+- Reviewer agents checkpoint findings under `review-findings:<reviewer>` and emit `dev.review.completed`.
+- Added `evaluateSliceReadinessForCompletion(...)`, which refuses completion unless verification passed and all reviews passed. Failed verification and `needs-fixes` reviews produce `needs-repair`; blocked reviews produce `blocked`.
+- Added replay tests for verifier and reviewer child-agent behavior, tool requests, checkpoints, completion events, and slice decision outcomes.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: the parent `weave.sliceRunner` does not yet spawn verifier/reviewer children automatically. This slice ships the child boundaries and decision logic; the orchestration loop can compose them next.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
+- [x] this slice document
+- [x] `../README.md`
 - [ ] policy docs if reviewer capability boundaries become reusable

@@ -26,6 +26,8 @@ import {
   weaveSliceRunner,
   createOpenCodeImplementerAgent,
   createOpenCodeImplementationTool,
+  createReviewerAgent,
+  createVerificationAgent,
   GitWorktreeWorkspaceProvider,
   WorkspaceRefSchema,
   createWorkspaceAllocateTool,
@@ -138,6 +140,8 @@ assert.equal(developmentBranchStateReadTool.name, "dev.branchState.read");
 assert.equal(weaveSliceRunner.name, "weave.sliceRunner");
 assert.equal(typeof createOpenCodeImplementerAgent, "function");
 assert.equal(typeof createOpenCodeImplementationTool, "function");
+assert.equal(typeof createVerificationAgent, "function");
+assert.equal(typeof createReviewerAgent, "function");
 assert.equal(typeof GitWorktreeWorkspaceProvider, "function");
 assert.equal(typeof WorkspaceRefSchema.parse, "function");
 assert.equal(createWorkspaceAllocateTool(new GitWorktreeWorkspaceProvider()).name, "workspace.allocate");

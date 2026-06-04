@@ -161,7 +161,7 @@ Bounded repair loops and multiple specialized reviewers can land as follow-up sl
 | 2. Initiative Planner And Approval Gate | Shipped | `slices/02-initiative-planner-and-approval-gate.md` | An initiative thread can produce a slice plan and pause for human approval before implementation. |
 | 3. Slice Runner Branch Control | Shipped | `slices/03-slice-runner-branch-control.md` | A slice thread can confirm the working branch and run one slice through explicit lifecycle states. |
 | 4. OpenCode Implementer Boundary | Shipped | `slices/04-opencode-implementer-boundary.md` | OpenCode can implement one bounded slice and return a schema-validated summary. |
-| 5. Verification And Reviewer Threads | Proposed | `slices/05-verification-and-reviewer-threads.md` | Test/typecheck verification and read-only review run as child threads with structured results. |
+| 5. Verification And Reviewer Threads | Shipped | `slices/05-verification-and-reviewer-threads.md` | Test/typecheck verification and read-only review run as child threads with structured results. |
 | 6. Repair Loop And Human Stop Gates | Proposed | `slices/06-repair-loop-and-human-stop-gates.md` | Failed slices enter bounded repair attempts or pause for human decision without drift. |
 | 7. PR Draft And Initiative Handoff | Proposed | `slices/07-pr-draft-and-initiative-handoff.md` | Completed initiatives produce a reviewable PR draft, test summary, and handoff artifact. |
 

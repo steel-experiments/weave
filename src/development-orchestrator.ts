@@ -26,7 +26,7 @@ import {
   DevCommandResultSchema,
 } from "./events.js";
 import { tool } from "./tool-contract.js";
-import { WorkspaceRefSchema } from "./workspace-provider.js";
+import { WorkspaceRefSchema, workspaceDiffCapability } from "./workspace-provider.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 const execFileAsync = promisify(execFile);
@@ -245,6 +245,31 @@ export const VerificationResultSchema = z.object({
 });
 export type VerificationResult = z.infer<typeof VerificationResultSchema>;
 
+export const VerificationCommandSpecSchema = z.object({
+  command: NonEmptyStringSchema,
+  args: z.array(NonEmptyStringSchema).default([]),
+  required: z.boolean().default(true),
+  timeoutMs: z.number().int().positive().default(120_000),
+});
+export type VerificationCommandSpec = z.input<typeof VerificationCommandSpecSchema>;
+
+export const VerificationAgentInputSchema = z.object({
+  sliceId: NonEmptyStringSchema,
+  branch: NonEmptyStringSchema,
+  workspaceRef: WorkspaceRefSchema,
+  commands: z.array(VerificationCommandSpecSchema).default([
+    { command: "npm", args: ["test"], required: true, timeoutMs: 120_000 },
+    { command: "npm", args: ["run", "typecheck"], required: true, timeoutMs: 120_000 },
+    { command: "git", args: ["diff", "--check"], required: true, timeoutMs: 120_000 },
+  ]),
+  maxOutputBytes: z.number().int().positive().default(32_000),
+});
+export type VerificationAgentInput = z.input<typeof VerificationAgentInputSchema>;
+
+export type VerificationRunner = {
+  run(input: z.infer<typeof VerificationAgentInputSchema>): Promise<VerificationResult> | VerificationResult;
+};
+
 export const ReviewResultSchema = z.object({
   reviewer: DevelopmentReviewerRoleSchema,
   verdict: DevReviewVerdictSchema,
@@ -252,6 +277,21 @@ export const ReviewResultSchema = z.object({
   summary: NonEmptyStringSchema.optional(),
 });
 export type ReviewResult = z.infer<typeof ReviewResultSchema>;
+
+export const ReviewerAgentInputSchema = z.object({
+  slice: DevelopmentSliceInputSchema,
+  branch: NonEmptyStringSchema,
+  workspaceRef: WorkspaceRefSchema,
+  reviewer: DevelopmentReviewerRoleSchema,
+  implementationSummary: ImplementationSummarySchema.optional(),
+  verificationResult: VerificationResultSchema.optional(),
+  diffSummary: z.string().optional(),
+});
+export type ReviewerAgentInput = z.infer<typeof ReviewerAgentInputSchema>;
+
+export type ReviewerRunner = {
+  run(input: ReviewerAgentInput): Promise<ReviewResult> | ReviewResult;
+};
 
 export const SliceDecisionSchema = z.discriminatedUnion("status", [
   z.object({
@@ -341,6 +381,15 @@ export const boundedShellCapability = capability({
   }),
 });
 
+export const repoRunTestsCapability = capability({
+  name: "repo.runTests",
+  description: "Run bounded repository verification commands inside a configured workspace.",
+  params: z.object({
+    repo: NonEmptyStringSchema,
+    workspaceId: NonEmptyStringSchema,
+  }),
+});
+
 export const developmentRepoContextReadTool = tool({
   name: "dev.repoContext.read",
   description: "Read bounded, explicit repository context files for development initiative planning.",
@@ -397,6 +446,54 @@ export function createOpenCodeImplementationTool(runner: OpenCodeImplementationR
     async run(ctx) {
       const result = await runner.run(ctx.input);
       return ImplementationSummarySchema.parse(result);
+    },
+  });
+}
+
+export function createVerificationTool(runner: VerificationRunner) {
+  return tool({
+    name: "dev.verification.run",
+    description: "Run bounded verification commands for one development slice workspace.",
+    input: VerificationAgentInputSchema,
+    output: VerificationResultSchema,
+    capabilities(context) {
+      return [
+        repoRunTestsCapability.request({ repo: context.input.workspaceRef.repo, workspaceId: context.input.workspaceRef.workspaceId }),
+        boundedShellCapability.request({ workspaceId: context.input.workspaceRef.workspaceId, purpose: "verification" }),
+      ];
+    },
+    summarize(output) {
+      return `Verification ${output.status} with ${output.commands.length} command(s).`;
+    },
+    async run(ctx) {
+      const result = await runner.run(VerificationAgentInputSchema.parse(ctx.input));
+      return VerificationResultSchema.parse(result);
+    },
+  });
+}
+
+export function createReviewerTool(runner: ReviewerRunner) {
+  return tool({
+    name: "dev.review.run",
+    description: "Run a read-only reviewer for one development slice workspace.",
+    input: ReviewerAgentInputSchema,
+    output: ReviewResultSchema,
+    capabilities(context) {
+      return [
+        repoReadCapability.request({ repo: context.input.workspaceRef.repo, paths: [context.input.workspaceRef.path] }),
+        workspaceDiffCapability.request({
+          provider: context.input.workspaceRef.provider,
+          repo: context.input.workspaceRef.repo,
+          workspaceId: context.input.workspaceRef.workspaceId,
+        }),
+      ];
+    },
+    summarize(output) {
+      return `${output.reviewer} verdict: ${output.verdict}`;
+    },
+    async run(ctx) {
+      const result = await runner.run(ReviewerAgentInputSchema.parse(ctx.input));
+      return ReviewResultSchema.parse(result);
     },
   });
 }
@@ -679,6 +776,106 @@ export function outOfScopeImplementationFiles(input: OpenCodeImplementerInput, s
   }
 
   return summary.filesChanged.filter((changedFile) => !input.allowedFiles?.some((allowedFile) => pathMatchesAllowedFile(changedFile, allowedFile)));
+}
+
+export function evaluateSliceReadinessForCompletion(input: {
+  implementationSummary?: ImplementationSummary;
+  verificationResult: VerificationResult;
+  reviewResults: readonly ReviewResult[];
+}): SliceDecision {
+  if (input.verificationResult.status !== "passed") {
+    return SliceDecisionSchema.parse({
+      status: "needs-repair",
+      findings: [
+        {
+          severity: "high",
+          issue: input.verificationResult.failureSummary ?? "Verification failed.",
+        },
+      ],
+    });
+  }
+
+  const blockedReview = input.reviewResults.find((review) => review.verdict === "blocked");
+  if (blockedReview) {
+    return SliceDecisionSchema.parse({
+      status: "blocked",
+      reason: blockedReview.summary ?? `${blockedReview.reviewer} blocked the slice.`,
+      findings: blockedReview.findings,
+    });
+  }
+
+  const fixFindings = input.reviewResults.flatMap((review) => (review.verdict === "needs-fixes" ? review.findings : []));
+  if (fixFindings.length > 0) {
+    return SliceDecisionSchema.parse({ status: "needs-repair", findings: fixFindings });
+  }
+
+  return SliceDecisionSchema.parse({
+    status: "completed",
+    summary: input.implementationSummary?.summary ?? "Verification and review passed.",
+  });
+}
+
+export function createVerificationAgent(options: {
+  name?: string;
+  description?: string;
+  runner: VerificationRunner;
+}) {
+  const verificationTool = createVerificationTool(options.runner);
+
+  return agent({
+    name: options.name ?? "weave.verifier",
+    description: options.description ?? "Runs bounded deterministic verification for one development slice workspace.",
+    input: VerificationAgentInputSchema,
+    output: VerificationResultSchema,
+    tools: [verificationTool],
+    async run(ctx, rawInput) {
+      const input = VerificationAgentInputSchema.parse(rawInput);
+      const result = await ctx.tool("run-verification", verificationTool, input);
+      const checkpointed = await ctx.checkpoint(DevelopmentCheckpointKeys.testResults, () => result);
+      await ctx.emit(
+        `verification-completed:${input.sliceId}`,
+        developmentEvents.verificationCompleted({
+          sliceId: input.sliceId,
+          branch: input.branch,
+          status: checkpointed.status,
+          commands: checkpointed.commands,
+        }),
+      );
+      return checkpointed;
+    },
+  });
+}
+
+export function createReviewerAgent(options: {
+  name?: string;
+  description?: string;
+  reviewer: DevelopmentReviewerRole;
+  runner: ReviewerRunner;
+}) {
+  const reviewerTool = createReviewerTool(options.runner);
+
+  return agent({
+    name: options.name ?? `weave.${options.reviewer}`,
+    description: options.description ?? `Runs read-only ${options.reviewer} review for one development slice workspace.`,
+    input: ReviewerAgentInputSchema,
+    output: ReviewResultSchema,
+    tools: [reviewerTool],
+    async run(ctx, rawInput) {
+      const input = ReviewerAgentInputSchema.parse({ ...rawInput, reviewer: options.reviewer });
+      const result = await ctx.tool("run-review", reviewerTool, input);
+      const checkpointed = await ctx.checkpoint(`${DevelopmentCheckpointKeys.reviewFindings}:${options.reviewer}`, () => result);
+      await ctx.emit(
+        `review-completed:${input.slice.id}:${options.reviewer}`,
+        developmentEvents.reviewCompleted({
+          sliceId: input.slice.id,
+          reviewer: options.reviewer,
+          verdict: checkpointed.verdict,
+          findings: checkpointed.findings,
+        }),
+      );
+      return checkpointed;
+    },
+  });
 }
 
 export function createOpenCodeImplementerAgent(options: {
