@@ -24,7 +24,7 @@ These slices are intentionally separate from `../../slices/51-auth-gateway-threa
 | 14. Slice Plan Approval And Operator CLI | Shipped | `14-slice-plan-approval-and-operator-cli.md` | Operator commands list initiatives and gates, inspect proposed plans, and durably approve or reject them. |
 | 15. Resumable Initiative Runner Command | Shipped | `15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
 | 16. PR Draft Handoff Automation | Shipped | `16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
-| 17. Local Workflow Dashboard | Planned | `17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
+| 17. Local Workflow Dashboard | Shipped | `17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
 
 ## Auth Execution Readiness Path
 

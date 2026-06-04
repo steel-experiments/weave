@@ -38,6 +38,14 @@ Run the API-driven system PoC:
 npm run system:poc
 ```
 
+Run the local workflow dashboard:
+
+```sh
+npm run dashboard
+```
+
+It binds to `127.0.0.1:3010` by default and reads the configured `DATABASE_URL`.
+
 Run the mock SRE north-star demo:
 
 ```sh

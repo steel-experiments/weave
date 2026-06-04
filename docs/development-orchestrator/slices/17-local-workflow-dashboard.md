@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
@@ -112,37 +112,45 @@ The dashboard should mirror the shipped operator CLI vocabulary from slice 14: g
 
 ## Acceptance Criteria
 
-- [ ] A local dashboard can be launched from a documented command.
-- [ ] The dashboard reads active initiatives and child slice threads from durable Weave state.
-- [ ] The dashboard shows pending gates and supports approve/reject through existing gate APIs.
-- [ ] The dashboard shows current and recent tool progress.
-- [ ] The dashboard shows recent important events with raw payload inspection available.
-- [ ] The visual design explicitly follows `DESIGN.md`.
-- [ ] The dashboard binds to localhost by default and documents that auth is intentionally deferred.
-- [ ] No dashboard-only source of truth is introduced.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `git diff --check` passes.
+- [x] A local dashboard can be launched from a documented command.
+- [x] The dashboard reads active initiatives and child slice threads from durable Weave state.
+- [x] The dashboard shows pending gates and supports approve/reject through existing gate APIs.
+- [x] The dashboard shows current and recent tool progress.
+- [x] The dashboard shows recent important events with raw payload inspection available.
+- [x] The visual design explicitly follows `DESIGN.md`.
+- [x] The dashboard binds to localhost by default and documents that auth is intentionally deferred.
+- [x] No dashboard-only source of truth is introduced.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `git diff --check` passes.
 
 ## Progress
 
-- [ ] Define dashboard read model.
-- [ ] Add local dashboard server/route.
-- [ ] Build initiative list/detail UI.
-- [ ] Build gate approval panel.
-- [ ] Build live progress panel.
-- [ ] Build event/log panel.
-- [ ] Add tests.
-- [ ] Add runbook docs.
+- [x] Define dashboard read model.
+- [x] Add local dashboard server/route.
+- [x] Build initiative list/detail UI.
+- [x] Build gate approval panel.
+- [x] Build live progress panel.
+- [x] Build event/log panel.
+- [x] Add tests.
+- [x] Add runbook docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `src/development-dashboard.ts` with a localhost dashboard HTTP server, `buildDashboardState(...)`, `/api/state`, and `/api/gates/:gateId/resolve`.
+- Added `src/scripts/dashboard.ts` and `npm run dashboard`.
+- The dashboard reuses durable Postgres state and the existing operator read model; it does not introduce dashboard-only workflow state.
+- The UI is a vanilla HTML/CSS/JS shell with no framework dependency and follows `DESIGN.md`: deep slate surfaces, compact panels, Geist/JetBrains Mono font stack, cyan live execution accents, indigo durable-logic accents, status-colored execution nodes, and mobile stacking.
+- The dashboard shows initiatives, selected initiative detail, child threads, pending gates, approve/reject actions with confirmation, recent tool progress, recent events, and `pr-handoff` / `pr-remote-handoff` payloads.
+- The server binds to `127.0.0.1` by default and documents that auth is intentionally deferred for localhost-only use.
+- Added `src/tests/development-dashboard.test.ts` for the dashboard shell and root route.
+- Commands run: `npm exec -- tsx src/tests/development-dashboard.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: the first dashboard is intentionally simple and Postgres-backed. A later slice can add richer graph interactions, server-sent updates, auth, and a dedicated dashboard API if it is exposed beyond localhost.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `README.md`
-- [ ] `../README.md`
-- [ ] local development setup docs
-- [ ] auth slices if dashboard exposure changes auth priorities
+- [x] this slice document
+- [x] `README.md`
+- [x] `../README.md`
+- [x] local development setup docs
+- [x] auth slices if dashboard exposure changes auth priorities

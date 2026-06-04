@@ -23,6 +23,7 @@ export * from "./summary.js";
 export * from "./credentials.js";
 export * from "./development-orchestrator.js";
 export * from "./development-initiative-runner.js";
+export * from "./development-dashboard.js";
 export * from "./development-operator.js";
 export * from "./observability.js";
 export * from "./opencode-runner.js";

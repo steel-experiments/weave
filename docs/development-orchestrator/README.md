@@ -173,7 +173,7 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 14. Slice Plan Approval And Operator CLI | Shipped | `slices/14-slice-plan-approval-and-operator-cli.md` | Operator commands list initiatives and gates, inspect proposed plans, and durably approve or reject them. |
 | 15. Resumable Initiative Runner Command | Shipped | `slices/15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
 | 16. PR Draft Handoff Automation | Shipped | `slices/16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
-| 17. Local Workflow Dashboard | Planned | `slices/17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
+| 17. Local Workflow Dashboard | Shipped | `slices/17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
 
 ## Auth Execution Readiness Path
 
@@ -286,6 +286,34 @@ Remote PR creation or update is behind the final `pr-review-approval` gate:
 - If the final gate is denied, the workflow returns without remote side effects.
 - If approved and GitHub mode is enabled, the PR agent calls the configured GitHub runner and records `pr-url` plus `pr-remote-handoff`.
 - If GitHub mode is disabled, the local handoff remains the terminal review artifact.
+
+## Local Dashboard
+
+Run the local workflow dashboard with:
+
+```txt
+npm run dashboard
+```
+
+Defaults:
+
+- Host: `127.0.0.1`
+- Port: `3010`
+- URL: `http://127.0.0.1:3010`
+
+Environment overrides:
+
+- `WEAVE_DASHBOARD_HOST`
+- `WEAVE_DASHBOARD_PORT`
+- `PORT`
+
+The dashboard reads durable Postgres state and mirrors the operator CLI vocabulary. It shows initiatives, child slice threads, pending gates, approve/reject actions, live tool progress, recent events, and PR handoff artifacts.
+
+Security posture:
+
+- The dashboard is localhost-only by default.
+- Auth is intentionally deferred while it remains bound to localhost.
+- Do not expose it on a shared interface until the auth slices are resumed.
 
 ## Completion Rule
 

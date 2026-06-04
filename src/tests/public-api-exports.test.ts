@@ -59,6 +59,7 @@ import {
   repairAttemptKey,
   parseInitiativeRunOptions,
   titleFromMarkdown,
+  createLocalDashboardServer,
 } from "weave";
 import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
@@ -164,6 +165,7 @@ assert.equal(defineAgent(echoAgent), echoAgent);
 assert.equal(titleFromMarkdown("# Public API"), "Public API");
 assert.equal(parseInitiativeRunOptions(["--from", "docs/prd.md"]).from, "docs/prd.md");
 assert.equal(typeof buildPrHandoffArtifact, "function");
+assert.equal(typeof createLocalDashboardServer, "function");
 assert.equal(defineIntegration(echoIntegration), echoIntegration);
 assert.equal(defineWeaveApp(echoApp), echoApp);
 assert.equal(githubRead.name, "github.read");
