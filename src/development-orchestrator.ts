@@ -1,5 +1,8 @@
+import { readFile, stat } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import { agent, event } from "./agent-contract.js";
+import { capability } from "./capability-contract.js";
 import {
   DevImplementationCompletedPayloadSchema,
   DevImplementationStartedPayloadSchema,
@@ -20,11 +23,13 @@ import {
   DevVerificationCompletedPayloadSchema,
   DevCommandResultSchema,
 } from "./events.js";
+import { tool } from "./tool-contract.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
 export const DevelopmentCheckpointKeys = {
   initiativeContext: "initiative-context",
+  repoContext: "repo-context",
   slicePlan: "slice-plan",
   approvedSlicePlan: "approved-slice-plan",
   workingBranch: "working-branch",
@@ -93,6 +98,33 @@ export const DevelopmentInitiativeInputSchema = z.object({
 });
 export type DevelopmentInitiativeInput = z.infer<typeof DevelopmentInitiativeInputSchema>;
 
+export const DevelopmentRepoContextReadInputSchema = z.object({
+  repo: NonEmptyStringSchema,
+  contextFiles: z.array(NonEmptyStringSchema).min(1),
+  repoRoot: NonEmptyStringSchema.optional(),
+  maxFileBytes: z.number().int().positive().default(64_000),
+  maxTotalBytes: z.number().int().positive().default(256_000),
+});
+export type DevelopmentRepoContextReadInput = z.infer<typeof DevelopmentRepoContextReadInputSchema>;
+
+export const DevelopmentRepoContextEntrySchema = z.object({
+  path: NonEmptyStringSchema,
+  kind: z.enum(["file", "directory", "missing", "denied", "too-large"]),
+  bytes: z.number().int().nonnegative().default(0),
+  content: z.string().optional(),
+  reason: NonEmptyStringSchema.optional(),
+});
+export type DevelopmentRepoContextEntry = z.infer<typeof DevelopmentRepoContextEntrySchema>;
+
+export const DevelopmentRepoContextSchema = z.object({
+  repo: NonEmptyStringSchema,
+  filesRead: z.array(NonEmptyStringSchema),
+  entries: z.array(DevelopmentRepoContextEntrySchema),
+  totalBytes: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+});
+export type DevelopmentRepoContext = z.infer<typeof DevelopmentRepoContextSchema>;
+
 export const DevelopmentSlicePlanSchema = z.object({
   initiative: NonEmptyStringSchema,
   repo: NonEmptyStringSchema,
@@ -108,6 +140,7 @@ export const InitiativePlannerOutputSchema = z.object({
   status: z.enum(["approved", "denied"]),
   plan: DevelopmentSlicePlanSchema,
   contextFilesRead: z.array(NonEmptyStringSchema),
+  repoContext: DevelopmentRepoContextSchema,
   proposedEventCount: z.number().int().nonnegative(),
   gateComment: NonEmptyStringSchema.optional(),
 });
@@ -208,6 +241,31 @@ export const PrDraftResultSchema = z.object({
   prUrl: z.string().url().optional(),
 });
 export type PrDraftResult = z.infer<typeof PrDraftResultSchema>;
+
+export const repoReadCapability = capability({
+  name: "repo.read",
+  description: "Read bounded repository context for development planning.",
+  params: z.object({
+    repo: NonEmptyStringSchema,
+    paths: z.array(NonEmptyStringSchema).min(1),
+  }),
+});
+
+export const developmentRepoContextReadTool = tool({
+  name: "dev.repoContext.read",
+  description: "Read bounded, explicit repository context files for development initiative planning.",
+  input: DevelopmentRepoContextReadInputSchema,
+  output: DevelopmentRepoContextSchema,
+  capabilities(context) {
+    return repoReadCapability.request({ repo: context.input.repo, paths: context.input.contextFiles });
+  },
+  summarize(output) {
+    return `Read ${output.filesRead.length} context file${output.filesRead.length === 1 ? "" : "s"}.`;
+  },
+  async run(ctx) {
+    return readDevelopmentRepoContext(ctx.input);
+  },
+});
 
 export const developmentEvents = {
   initiativeStarted: event({
@@ -335,11 +393,75 @@ export function buildDevelopmentSlicePlan(input: DevelopmentInitiativeInput): De
   });
 }
 
+export async function readDevelopmentRepoContext(
+  rawInput: DevelopmentRepoContextReadInput,
+): Promise<DevelopmentRepoContext> {
+  const input = DevelopmentRepoContextReadInputSchema.parse(rawInput);
+  const root = path.resolve(input.repoRoot ?? process.cwd());
+  const entries: DevelopmentRepoContextEntry[] = [];
+  let totalBytes = 0;
+  let truncated = false;
+
+  for (const requestedPath of input.contextFiles) {
+    const relativePath = requestedPath.replace(/\/+$|^\.\//g, "");
+    const resolvedPath = path.resolve(root, relativePath);
+    const relativeResolved = path.relative(root, resolvedPath);
+
+    if (relativeResolved.startsWith("..") || path.isAbsolute(relativeResolved)) {
+      entries.push({ path: requestedPath, kind: "denied", bytes: 0, reason: "Path escapes repository root." });
+      continue;
+    }
+
+    let fileStat;
+    try {
+      fileStat = await stat(resolvedPath);
+    } catch {
+      entries.push({ path: requestedPath, kind: "missing", bytes: 0, reason: "Path does not exist." });
+      continue;
+    }
+
+    if (fileStat.isDirectory()) {
+      entries.push({ path: requestedPath, kind: "directory", bytes: 0, reason: "Directory expansion is not part of this tool." });
+      continue;
+    }
+
+    if (!fileStat.isFile()) {
+      entries.push({ path: requestedPath, kind: "denied", bytes: 0, reason: "Path is not a regular file." });
+      continue;
+    }
+
+    if (fileStat.size > input.maxFileBytes) {
+      entries.push({ path: requestedPath, kind: "too-large", bytes: fileStat.size, reason: "File exceeds maxFileBytes." });
+      truncated = true;
+      continue;
+    }
+
+    if (totalBytes + fileStat.size > input.maxTotalBytes) {
+      entries.push({ path: requestedPath, kind: "too-large", bytes: fileStat.size, reason: "Reading file would exceed maxTotalBytes." });
+      truncated = true;
+      continue;
+    }
+
+    const content = await readFile(resolvedPath, "utf8");
+    totalBytes += Buffer.byteLength(content);
+    entries.push({ path: requestedPath, kind: "file", bytes: Buffer.byteLength(content), content });
+  }
+
+  return DevelopmentRepoContextSchema.parse({
+    repo: input.repo,
+    filesRead: entries.filter((entry) => entry.kind === "file").map((entry) => entry.path),
+    entries,
+    totalBytes,
+    truncated,
+  });
+}
+
 export const weaveMaintainer = agent({
   name: "weave.maintainer",
   description: "Plans a Weave-managed development initiative and gates the approved slice plan before implementation.",
   input: DevelopmentInitiativeInputSchema,
   output: InitiativePlannerOutputSchema,
+  tools: [developmentRepoContextReadTool],
   async run(ctx, rawInput) {
     const input = await ctx.checkpoint(DevelopmentCheckpointKeys.initiativeContext, () =>
       DevelopmentInitiativeInputSchema.parse(rawInput),
@@ -355,6 +477,15 @@ export const weaveMaintainer = agent({
         contextFiles: input.contextFiles,
       }),
     );
+
+    const context = await ctx.tool("read-repo-context", developmentRepoContextReadTool, {
+      repo: input.repo,
+      contextFiles: input.contextFiles,
+      maxFileBytes: 64_000,
+      maxTotalBytes: 256_000,
+    });
+
+    const repoContext = await ctx.checkpoint(DevelopmentCheckpointKeys.repoContext, () => context);
 
     const plan = await ctx.checkpoint(DevelopmentCheckpointKeys.slicePlan, () => buildDevelopmentSlicePlan(input));
 
@@ -381,6 +512,7 @@ export const weaveMaintainer = agent({
         status: "denied",
         plan,
         contextFilesRead: input.contextFiles,
+        repoContext,
         proposedEventCount: plan.slices.length,
         gateComment: gate.comment,
       });
@@ -403,6 +535,7 @@ export const weaveMaintainer = agent({
       status: "approved",
       plan: approvedPlan,
       contextFilesRead: input.contextFiles,
+      repoContext,
       proposedEventCount: approvedPlan.slices.length,
       gateComment: gate.comment,
     });

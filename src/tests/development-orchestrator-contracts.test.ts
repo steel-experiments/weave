@@ -10,7 +10,9 @@ import {
   ReviewResultSchema,
   VerificationResultSchema,
   buildDevelopmentSlicePlan,
+  developmentRepoContextReadTool,
   developmentEvents,
+  readDevelopmentRepoContext,
   weaveMaintainer,
 } from "../development-orchestrator.js";
 import { createAgentPlanner } from "../agent-runner.js";
@@ -186,6 +188,17 @@ const reviewCompleted = developmentEvents.reviewCompleted({
 assert.equal(reviewCompleted.type, "dev.review.completed");
 assert.equal(developmentEvents.prReadyForReview.type, "dev.pr.ready_for_review");
 
+const actualRepoContext = await readDevelopmentRepoContext({
+  repo: "weave",
+  contextFiles: ["package.json", "../outside"],
+  maxFileBytes: 64_000,
+  maxTotalBytes: 256_000,
+});
+
+assert.deepEqual(actualRepoContext.filesRead, ["package.json"]);
+assert.equal(actualRepoContext.entries.some((entry) => entry.kind === "denied"), true);
+assert.equal(developmentRepoContextReadTool.name, "dev.repoContext.read");
+
 const threadId = "development-planner";
 const initialHistory = createInitialHistory(threadId, initiative);
 const planner = createAgentPlanner(weaveMaintainer);
@@ -193,16 +206,48 @@ const firstPlan = await planner.plan(threadId, initialHistory);
 
 assert(firstPlan);
 assert.equal(firstPlan.events.some((candidate) => candidate.type === "dev.initiative.started"), true);
-assert.equal(firstPlan.events.some((candidate) => candidate.type === "dev.slice.proposed"), true);
+assert.equal(firstPlan.events.some((candidate) => candidate.type === "dev.slice.proposed"), false);
 
-const gateCreated = firstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
+const contextRequest = firstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(contextRequest);
+assert.equal(contextRequest.payload.toolName, "dev.repoContext.read");
+
+const contextCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(threadId, "tool.completed", "read-repo-context"),
+  threadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: contextRequest.correlationId,
+  causationId: contextRequest.eventId,
+  scopeKey: contextRequest.scopeKey,
+  stepKey: contextRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: contextRequest.payload.toolCallId,
+    output: {
+      repo: "weave",
+      filesRead: ["AGENTS.md"],
+      totalBytes: 12,
+      truncated: false,
+      entries: [{ path: "AGENTS.md", kind: "file", bytes: 12, content: "repo rules" }],
+    },
+  },
+};
+
+const plannedAfterContext = await planner.plan(threadId, [...initialHistory, ...firstPlan.events, contextCompleted]);
+assert(plannedAfterContext);
+assert.equal(plannedAfterContext.events.some((candidate) => candidate.type === "dev.slice.proposed"), true);
+
+const gateCreated = plannedAfterContext.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
   candidate.type === "gate.created",
 );
 assert(gateCreated);
 assert.equal(gateCreated.payload.reason, "slice-plan-approval");
 assert.equal(gateCreated.stepKey, "approve-slice-plan");
 
-const pendingPlan = await planner.plan(threadId, [...initialHistory, ...firstPlan.events]);
+const pendingPlan = await planner.plan(threadId, [...initialHistory, ...firstPlan.events, contextCompleted, ...plannedAfterContext.events]);
 assert.equal(pendingPlan, null);
 
 const gateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
@@ -222,7 +267,13 @@ const gateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
   },
 };
 
-const approvedPlan = await planner.plan(threadId, [...initialHistory, ...firstPlan.events, gateResolved]);
+const approvedPlan = await planner.plan(threadId, [
+  ...initialHistory,
+  ...firstPlan.events,
+  contextCompleted,
+  ...plannedAfterContext.events,
+  gateResolved,
+]);
 assert(approvedPlan);
 assert.equal(approvedPlan.resumeReason, "gate-resolved");
 assert.equal(approvedPlan.events.some((candidate) => candidate.type === "dev.slice.approved"), true);
@@ -233,6 +284,7 @@ const outputCompleted = approvedPlan.events.find((candidate): candidate is Extra
 );
 assert(outputCompleted);
 assert.equal((outputCompleted.payload.output as { status: string }).status, "approved");
+assert.deepEqual((outputCompleted.payload.output as { repoContext: { filesRead: string[] } }).repoContext.filesRead, ["AGENTS.md"]);
 
 console.log("Development orchestrator contract tests passed");
 

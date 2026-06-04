@@ -19,6 +19,7 @@ import {
   weave,
   definePolicy,
   DevelopmentInitiativeInputSchema,
+  developmentRepoContextReadTool,
   developmentEvents,
   weaveMaintainer,
 } from "weave";
@@ -125,6 +126,7 @@ assert.equal(echoApp.policies?.[0], allowEchoPolicy);
 assert.equal(typeof DevelopmentInitiativeInputSchema.parse, "function");
 assert.equal(developmentEvents.sliceCompleted.type, "dev.slice.completed");
 assert.equal(weaveMaintainer.name, "weave.maintainer");
+assert.equal(developmentRepoContextReadTool.name, "dev.repoContext.read");
 
 const emitted = event("agent.response.produced", { message: "ok" });
 const defined = defineEvent("agent.response.produced", { message: "ok" });

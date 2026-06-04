@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `In Progress`
+- Status: `Shipped`
 - Last updated: `2026-06-03`
 - Owner: `weave-maintainer`
 
@@ -51,7 +51,7 @@ As a maintainer, I can hand Weave an initiative and get a durable, reviewable sl
 ## Acceptance Criteria
 
 - [x] `weave.maintainer` can accept an initiative input.
-- [ ] Planner reads only configured repo context.
+- [x] Planner reads only configured repo context.
 - [x] Planner emits proposed-slice events.
 - [x] Planner opens a human approval gate before work starts.
 - [x] Approved slice plan is checkpointed durably.
@@ -62,7 +62,7 @@ As a maintainer, I can hand Weave an initiative and get a durable, reviewable sl
 ## Progress
 
 - [x] Add planner agent.
-- [ ] Add repo context read path.
+- [x] Add repo context read path.
 - [x] Add proposed-slice events.
 - [x] Add approval gate.
 - [x] Add replay tests.
@@ -70,15 +70,16 @@ As a maintainer, I can hand Weave an initiative and get a durable, reviewable sl
 
 ## Completion Notes
 
-In-progress notes:
-
-- Added `weaveMaintainer`, which accepts `DevelopmentInitiativeInputSchema`, checkpoints `initiative-context` and `slice-plan`, emits `dev.initiative.started` and `dev.slice.proposed`, and stops at a `slice-plan-approval` gate.
-- After a human approval event, the planner checkpoints `approved-slice-plan`, emits `dev.slice.approved`, and returns a schema-validated approved planner output.
-- Added `buildDevelopmentSlicePlan` for explicit-slice initiatives. Model-backed planning and real repo-context file reads remain follow-up work inside this slice.
-- Added replay tests proving the planner blocks before approval and resumes deterministically after gate resolution.
+- Added `weaveMaintainer`, which accepts `DevelopmentInitiativeInputSchema`, checkpoints `initiative-context`, reads repo context through a normal tool request, checkpoints `repo-context` and `slice-plan`, emits `dev.initiative.started` and `dev.slice.proposed`, and stops at a `slice-plan-approval` gate.
+- Added `developmentRepoContextReadTool` as `dev.repoContext.read` with a `repo.read` capability request, explicit path input, max file byte and total byte limits, path traversal denial, missing-file reporting, and directory non-expansion.
+- After a human approval event, the planner checkpoints `approved-slice-plan`, emits `dev.slice.approved`, and returns a schema-validated approved planner output that includes the repo context summary.
+- Added `buildDevelopmentSlicePlan` for explicit-slice initiatives. Model-backed planning and directory expansion remain follow-up work outside this slice.
+- Added replay tests proving the planner requests repo context first, blocks until `tool.completed`, proposes slices, blocks before approval, and resumes deterministically after gate resolution.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`.
+- Known gap: context paths are exact files only in this slice. Directory expansion, richer repo summaries, and model-backed slice generation remain later work.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
+- [x] this slice document
+- [x] `../README.md`
 - [ ] relevant examples or app docs if the planner is exposed as a runnable example
