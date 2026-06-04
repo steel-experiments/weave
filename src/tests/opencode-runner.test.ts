@@ -11,7 +11,7 @@ import {
   parseOpenCodeJsonOutput,
   runOpenCodeCliCommand,
 } from "../opencode-runner.js";
-import { RepairAgentInputSchema } from "../development-orchestrator.js";
+import { DevelopmentBlockedRunnerError, ImplementationSummarySchema, RepairAgentInputSchema } from "../development-orchestrator.js";
 
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), "weave-opencode-runner-"));
 
@@ -63,6 +63,8 @@ try {
   const implementationRunner = createOpenCodeCliImplementationRunner({
     command: process.execPath,
     args: ["-e", fakeJsonScript({ filesChanged: ["src/example.ts"], summary: "Implemented." })],
+    promptDelivery: "stdin",
+    cwdArg: false,
     timeoutMs: 5_000,
     maxOutputBytes: 64_000,
   });
@@ -73,6 +75,8 @@ try {
   const repairRunner = createOpenCodeCliRepairRunner({
     command: process.execPath,
     args: ["-e", fakeJsonScript({ status: "completed", attempt: 0, filesChanged: ["src/example.ts"], fixesAttempted: ["Fixed test."], summary: "Repair complete." })],
+    promptDelivery: "stdin",
+    cwdArg: false,
     timeoutMs: 5_000,
     maxOutputBytes: 64_000,
   });
@@ -89,6 +93,8 @@ try {
   const outOfScopeRunner = createOpenCodeCliImplementationRunner({
     command: process.execPath,
     args: ["-e", fakeJsonScript({ filesChanged: ["src/other.ts"], summary: "Changed wrong file." })],
+    promptDelivery: "stdin",
+    cwdArg: false,
     timeoutMs: 5_000,
   });
   await assert.rejects(async () => await outOfScopeRunner.run(implementationInput), OpenCodeRunnerError);
@@ -96,6 +102,8 @@ try {
   const invalidJsonRunner = createOpenCodeCliImplementationRunner({
     command: process.execPath,
     args: ["-e", "process.stdout.write('not json')"],
+    promptDelivery: "stdin",
+    cwdArg: false,
     timeoutMs: 5_000,
   });
   await assert.rejects(
@@ -103,10 +111,55 @@ try {
     OpenCodeRunnerError,
   );
 
+  const permissionDeniedRunner = createOpenCodeCliImplementationRunner({
+    command: process.execPath,
+    args: ["-e", "process.stderr.write('permission requested: external_directory (/tmp/example/*); auto-rejecting'); process.stdout.write('not json')"],
+    promptDelivery: "stdin",
+    cwdArg: false,
+    timeoutMs: 5_000,
+  });
   await assert.rejects(
-    () => runOpenCodeCliCommand({ command: process.execPath, args: ["-e", "setTimeout(() => {}, 1000)"], timeoutMs: 10 }, tempRoot, "prompt"),
+    async () => await permissionDeniedRunner.run(implementationInput),
+    DevelopmentBlockedRunnerError,
+  );
+
+  let progressEvents = 0;
+  await assert.rejects(
+    () =>
+      runOpenCodeCliCommand(
+        {
+          command: process.execPath,
+          args: ["-e", "process.stdout.write('x'.repeat(1024)); setTimeout(() => {}, 1000)"],
+          promptDelivery: "stdin",
+          cwdArg: false,
+          timeoutMs: 5_000,
+          maxOutputBytes: 16,
+          progressIntervalMs: 10,
+        },
+        tempRoot,
+        "prompt",
+        { progress: () => { progressEvents += 1; } },
+      ),
+    DevelopmentBlockedRunnerError,
+  );
+  const progressEventsAfterRejection = progressEvents;
+  await sleep(50);
+  assert.equal(progressEvents, progressEventsAfterRejection);
+
+  await assert.rejects(
+    () => runOpenCodeCliCommand({ command: process.execPath, args: ["-e", "setTimeout(() => {}, 1000)"], promptDelivery: "stdin", cwdArg: false, timeoutMs: 10 }, tempRoot, "prompt"),
     OpenCodeRunnerError,
   );
+
+  const streamed = parseOpenCodeJsonOutput(
+    [
+      JSON.stringify({ type: "message", text: "working" }),
+      JSON.stringify({ type: "message", text: "```json\n{\"filesChanged\":[\"src/example.ts\"],\"summary\":\"Implemented from stream.\"}\n```" }),
+    ].join("\n"),
+    ImplementationSummarySchema,
+    "implementation summary",
+  );
+  assert.equal(streamed.summary, "Implemented from stream.");
 } finally {
   await rm(tempRoot, { recursive: true, force: true });
 }
@@ -123,4 +176,8 @@ process.stdin.on("end", () => {
   }
   process.stdout.write(JSON.stringify(${JSON.stringify(output)}));
 });`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -227,7 +227,7 @@ The development orchestrator also exposes a configurable CLI runner module for r
 - `createOpenCodeCliRepairRunner(...)` satisfies `RepairRunner`
 - `buildOpenCodeImplementationPrompt(...)` and `buildOpenCodeRepairPrompt(...)` construct bounded prompts from typed slice inputs
 - `runOpenCodeCliCommand(...)` shells out with explicit `cwd`, timeout, and bounded output capture
-- `OpenCodeCliRunnerConfigSchema` defaults to `opencode run --json`, but tests and deployments can override command and args
+- `OpenCodeCliRunnerConfigSchema` defaults to `opencode run --format json --dir <workspace> <prompt>`, but tests and deployments can override command, args, workspace directory argument, and prompt delivery
 - stdout must be strict JSON matching the implementation summary or repair result schema
 - branch mismatches are refused before the OpenCode process starts
 - reported implementation files outside `allowedFiles` fail the runner before Weave treats the output as complete
@@ -239,7 +239,7 @@ Example configuration:
 ```ts
 const implementationRunner = createOpenCodeCliImplementationRunner({
   command: "opencode",
-  args: ["run", "--json"],
+  args: ["run", "--format", "json"],
   timeoutMs: 600_000,
   maxOutputBytes: 256_000,
 });

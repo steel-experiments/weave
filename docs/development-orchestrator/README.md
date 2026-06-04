@@ -186,6 +186,7 @@ Defaults:
 - `workspaceRoot`: `/tmp/weave-development-workspaces`
 - `workspaceMode`: initiative-scoped git worktree
 - `cleanupOnSuccess`: false, so the workspace is preserved for inspection
+- OpenCode command: `opencode run --format json --dir <workspace> <prompt>`
 - `github`: disabled; the PR agent creates a local draft summary and stops at `pr-review-approval`
 - required reviewers: `security-reviewer`, `replay-safety-reviewer`, `compatibility-reviewer`, `docs-reviewer`
 
@@ -196,6 +197,12 @@ Useful overrides:
 - `WEAVE_DRY_RUN_OPENCODE_COMMAND=opencode npm run auth:dry-run -- --approve-plan`
 
 The script prints the root thread id, child thread tree, pending gate ids, workspace root, and root timeline. Inspect any preserved workspace with `git -C <workspace-path> status` and `git -C <workspace-path> diff` before proceeding to slices `52` through `56`.
+
+During long-running tools, the script also prints selected live events such as `tool.started`, `tool.progress`, `tool.failed`, child-thread terminal events, gates, and development workflow events. OpenCode CLI runs emit start, heartbeat, stderr, and completion progress through durable `tool.progress` events.
+
+If OpenCode auto-rejects a permission request or exceeds the configured output bound, the runner returns a structured blocked result instead of `tool.failed`, and the slice runner stops at the `repair-stop` human gate for operator action.
+
+The dry run wires `PostgresObservabilitySink`, so runner/tool spans and logs are persisted in `weave.observability_span` and `weave.observability_log` for runs started after this wiring was added.
 
 ## Completion Rule
 

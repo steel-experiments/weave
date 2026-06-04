@@ -67,8 +67,8 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
     const client = await this.pool.connect();
     try {
       await client.query("begin");
-      const thread = await client.query<{ next_seq: number }>(
-        `select next_seq from weave.thread where id = $1 for update`,
+      const thread = await client.query<{ next_seq: number; status: ThreadStatus }>(
+        `select next_seq, status from weave.thread where id = $1 for update`,
         [threadId],
       );
 
@@ -86,7 +86,7 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
         throw new Error(`Expected tail ${options.expectedTailSeq}, found ${firstSeq}`);
       }
 
-      let nextStatus: ThreadStatus | undefined;
+      let nextStatus: ThreadStatus | undefined = threadRow.status;
       for (const [index, event] of parsedEvents.entries()) {
         const seq = firstSeq + index;
         await client.query(
@@ -502,6 +502,9 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       case "child_thread.spawned":
       case "child_thread.completed":
       case "child_thread.failed":
+        if (currentStatus === "completed" || currentStatus === "failed") {
+          return currentStatus;
+        }
         if (event.type === "gate.resolved") {
           await client.query(
             `update weave.thread_gate

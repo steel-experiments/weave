@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   DevelopmentCheckpointKeys,
   DevelopmentInitiativeInputSchema,
+  DevelopmentBlockedRunnerError,
   DevelopmentSlicePlanSchema,
   DevelopmentWorkspacePolicySchema,
   InitiativeExecutionStateSchema,
@@ -962,13 +963,18 @@ const implementationCompletedTool: Extract<ThreadEvent, { type: "tool.completed"
   payload: {
     toolCallId: implementationRequest.payload.toolCallId,
     output: {
-      filesChanged: ["src/example.ts"],
-      testsAdded: ["src/example.test.ts"],
-      behaviorChanged: ["Example behavior changed."],
-      docsChanged: [],
-      knownLimitations: [],
-      followUpSuggestions: [],
-      summary: "Implemented mocked slice.",
+      status: "completed",
+      branch: workspaceRef.workingBranch,
+      workspaceRef,
+      summary: {
+        filesChanged: ["src/example.ts"],
+        testsAdded: ["src/example.test.ts"],
+        behaviorChanged: ["Example behavior changed."],
+        docsChanged: [],
+        knownLimitations: [],
+        followUpSuggestions: [],
+        summary: "Implemented mocked slice.",
+      },
     },
   },
 };
@@ -1004,6 +1010,54 @@ const blockedOutput = blockedPlan.events.find((candidate): candidate is Extract<
 );
 assert(blockedOutput);
 assert.equal((blockedOutput.payload.output as { status: string }).status, "blocked");
+
+const permissionBlockedImplementer = createOpenCodeImplementerAgent({
+  runner: {
+    run() {
+      throw new DevelopmentBlockedRunnerError("OpenCode requires permission approval.");
+    },
+  },
+});
+const permissionBlockedThreadId = "opencode-implementer-permission-blocked";
+const permissionBlockedHistory = createInitialHistory(permissionBlockedThreadId, implementerInput, permissionBlockedImplementer.name);
+const permissionBlockedPlanner = createAgentPlanner(permissionBlockedImplementer);
+const permissionBlockedFirstPlan = await permissionBlockedPlanner.plan(permissionBlockedThreadId, permissionBlockedHistory);
+assert(permissionBlockedFirstPlan);
+const permissionBlockedRequest = permissionBlockedFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(permissionBlockedRequest);
+const permissionBlockedToolCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(permissionBlockedThreadId, "tool.completed", "run-opencode-implementation:permission-blocked"),
+  threadId: permissionBlockedThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: permissionBlockedRequest.correlationId,
+  causationId: permissionBlockedRequest.eventId,
+  scopeKey: permissionBlockedRequest.scopeKey,
+  stepKey: permissionBlockedRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: permissionBlockedRequest.payload.toolCallId,
+    output: {
+      status: "blocked",
+      branch: workspaceRef.workingBranch,
+      workspaceRef,
+      reason: "OpenCode requires permission approval.",
+    },
+  },
+};
+const permissionBlockedFinished = await permissionBlockedPlanner.plan(permissionBlockedThreadId, [
+  ...permissionBlockedHistory,
+  ...permissionBlockedFirstPlan.events,
+  permissionBlockedToolCompleted,
+]);
+assert(permissionBlockedFinished);
+const permissionBlockedOutput = permissionBlockedFinished.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(permissionBlockedOutput);
+assert.equal((permissionBlockedOutput.payload.output as { status: string }).status, "blocked");
 
 const verificationInput = {
   sliceId: validSlice.id,
@@ -1558,6 +1612,18 @@ const repairableState = SliceExecutionStateSchema.parse({
   maxRepairAttempts: 1,
 });
 assert.deepEqual(decideNextSliceAction(repairableState), { type: "run-repair", attempt: 0, findings: [repairFinding] });
+assert.equal(
+  decideNextSliceAction({
+    ...initialSliceState,
+    implementation: {
+      status: "blocked",
+      branch: workspaceRef.workingBranch,
+      workspaceRef,
+      reason: "OpenCode requires permission approval.",
+    },
+  }).type,
+  "require-human-stop",
+);
 assert.equal(decideNextSliceAction({ ...repairableState, maxRepairAttempts: 0 }).type, "require-human-stop");
 assert.equal(
   decideNextSliceAction({

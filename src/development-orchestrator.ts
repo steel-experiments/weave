@@ -26,7 +26,7 @@ import {
   DevCommandResultSchema,
   type DevReviewFinding,
 } from "./events.js";
-import { tool } from "./tool-contract.js";
+import { tool, type ToolProgressUpdate } from "./tool-contract.js";
 import {
   WorkspaceRefSchema,
   WorkspaceAllocateInputSchema,
@@ -300,8 +300,22 @@ export const OpenCodeImplementerOutputSchema = z.discriminatedUnion("status", [
 ]);
 export type OpenCodeImplementerOutput = z.infer<typeof OpenCodeImplementerOutputSchema>;
 
+export type DevelopmentRunnerContext = {
+  progress?: (update: ToolProgressUpdate) => Promise<void> | void;
+};
+
+export class DevelopmentBlockedRunnerError extends Error {
+  constructor(
+    readonly reason: string,
+    readonly details: Record<string, unknown> = {},
+  ) {
+    super(reason);
+    this.name = "DevelopmentBlockedRunnerError";
+  }
+}
+
 export type OpenCodeImplementationRunner = {
-  run(input: OpenCodeImplementerInput): Promise<ImplementationSummary> | ImplementationSummary;
+  run(input: OpenCodeImplementerInput, context?: DevelopmentRunnerContext): Promise<ImplementationSummary> | ImplementationSummary;
 };
 
 export const VerificationResultSchema = z.object({
@@ -415,7 +429,7 @@ export const RepairLoopDecisionSchema = z.discriminatedUnion("status", [
 export type RepairLoopDecision = z.infer<typeof RepairLoopDecisionSchema>;
 
 export type RepairRunner = {
-  run(input: z.infer<typeof RepairAgentInputSchema>): Promise<RepairResult> | RepairResult;
+  run(input: z.infer<typeof RepairAgentInputSchema>, context?: DevelopmentRunnerContext): Promise<RepairResult> | RepairResult;
 };
 
 export const SliceExecutionPhaseSchema = z.enum([
@@ -689,7 +703,7 @@ export function createOpenCodeImplementationTool(runner: OpenCodeImplementationR
     name: "dev.opencode.implement",
     description: "Run OpenCode to implement one bounded development slice inside a configured workspace.",
     input: OpenCodeImplementerInputSchema,
-    output: ImplementationSummarySchema,
+    output: OpenCodeImplementerOutputSchema,
     capabilities(context) {
       return [
         repoReadCapability.request({ repo: context.input.workspaceRef.repo, paths: [context.input.workspaceRef.path] }),
@@ -703,11 +717,28 @@ export function createOpenCodeImplementationTool(runner: OpenCodeImplementationR
       ];
     },
     summarize(output) {
-      return output.summary;
+      return output.status === "completed" ? output.summary.summary : output.reason;
     },
     async run(ctx) {
-      const result = await runner.run(ctx.input);
-      return ImplementationSummarySchema.parse(result);
+      try {
+        const result = await runner.run(ctx.input, { progress: ctx.progress });
+        return OpenCodeImplementerOutputSchema.parse({
+          status: "completed",
+          branch: ctx.input.branch,
+          workspaceRef: ctx.input.workspaceRef,
+          summary: ImplementationSummarySchema.parse(result),
+        });
+      } catch (error) {
+        if (error instanceof DevelopmentBlockedRunnerError) {
+          return OpenCodeImplementerOutputSchema.parse({
+            status: "blocked",
+            branch: ctx.input.branch,
+            workspaceRef: ctx.input.workspaceRef,
+            reason: error.reason,
+          });
+        }
+        throw error;
+      }
     },
   });
 }
@@ -782,8 +813,23 @@ export function createRepairTool(runner: RepairRunner) {
       return output.summary;
     },
     async run(ctx) {
-      const result = await runner.run(RepairAgentInputSchema.parse(ctx.input));
-      return RepairResultSchema.parse(result);
+      const input = RepairAgentInputSchema.parse(ctx.input);
+      try {
+        const result = await runner.run(input, { progress: ctx.progress });
+        return RepairResultSchema.parse(result);
+      } catch (error) {
+        if (error instanceof DevelopmentBlockedRunnerError) {
+          return RepairResultSchema.parse({
+            status: "blocked",
+            attempt: input.attempt,
+            branch: input.branch,
+            workspaceRef: input.workspaceRef,
+            summary: error.reason,
+            limitations: ["Repair stopped for human decision."],
+          });
+        }
+        throw error;
+      }
     },
   });
 }
@@ -1161,7 +1207,7 @@ export function decideNextSliceAction(rawState: SliceExecutionState): SliceActio
   }
 
   if (state.implementation.status === "blocked") {
-    return SliceActionSchema.parse({ type: "fail-slice", reason: state.implementation.reason, findings: [] });
+    return SliceActionSchema.parse({ type: "require-human-stop", reason: state.implementation.reason, findings: [] });
   }
 
   const attempt = state.repairs.length;
@@ -1632,7 +1678,12 @@ export function createOpenCodeImplementerAgent(options: {
         }),
       );
 
-      const claimedSummary = await ctx.tool("run-opencode-implementation", implementationTool, input);
+      const implementationResult = await ctx.tool("run-opencode-implementation", implementationTool, input);
+      if (implementationResult.status === "blocked") {
+        return implementationResult;
+      }
+
+      const claimedSummary = implementationResult.summary;
       const outOfScopeFiles = outOfScopeImplementationFiles(input, claimedSummary);
       if (outOfScopeFiles.length > 0) {
         return OpenCodeImplementerOutputSchema.parse({

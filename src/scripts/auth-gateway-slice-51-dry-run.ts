@@ -22,6 +22,7 @@ import {
 import type { DevCommandResult, DevReviewFinding, ThreadEvent, ThreadProjection } from "../events.js";
 import { migrate } from "../migrate.js";
 import { createOpenCodeCliImplementationRunner, createOpenCodeCliRepairRunner } from "../opencode-runner.js";
+import { PostgresObservabilitySink } from "../postgres-observability.js";
 import { PostgresThreadEngine } from "../postgres-engine.js";
 import { createWeaveRuntime } from "../runtime.js";
 import { ThreadService } from "../thread-service.js";
@@ -44,7 +45,7 @@ const defaultWorkingBranch = baseBranch === "auth-gateway-slice-51-dry-run" ? "a
 const workingBranch = options.workingBranch ?? process.env.WEAVE_DRY_RUN_WORKING_BRANCH ?? defaultWorkingBranch;
 const workspaceRoot = options.workspaceRoot ?? process.env.WEAVE_DRY_RUN_WORKSPACE_ROOT ?? path.join("/tmp", "weave-development-workspaces");
 const timeoutMs = options.timeoutMs ?? 900_000;
-const idempotencyKey = options.idempotencyKey ?? `auth-gateway-slice-51-dry-run:v2:${baseBranch}:${workingBranch}`;
+const idempotencyKey = options.idempotencyKey ?? `auth-gateway-slice-51-dry-run:v7:${baseBranch}:${workingBranch}`;
 const workspaceProvider = new GitWorktreeWorkspaceProvider();
 
 class LocalDryRunCredentialProvider implements CredentialProvider {
@@ -130,7 +131,8 @@ try {
 
   const engine = new PostgresThreadEngine(pool);
   const service = new ThreadService(engine);
-  const app = createAuthGatewayDryRunApp(workspaceProvider);
+  const observability = new PostgresObservabilitySink(pool);
+  const app = createAuthGatewayDryRunApp(workspaceProvider, observability);
   const runtime = createWeaveRuntime({
     app,
     agentName: "weave.maintainer",
@@ -154,12 +156,13 @@ try {
       idempotencyKey,
     });
 
-    const firstStop = await waitForStop(engine, service, session.threadId, timeoutMs);
+    const liveEventCursor = new Map<string, number>();
+    const firstStop = await waitForStop(engine, service, session.threadId, timeoutMs, liveEventCursor);
     const planGate = firstStop.gates.find((gate) => gate.reason === "slice-plan-approval");
     if (planGate && options.approvePlan) {
       await service.resolveGate(planGate.threadId, planGate.gateId, "approved", "Auth gateway slice 51 dry-run approval.");
       console.log(`approvedPlanGate=${planGate.gateId}`);
-      const finalStop = await waitForStop(engine, service, session.threadId, timeoutMs);
+      const finalStop = await waitForStop(engine, service, session.threadId, timeoutMs, liveEventCursor);
       printDryRunSummary(session.threadId, finalStop);
     } else {
       printDryRunSummary(session.threadId, firstStop);
@@ -176,21 +179,21 @@ try {
   await pool.end();
 }
 
-function createAuthGatewayDryRunApp(workspaceProvider: WorkspaceProvider) {
+function createAuthGatewayDryRunApp(workspaceProvider: WorkspaceProvider, observability: PostgresObservabilitySink) {
   const implementationAgent = createOpenCodeImplementerAgent({
     runner: createOpenCodeCliImplementationRunner({
       command: options.openCodeCommand ?? process.env.WEAVE_DRY_RUN_OPENCODE_COMMAND ?? "opencode",
-      args: options.openCodeArgs ?? ["run", "--json"],
+      ...(options.openCodeArgs ? { args: options.openCodeArgs } : {}),
       timeoutMs,
-      maxOutputBytes: 256_000,
+      maxOutputBytes: 2_000_000,
     }),
   });
   const repairAgent = createRepairAgent({
     runner: createOpenCodeCliRepairRunner({
       command: options.openCodeCommand ?? process.env.WEAVE_DRY_RUN_OPENCODE_COMMAND ?? "opencode",
-      args: options.openCodeArgs ?? ["run", "--json"],
+      ...(options.openCodeArgs ? { args: options.openCodeArgs } : {}),
       timeoutMs,
-      maxOutputBytes: 256_000,
+      maxOutputBytes: 2_000_000,
     }),
   });
   const verificationAgent = createVerificationAgent({ runner: createCommandVerificationRunner() });
@@ -215,6 +218,7 @@ function createAuthGatewayDryRunApp(workspaceProvider: WorkspaceProvider) {
   return defineWeaveApp({
     name: "auth-gateway-slice-51-dry-run",
     credentialProvider: new LocalDryRunCredentialProvider(),
+    observability,
     agents: [
       maintainerAgent,
       sliceRunnerAgent,
@@ -319,13 +323,20 @@ async function waitForStop(
   service: ThreadService,
   rootThreadId: string,
   timeoutMs: number,
+  lastSeqByThread: Map<string, number> = new Map(),
 ): Promise<DryRunStop> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const tree = await collectThreadTree(engine, service, rootThreadId);
+    printNewThreadEvents(tree, lastSeqByThread);
+    const reconciled = await reconcileTerminalChildren(service, tree);
+    if (reconciled) {
+      await sleep(250);
+      continue;
+    }
     const gates = await collectPendingGates(engine, tree);
     const root = tree.find((thread) => thread.threadId === rootThreadId);
-    if (gates.length > 0 || root?.projection.status === "completed" || root?.projection.status === "failed") {
+    if (gates.length > 0 || (root && isThreadTerminal(root))) {
       return { tree, gates };
     }
     await sleep(250);
@@ -334,6 +345,14 @@ async function waitForStop(
   const tree = await collectThreadTree(engine, service, rootThreadId);
   const gates = await collectPendingGates(engine, tree);
   throw new Error(`Timed out after ${timeoutMs}ms waiting for dry-run progress. Threads=${tree.length} pendingGates=${gates.length}`);
+}
+
+function isThreadTerminal(thread: DryRunThread): boolean {
+  return (
+    thread.projection.status === "completed" ||
+    thread.projection.status === "failed" ||
+    thread.events.some((event) => event.type === "agent.response.produced" || event.type === "agent.failed")
+  );
 }
 
 async function collectThreadTree(
@@ -403,6 +422,113 @@ function printDryRunSummary(rootThreadId: string, stop: DryRunStop): void {
   console.log("rootTimeline:");
   const root = stop.tree.find((thread) => thread.threadId === rootThreadId);
   console.log(root ? toTextTimeline(root.events) : "missing root thread");
+}
+
+function printNewThreadEvents(tree: readonly DryRunThread[], lastSeqByThread: Map<string, number>): void {
+  for (const thread of tree) {
+    const previousSeq = lastSeqByThread.get(thread.threadId) ?? -1;
+    const nextEvents = thread.events.filter((event) => (event.seq ?? -1) > previousSeq && shouldPrintLiveEvent(event));
+    for (const event of nextEvents) {
+      console.log(`[${thread.agentName ?? "unknown"} ${thread.threadId.slice(0, 8)} #${event.seq}] ${event.type}${eventSummary(event)}`);
+    }
+    const lastSeq = thread.events.at(-1)?.seq;
+    if (lastSeq !== undefined) {
+      lastSeqByThread.set(thread.threadId, lastSeq);
+    }
+  }
+}
+
+function shouldPrintLiveEvent(event: ThreadEvent): boolean {
+  return [
+    "tool.started",
+    "tool.progress",
+    "tool.completed",
+    "tool.failed",
+    "child_thread.spawned",
+    "child_thread.completed",
+    "child_thread.failed",
+    "gate.created",
+    "agent.failed",
+    "agent.response.produced",
+    "dev.slice.started",
+    "dev.slice.completed",
+    "dev.slice.failed",
+    "dev.implementation.started",
+    "dev.implementation.completed",
+    "dev.verification.completed",
+    "dev.review.completed",
+    "dev.repair.started",
+    "dev.repair.completed",
+    "dev.pr.ready_for_review",
+  ].includes(event.type);
+}
+
+function eventSummary(event: ThreadEvent): string {
+  if (event.type === "tool.progress") {
+    return ` ${event.payload.percent}% ${event.payload.message}`;
+  }
+  if (event.type === "tool.failed") {
+    return ` ${event.payload.errorCode}: ${event.payload.message}`;
+  }
+  if (event.type === "tool.completed") {
+    return event.payload.summary ? ` ${event.payload.summary}` : "";
+  }
+  if (event.type === "gate.created") {
+    return ` ${event.payload.reason}: ${event.payload.proposedAction ?? ""}`;
+  }
+  if (event.type === "child_thread.spawned") {
+    return ` ${event.payload.childAgentName} ${event.payload.childThreadId}`;
+  }
+  if (event.type === "child_thread.failed") {
+    return ` ${event.payload.errorCode}: ${event.payload.message}`;
+  }
+  if (event.type === "agent.failed") {
+    return ` ${event.payload.errorCode}: ${event.payload.message}`;
+  }
+  const payload = event.payload as Record<string, unknown>;
+  return typeof payload.summary === "string" ? ` ${payload.summary}` : "";
+}
+
+async function reconcileTerminalChildren(service: ThreadService, tree: readonly DryRunThread[]): Promise<boolean> {
+  let reconciled = false;
+  for (const thread of tree) {
+    const { projection } = thread;
+    if (!projection.parentThreadId || !projection.parentScopeKey || !projection.parentStepKey) {
+      continue;
+    }
+    if (projection.status !== "completed" && projection.status !== "failed") {
+      continue;
+    }
+    const parent = tree.find((candidate) => candidate.threadId === projection.parentThreadId);
+    if (parent && hasMirroredChildTerminal(parent.events, projection.threadId, projection.parentScopeKey, projection.parentStepKey)) {
+      continue;
+    }
+    await service.mirrorChildTerminalEvent({
+      parentThreadId: projection.parentThreadId,
+      childThreadId: projection.threadId,
+      childAgentName: thread.agentName,
+      parentScopeKey: projection.parentScopeKey,
+      parentStepKey: projection.parentStepKey,
+    });
+    reconciled = true;
+  }
+  return reconciled;
+}
+
+function hasMirroredChildTerminal(
+  events: readonly ThreadEvent[],
+  childThreadId: string,
+  parentScopeKey: string,
+  parentStepKey: string,
+): boolean {
+  return events.some((event) => {
+    return (
+      (event.type === "child_thread.completed" || event.type === "child_thread.failed") &&
+      event.payload.childThreadId === childThreadId &&
+      event.scopeKey === parentScopeKey &&
+      event.stepKey === parentStepKey
+    );
+  });
 }
 
 async function currentGitBranch(cwd: string): Promise<string> {
