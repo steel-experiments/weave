@@ -25,6 +25,7 @@ import {
   weaveMaintainer,
   weaveSliceRunner,
   buildPrDraft,
+  createWeaveMaintainerAgent,
   createGithubPrUpsertTool,
   createSliceRunnerAgent,
   createOpenCodeImplementerAgent,
@@ -34,8 +35,12 @@ import {
   createRepairTool,
   createReviewerAgent,
   createVerificationAgent,
+  createInitialInitiativeExecutionState,
   decideNextSliceAction,
+  decideNextInitiativeAction,
   decideRepairLoop,
+  InitiativeActionSchema,
+  InitiativeExecutionStateSchema,
   SliceActionSchema,
   SliceExecutionStateSchema,
   GitWorktreeWorkspaceProvider,
@@ -149,6 +154,7 @@ assert.equal(weaveMaintainer.name, "weave.maintainer");
 assert.equal(developmentRepoContextReadTool.name, "dev.repoContext.read");
 assert.equal(developmentBranchStateReadTool.name, "dev.branchState.read");
 assert.equal(weaveSliceRunner.name, "weave.sliceRunner");
+assert.equal(typeof createWeaveMaintainerAgent, "function");
 assert.equal(typeof createOpenCodeImplementerAgent, "function");
 assert.equal(typeof createOpenCodeImplementationTool, "function");
 assert.equal(typeof createVerificationAgent, "function");
@@ -159,7 +165,11 @@ assert.equal(typeof buildPrDraft, "function");
 assert.equal(typeof createPrAgent, "function");
 assert.equal(typeof createGithubPrUpsertTool, "function");
 assert.equal(typeof createSliceRunnerAgent, "function");
+assert.equal(typeof createInitialInitiativeExecutionState, "function");
 assert.equal(typeof decideNextSliceAction, "function");
+assert.equal(typeof decideNextInitiativeAction, "function");
+assert.equal(typeof InitiativeExecutionStateSchema.parse, "function");
+assert.equal(typeof InitiativeActionSchema.parse, "function");
 assert.equal(typeof SliceExecutionStateSchema.parse, "function");
 assert.equal(typeof SliceActionSchema.parse, "function");
 assert.equal(repairAttemptKey(1), "repair:1");

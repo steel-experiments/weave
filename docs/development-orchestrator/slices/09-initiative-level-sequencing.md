@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
@@ -114,36 +114,45 @@ interface InitiativeExecutionState {
 
 ## Acceptance Criteria
 
-- [ ] Approved initiatives execute slices serially.
-- [ ] No parallel slice execution occurs.
-- [ ] The next slice starts only after the previous slice completed.
-- [ ] The initiative stops on the first blocked or failed slice.
-- [ ] Completed slices are aggregated for PR draft generation.
-- [ ] The PR draft agent runs after the final slice completes.
-- [ ] GitHub PR creation is disabled unless explicitly configured.
-- [ ] Replay does not duplicate slice or PR child threads.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `git diff --check` passes.
+- [x] Approved initiatives execute slices serially.
+- [x] No parallel slice execution occurs.
+- [x] The next slice starts only after the previous slice completed.
+- [x] The initiative stops on the first blocked or failed slice.
+- [x] Completed slices are aggregated for PR draft generation.
+- [x] The PR draft agent runs after the final slice completes.
+- [x] GitHub PR creation is disabled unless explicitly configured.
+- [x] Replay does not duplicate slice or PR child threads.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `git diff --check` passes.
 
 ## Progress
 
-- [ ] Add initiative execution state schemas.
-- [ ] Add initiative action schemas.
-- [ ] Add next-action decision helper.
-- [ ] Wire serial slice child execution.
-- [ ] Wire terminal PR draft child execution.
-- [ ] Add blocked/failed stop behavior.
-- [ ] Add replay tests.
-- [ ] Update docs.
+- [x] Add initiative execution state schemas.
+- [x] Add initiative action schemas.
+- [x] Add next-action decision helper.
+- [x] Wire serial slice child execution.
+- [x] Wire terminal PR draft child execution.
+- [x] Add blocked/failed stop behavior.
+- [x] Add replay tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `InitiativeExecutionPhaseSchema`, `InitiativeExecutionStateSchema`, and `InitiativeActionSchema`.
+- Added `createInitialInitiativeExecutionState(...)` and pure `decideNextInitiativeAction(...)`.
+- Added `createWeaveMaintainerAgent(...)`, preserving default `weaveMaintainer` planning/approval behavior when no child agents are configured.
+- When supplied with a slice runner, the maintainer runs approved slices serially with deterministic keys `slice:<sliceId>` and `wait-slice:<sliceId>`.
+- Completed slice outputs are converted into `CompletedDevelopmentSliceSummary` values for PR draft aggregation.
+- When supplied with a PR agent, the maintainer runs a local-only PR draft child by default with keys `pr-draft` and `wait-pr-draft`.
+- The initiative stops on the first blocked or failed slice and returns a durable blocked output with `blockedSlice` and `blockerReason`.
+- Added replay tests for serial two-slice completion, local-only PR draft handoff, first-slice blocked stop behavior, and pure initiative action decisions.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm exec -- tsx src/tests/public-api-exports.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gaps: workspace allocation/lifecycle remains slice 10. Real OpenCode execution remains slice 11. The full auth slice line should still start with a one-slice dry run before unattended execution.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `README.md`
+- [x] this slice document
+- [x] `../README.md`
+- [x] `README.md`
 - [ ] auth gateway execution notes if the auth slices become runnable through this path

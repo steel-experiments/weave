@@ -144,12 +144,16 @@ export const DevelopmentSlicePlanSchema = z.object({
 export type DevelopmentSlicePlan = z.infer<typeof DevelopmentSlicePlanSchema>;
 
 export const InitiativePlannerOutputSchema = z.object({
-  status: z.enum(["approved", "denied"]),
+  status: z.enum(["approved", "denied", "completed", "blocked"]),
   plan: DevelopmentSlicePlanSchema,
   contextFilesRead: z.array(NonEmptyStringSchema),
   repoContext: DevelopmentRepoContextSchema,
   proposedEventCount: z.number().int().nonnegative(),
   gateComment: NonEmptyStringSchema.optional(),
+  completedSlices: z.array(z.unknown()).default([]),
+  blockedSlice: NonEmptyStringSchema.optional(),
+  blockerReason: NonEmptyStringSchema.optional(),
+  prDraft: z.unknown().optional(),
 });
 export type InitiativePlannerOutput = z.infer<typeof InitiativePlannerOutputSchema>;
 
@@ -478,6 +482,46 @@ export const PrDraftResultSchema = z.object({
   humanApproval: z.enum(["approved", "denied"]).optional(),
 });
 export type PrDraftResult = z.infer<typeof PrDraftResultSchema>;
+
+export const InitiativeExecutionPhaseSchema = z.enum([
+  "planned",
+  "approved",
+  "slice-running",
+  "slice-completed",
+  "blocked",
+  "completed",
+  "pr-draft-ready",
+]);
+export type InitiativeExecutionPhase = z.infer<typeof InitiativeExecutionPhaseSchema>;
+
+export const InitiativeExecutionStateSchema = z.object({
+  initiative: NonEmptyStringSchema,
+  repo: NonEmptyStringSchema,
+  baseBranch: NonEmptyStringSchema,
+  workingBranch: NonEmptyStringSchema,
+  phase: InitiativeExecutionPhaseSchema,
+  plan: DevelopmentSlicePlanSchema,
+  currentSliceIndex: z.number().int().nonnegative(),
+  completedSlices: z.array(CompletedDevelopmentSliceSummarySchema).default([]),
+  blockedSlice: NonEmptyStringSchema.optional(),
+  blockerReason: NonEmptyStringSchema.optional(),
+  prDraft: PrDraftResultSchema.optional(),
+});
+export type InitiativeExecutionState = z.infer<typeof InitiativeExecutionStateSchema>;
+
+export const InitiativeActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("run-slice"), slice: DevelopmentSliceInputSchema, index: z.number().int().nonnegative() }),
+  z.object({ type: z.literal("run-pr-draft") }),
+  z.object({ type: z.literal("complete-initiative") }),
+  z.object({ type: z.literal("stop-initiative"), sliceId: NonEmptyStringSchema.optional(), reason: NonEmptyStringSchema }),
+]);
+export type InitiativeAction = z.infer<typeof InitiativeActionSchema>;
+
+export type InitiativeRunnerAgentOptions = {
+  sliceRunnerAgent?: AgentContract<string, any, SliceRunnerOutput>;
+  prAgent?: AgentContract<string, any, PrDraftResult>;
+  github?: z.input<typeof PrDraftInputSchema>["github"];
+};
 
 export const GithubPrUpsertInputSchema = z.object({
   repo: NonEmptyStringSchema,
@@ -1326,6 +1370,52 @@ export function buildPrDraft(rawInput: PrDraftInput): PrDraftResult {
   });
 }
 
+export function createInitialInitiativeExecutionState(input: {
+  plan: DevelopmentSlicePlan;
+  completedSlices?: CompletedDevelopmentSliceSummary[];
+  prDraft?: PrDraftResult;
+}): InitiativeExecutionState {
+  const completedSlices = input.completedSlices ?? [];
+  return InitiativeExecutionStateSchema.parse({
+    initiative: input.plan.initiative,
+    repo: input.plan.repo,
+    baseBranch: input.plan.baseBranch,
+    workingBranch: input.plan.workingBranch,
+    phase: completedSlices.length === 0 ? "approved" : completedSlices.length < input.plan.slices.length ? "slice-completed" : input.prDraft ? "pr-draft-ready" : "completed",
+    plan: input.plan,
+    currentSliceIndex: completedSlices.length,
+    completedSlices,
+    prDraft: input.prDraft,
+  });
+}
+
+export function decideNextInitiativeAction(rawState: InitiativeExecutionState): InitiativeAction {
+  const state = InitiativeExecutionStateSchema.parse(rawState);
+
+  if (state.phase === "blocked") {
+    return InitiativeActionSchema.parse({
+      type: "stop-initiative",
+      sliceId: state.blockedSlice,
+      reason: state.blockerReason ?? "Initiative is blocked.",
+    });
+  }
+
+  if (state.completedSlices.length < state.plan.slices.length) {
+    const index = state.completedSlices.length;
+    const slice = state.plan.slices[index];
+    if (!slice) {
+      return InitiativeActionSchema.parse({ type: "stop-initiative", reason: `Missing slice at index ${index}.` });
+    }
+    return InitiativeActionSchema.parse({ type: "run-slice", slice, index });
+  }
+
+  if (!state.prDraft) {
+    return InitiativeActionSchema.parse({ type: "run-pr-draft" });
+  }
+
+  return InitiativeActionSchema.parse({ type: "complete-initiative" });
+}
+
 export function createPrAgent(options: {
   name?: string;
   description?: string;
@@ -1573,96 +1663,211 @@ function pathMatchesAllowedFile(changedFile: string, allowedFile: string): boole
   return normalizedChanged === normalizedAllowed || (normalizedAllowed.endsWith("/") && normalizedChanged.startsWith(normalizedAllowed));
 }
 
+function completedSliceSummaryFromOutput(slice: DevelopmentSliceInput, output: Extract<SliceRunnerOutput, { status: "completed" }>): CompletedDevelopmentSliceSummary {
+  return CompletedDevelopmentSliceSummarySchema.parse({
+    sliceId: slice.id,
+    title: slice.title,
+    summary: output.summary,
+    implementationSummary: output.implementationSummary,
+    verificationResult: output.verificationResult,
+    reviewResults: output.reviewResults,
+    repairs: output.repairs,
+    docsChanged: [],
+    knownLimitations: [],
+    followUps: [],
+  });
+}
+
 async function git(cwd: string, args: readonly string[]): Promise<string> {
   const { stdout } = await execFileAsync("git", [...args], { cwd });
   return String(stdout);
 }
 
-export const weaveMaintainer = agent({
-  name: "weave.maintainer",
-  description: "Plans a Weave-managed development initiative and gates the approved slice plan before implementation.",
-  input: DevelopmentInitiativeInputSchema,
-  output: InitiativePlannerOutputSchema,
-  tools: [developmentRepoContextReadTool],
-  async run(ctx, rawInput) {
-    const input = await ctx.checkpoint(DevelopmentCheckpointKeys.initiativeContext, () =>
-      DevelopmentInitiativeInputSchema.parse(rawInput),
-    );
+export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions = {}) {
+  return agent({
+    name: "weave.maintainer",
+    description: "Plans a Weave-managed development initiative and optionally coordinates approved slices serially.",
+    input: DevelopmentInitiativeInputSchema,
+    output: InitiativePlannerOutputSchema,
+    tools: [developmentRepoContextReadTool],
+    async run(ctx, rawInput) {
+      const input = await ctx.checkpoint(DevelopmentCheckpointKeys.initiativeContext, () =>
+        DevelopmentInitiativeInputSchema.parse(rawInput),
+      );
 
-    await ctx.emit(
-      "initiative-started",
-      developmentEvents.initiativeStarted({
-        initiative: input.initiative,
-        repo: input.repo,
-        baseBranch: input.baseBranch,
-        workingBranch: input.workingBranch,
-        contextFiles: input.contextFiles,
-      }),
-    );
-
-    const context = await ctx.tool("read-repo-context", developmentRepoContextReadTool, {
-      repo: input.repo,
-      contextFiles: input.contextFiles,
-      maxFileBytes: 64_000,
-      maxTotalBytes: 256_000,
-    });
-
-    const repoContext = await ctx.checkpoint(DevelopmentCheckpointKeys.repoContext, () => context);
-
-    const plan = await ctx.checkpoint(DevelopmentCheckpointKeys.slicePlan, () => buildDevelopmentSlicePlan(input));
-
-    for (const slice of plan.slices) {
       await ctx.emit(
-        `slice-proposed:${slice.id}`,
-        developmentEvents.sliceProposed({
-          sliceId: slice.id,
-          title: slice.title,
-          objective: slice.objective,
-          acceptanceCriteria: slice.acceptanceCriteria,
-          requiredReviewers: slice.requiredReviewers,
+        "initiative-started",
+        developmentEvents.initiativeStarted({
+          initiative: input.initiative,
+          repo: input.repo,
+          baseBranch: input.baseBranch,
+          workingBranch: input.workingBranch,
+          contextFiles: input.contextFiles,
         }),
       );
-    }
 
-    const gate = await ctx.gate("approve-slice-plan", {
-      reason: "slice-plan-approval",
-      proposedAction: `Approve ${plan.slices.length} slice${plan.slices.length === 1 ? "" : "s"} for ${plan.initiative}.`,
-    });
+      const context = await ctx.tool("read-repo-context", developmentRepoContextReadTool, {
+        repo: input.repo,
+        contextFiles: input.contextFiles,
+        maxFileBytes: 64_000,
+        maxTotalBytes: 256_000,
+      });
 
-    if (gate.resolution !== "approved") {
+      const repoContext = await ctx.checkpoint(DevelopmentCheckpointKeys.repoContext, () => context);
+
+      const plan = await ctx.checkpoint(DevelopmentCheckpointKeys.slicePlan, () => buildDevelopmentSlicePlan(input));
+
+      for (const slice of plan.slices) {
+        await ctx.emit(
+          `slice-proposed:${slice.id}`,
+          developmentEvents.sliceProposed({
+            sliceId: slice.id,
+            title: slice.title,
+            objective: slice.objective,
+            acceptanceCriteria: slice.acceptanceCriteria,
+            requiredReviewers: slice.requiredReviewers,
+          }),
+        );
+      }
+
+      const gate = await ctx.gate("approve-slice-plan", {
+        reason: "slice-plan-approval",
+        proposedAction: `Approve ${plan.slices.length} slice${plan.slices.length === 1 ? "" : "s"} for ${plan.initiative}.`,
+      });
+
+      if (gate.resolution !== "approved") {
+        return InitiativePlannerOutputSchema.parse({
+          status: "denied",
+          plan,
+          contextFilesRead: input.contextFiles,
+          repoContext,
+          proposedEventCount: plan.slices.length,
+          gateComment: gate.comment,
+        });
+      }
+
+      const approvedPlan = await ctx.checkpoint(DevelopmentCheckpointKeys.approvedSlicePlan, () => plan);
+
+      for (const slice of approvedPlan.slices) {
+        await ctx.emit(
+          `slice-approved:${slice.id}`,
+          developmentEvents.sliceApproved({
+            sliceId: slice.id,
+            title: slice.title,
+            approvedBy: ctx.actor.id,
+          }),
+        );
+      }
+
+      if (!options.sliceRunnerAgent) {
+        return InitiativePlannerOutputSchema.parse({
+          status: "approved",
+          plan: approvedPlan,
+          contextFilesRead: input.contextFiles,
+          repoContext,
+          proposedEventCount: approvedPlan.slices.length,
+          gateComment: gate.comment,
+        });
+      }
+
+      const completedSlices: CompletedDevelopmentSliceSummary[] = [];
+      for (const [index, slice] of approvedPlan.slices.entries()) {
+        const state = createInitialInitiativeExecutionState({ plan: approvedPlan, completedSlices });
+        const action = decideNextInitiativeAction(state);
+        if (action.type !== "run-slice") {
+          break;
+        }
+
+        const sliceThread = await ctx.spawn(
+          `slice:${slice.id}`,
+          options.sliceRunnerAgent,
+          {
+            initiative: approvedPlan.initiative,
+            repo: approvedPlan.repo,
+            branch: approvedPlan.workingBranch,
+            slice,
+            maxRepairAttempts: 1,
+          },
+          { source: "system", prompt: `Run development slice ${slice.id}: ${slice.title}` },
+        );
+        const sliceRun = await ctx.join(`wait-slice:${slice.id}`, sliceThread);
+        if (sliceRun.status === "failed" || !sliceRun.output) {
+          return InitiativePlannerOutputSchema.parse({
+            status: "blocked",
+            plan: approvedPlan,
+            contextFilesRead: input.contextFiles,
+            repoContext,
+            proposedEventCount: approvedPlan.slices.length,
+            gateComment: gate.comment,
+            completedSlices,
+            blockedSlice: slice.id,
+            blockerReason: `Slice child failed: ${sliceRun.status === "failed" ? sliceRun.message : "missing output"}.`,
+          });
+        }
+
+        if (sliceRun.output.status !== "completed") {
+          return InitiativePlannerOutputSchema.parse({
+            status: "blocked",
+            plan: approvedPlan,
+            contextFilesRead: input.contextFiles,
+            repoContext,
+            proposedEventCount: approvedPlan.slices.length,
+            gateComment: gate.comment,
+            completedSlices,
+            blockedSlice: slice.id,
+            blockerReason: "reason" in sliceRun.output ? sliceRun.output.reason : `Slice ${slice.id} did not complete.`,
+          });
+        }
+
+        completedSlices.push(completedSliceSummaryFromOutput(slice, sliceRun.output));
+        await ctx.checkpoint(`initiative-slice-completed:${slice.id}`, () => ({ sliceId: slice.id, index }));
+      }
+
+      let prDraft: PrDraftResult | undefined;
+      if (options.prAgent) {
+        const prInput = PrDraftInputSchema.parse({
+          initiative: approvedPlan.initiative,
+          repo: approvedPlan.repo,
+          baseBranch: approvedPlan.baseBranch,
+          branch: approvedPlan.workingBranch,
+          shippedSlices: completedSlices,
+          github: options.github ?? { mode: "none", draft: true },
+        });
+        const prThread = await ctx.spawn("pr-draft", options.prAgent, prInput, {
+          source: "system",
+          prompt: `Draft PR handoff for ${approvedPlan.initiative}.`,
+        });
+        const prRun = await ctx.join("wait-pr-draft", prThread);
+        if (prRun.status === "failed" || !prRun.output) {
+          return InitiativePlannerOutputSchema.parse({
+            status: "blocked",
+            plan: approvedPlan,
+            contextFilesRead: input.contextFiles,
+            repoContext,
+            proposedEventCount: approvedPlan.slices.length,
+            gateComment: gate.comment,
+            completedSlices,
+            blockerReason: `PR draft child failed: ${prRun.status === "failed" ? prRun.message : "missing output"}.`,
+          });
+        }
+        prDraft = prRun.output;
+      }
+
       return InitiativePlannerOutputSchema.parse({
-        status: "denied",
-        plan,
+        status: "completed",
+        plan: approvedPlan,
         contextFilesRead: input.contextFiles,
         repoContext,
-        proposedEventCount: plan.slices.length,
+        proposedEventCount: approvedPlan.slices.length,
         gateComment: gate.comment,
+        completedSlices,
+        prDraft,
       });
-    }
+    },
+  });
+}
 
-    const approvedPlan = await ctx.checkpoint(DevelopmentCheckpointKeys.approvedSlicePlan, () => plan);
-
-    for (const slice of approvedPlan.slices) {
-      await ctx.emit(
-        `slice-approved:${slice.id}`,
-        developmentEvents.sliceApproved({
-          sliceId: slice.id,
-          title: slice.title,
-          approvedBy: ctx.actor.id,
-        }),
-      );
-    }
-
-    return InitiativePlannerOutputSchema.parse({
-      status: "approved",
-      plan: approvedPlan,
-      contextFilesRead: input.contextFiles,
-      repoContext,
-      proposedEventCount: approvedPlan.slices.length,
-      gateComment: gate.comment,
-    });
-  },
-});
+export const weaveMaintainer = createWeaveMaintainerAgent();
 
 export function createSliceRunnerAgent(options: SliceRunnerAgentOptions = {}) {
   return agent({

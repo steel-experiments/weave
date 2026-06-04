@@ -3,9 +3,12 @@ import {
   DevelopmentCheckpointKeys,
   DevelopmentInitiativeInputSchema,
   DevelopmentSlicePlanSchema,
+  InitiativeExecutionStateSchema,
   SliceExecutionStateSchema,
+  SliceRunnerInputSchema,
   ImplementationSummarySchema,
   OpenCodeImplementerInputSchema,
+  PrDraftInputSchema,
   VerificationAgentInputSchema,
   PrDraftResultSchema,
   RepairAgentInputSchema,
@@ -29,7 +32,10 @@ import {
   developmentRepoContextReadTool,
   developmentEvents,
   createInitialSliceExecutionState,
+  createInitialInitiativeExecutionState,
+  createWeaveMaintainerAgent,
   decideNextSliceAction,
+  decideNextInitiativeAction,
   decideRepairLoop,
   evaluateOpenCodeImplementerInput,
   evaluateSliceReadinessForCompletion,
@@ -334,6 +340,225 @@ const outputCompleted = approvedPlan.events.find((candidate): candidate is Extra
 assert(outputCompleted);
 assert.equal((outputCompleted.payload.output as { status: string }).status, "approved");
 assert.deepEqual((outputCompleted.payload.output as { repoContext: { filesRead: string[] } }).repoContext.filesRead, ["AGENTS.md"]);
+
+const secondSlice = {
+  id: "02-runner",
+  title: "Slice Runner",
+  objective: "Run one slice end-to-end.",
+  acceptanceCriteria: ["Slice completes"],
+  requiredReviewers: ["architecture-reviewer" as const],
+};
+const sequenceInitiative = DevelopmentInitiativeInputSchema.parse({
+  ...initiative,
+  slices: [{ ...validSlice, requiredReviewers: ["architecture-reviewer" as const] }, secondSlice],
+});
+const sequencePlan = buildDevelopmentSlicePlan(sequenceInitiative);
+const sequenceInitialState = createInitialInitiativeExecutionState({ plan: sequencePlan });
+assert.equal(InitiativeExecutionStateSchema.parse(sequenceInitialState).phase, "approved");
+assert.equal(decideNextInitiativeAction(sequenceInitialState).type, "run-slice");
+
+const sequenceSliceOutput = (sliceId: string, title: string) => ({
+  status: "completed" as const,
+  sliceId,
+  branch: sequenceInitiative.workingBranch,
+  workspaceRef,
+  implementationSummary: implementation,
+  verificationResult: verification,
+  reviewResults: [{ ...review, reviewer: "architecture-reviewer" as const, verdict: "pass" as const, findings: [] }],
+  repairs: [],
+  summary: `${title} completed.`,
+});
+const firstSliceOutput = sequenceSliceOutput(sequencePlan.slices[0]!.id, sequencePlan.slices[0]!.title);
+const secondSliceOutput = sequenceSliceOutput(sequencePlan.slices[1]!.id, sequencePlan.slices[1]!.title);
+const firstCompletedSummary = {
+  sliceId: sequencePlan.slices[0]!.id,
+  title: sequencePlan.slices[0]!.title,
+  summary: firstSliceOutput.summary,
+  implementationSummary: implementation,
+  verificationResult: verification,
+  reviewResults: firstSliceOutput.reviewResults,
+  repairs: [],
+  docsChanged: [],
+  knownLimitations: [],
+  followUps: [],
+};
+const secondCompletedSummary = {
+  sliceId: sequencePlan.slices[1]!.id,
+  title: sequencePlan.slices[1]!.title,
+  summary: secondSliceOutput.summary,
+  implementationSummary: implementation,
+  verificationResult: verification,
+  reviewResults: secondSliceOutput.reviewResults,
+  repairs: [],
+  docsChanged: [],
+  knownLimitations: [],
+  followUps: [],
+};
+const afterOneSliceState = createInitialInitiativeExecutionState({ plan: sequencePlan, completedSlices: [firstCompletedSummary] });
+assert.deepEqual(decideNextInitiativeAction(afterOneSliceState), { type: "run-slice", slice: sequencePlan.slices[1]!, index: 1 });
+const prDraftInput = PrDraftInputSchema.parse({
+  initiative: sequencePlan.initiative,
+  repo: sequencePlan.repo,
+  baseBranch: sequencePlan.baseBranch,
+  branch: sequencePlan.workingBranch,
+  shippedSlices: [firstCompletedSummary, secondCompletedSummary],
+  github: { mode: "none", draft: true },
+});
+const prDraftOutput = buildPrDraft(prDraftInput);
+assert.equal(
+  decideNextInitiativeAction(createInitialInitiativeExecutionState({ plan: sequencePlan, completedSlices: [firstCompletedSummary, secondCompletedSummary] })).type,
+  "run-pr-draft",
+);
+assert.equal(
+  decideNextInitiativeAction(createInitialInitiativeExecutionState({ plan: sequencePlan, completedSlices: [firstCompletedSummary, secondCompletedSummary], prDraft: prDraftOutput })).type,
+  "complete-initiative",
+);
+
+const sequenceMaintainer = createWeaveMaintainerAgent({ sliceRunnerAgent: weaveSliceRunner, prAgent: createPrAgent() });
+const sequenceThreadId = "initiative-sequencing-complete";
+const firstSliceRunnerInput = SliceRunnerInputSchema.parse({
+  initiative: sequencePlan.initiative,
+  repo: sequencePlan.repo,
+  branch: sequencePlan.workingBranch,
+  slice: sequencePlan.slices[0]!,
+  maxRepairAttempts: 1,
+});
+const secondSliceRunnerInput = SliceRunnerInputSchema.parse({
+  initiative: sequencePlan.initiative,
+  repo: sequencePlan.repo,
+  branch: sequencePlan.workingBranch,
+  slice: sequencePlan.slices[1]!,
+  maxRepairAttempts: 1,
+});
+const sequenceHistory = [
+  ...createInitialHistory(sequenceThreadId, sequenceInitiative, sequenceMaintainer.name),
+  childSpawnedEvent(sequenceThreadId, `slice:${sequencePlan.slices[0]!.id}`, weaveSliceRunner.name, "sequence-child-slice-1", firstSliceRunnerInput, `Run development slice ${sequencePlan.slices[0]!.id}: ${sequencePlan.slices[0]!.title}`, sequenceMaintainer.name),
+  childSpawnedEvent(sequenceThreadId, `slice:${sequencePlan.slices[1]!.id}`, weaveSliceRunner.name, "sequence-child-slice-2", secondSliceRunnerInput, `Run development slice ${sequencePlan.slices[1]!.id}: ${sequencePlan.slices[1]!.title}`, sequenceMaintainer.name),
+  childSpawnedEvent(sequenceThreadId, "pr-draft", createPrAgent().name, "sequence-child-pr", prDraftInput, `Draft PR handoff for ${sequencePlan.initiative}.`, sequenceMaintainer.name),
+];
+const sequencePlanner = createAgentPlanner(sequenceMaintainer);
+const sequenceFirstPlan = await sequencePlanner.plan(sequenceThreadId, sequenceHistory);
+assert(sequenceFirstPlan);
+const sequenceContextRequest = sequenceFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(sequenceContextRequest);
+const sequenceContextCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  ...contextCompleted,
+  eventId: eventKey(sequenceThreadId, "tool.completed", "read-repo-context"),
+  threadId: sequenceThreadId,
+  correlationId: sequenceContextRequest.correlationId,
+  causationId: sequenceContextRequest.eventId,
+  scopeKey: sequenceContextRequest.scopeKey,
+  stepKey: sequenceContextRequest.stepKey,
+  payload: { ...contextCompleted.payload, toolCallId: sequenceContextRequest.payload.toolCallId },
+};
+const sequencePlanned = await sequencePlanner.plan(sequenceThreadId, [...sequenceHistory, ...sequenceFirstPlan.events, sequenceContextCompleted]);
+assert(sequencePlanned);
+const sequenceGate = sequencePlanned.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
+  candidate.type === "gate.created",
+);
+assert(sequenceGate);
+const sequenceGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  eventId: eventKey(sequenceThreadId, "gate.resolved", "approve-slice-plan"),
+  threadId: sequenceThreadId,
+  type: "gate.resolved",
+  occurredAt: nowIso(),
+  correlationId: sequenceGate.correlationId,
+  causationId: sequenceGate.eventId,
+  scopeKey: sequenceGate.scopeKey,
+  stepKey: sequenceGate.stepKey,
+  actor: { type: "human", id: "maintainer" },
+  payload: { gateId: sequenceGate.payload.gateId, resolution: "approved", comment: "run slices" },
+};
+const sequenceAfterApproval = await sequencePlanner.plan(sequenceThreadId, [
+  ...sequenceHistory,
+  ...sequenceFirstPlan.events,
+  sequenceContextCompleted,
+  ...sequencePlanned.events,
+  sequenceGateResolved,
+]);
+assert(sequenceAfterApproval);
+assert.equal(sequenceAfterApproval.events.some((candidate) => candidate.type === "agent.output.completed"), false);
+const sequenceCompleted = await sequencePlanner.plan(sequenceThreadId, [
+  ...sequenceHistory,
+  ...sequenceFirstPlan.events,
+  sequenceContextCompleted,
+  ...sequencePlanned.events,
+  sequenceGateResolved,
+  ...sequenceAfterApproval.events,
+  childCompletedEvent(sequenceThreadId, `wait-slice:${sequencePlan.slices[0]!.id}`, "sequence-child-slice-1", weaveSliceRunner.name, firstSliceOutput, sequenceMaintainer.name),
+  childCompletedEvent(sequenceThreadId, `wait-slice:${sequencePlan.slices[1]!.id}`, "sequence-child-slice-2", weaveSliceRunner.name, secondSliceOutput, sequenceMaintainer.name),
+  childCompletedEvent(sequenceThreadId, "wait-pr-draft", "sequence-child-pr", createPrAgent().name, prDraftOutput, sequenceMaintainer.name),
+]);
+assert(sequenceCompleted);
+const sequenceOutput = sequenceCompleted.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(sequenceOutput);
+assert.equal((sequenceOutput.payload.output as { status: string }).status, "completed");
+assert.equal((sequenceOutput.payload.output as { completedSlices: unknown[] }).completedSlices.length, 2);
+assert.equal((sequenceOutput.payload.output as { prDraft?: unknown }).prDraft !== undefined, true);
+
+const blockedMaintainer = createWeaveMaintainerAgent({ sliceRunnerAgent: weaveSliceRunner });
+const blockedSequenceThreadId = "initiative-sequencing-blocked";
+const blockedSequenceHistory = [
+  ...createInitialHistory(blockedSequenceThreadId, sequenceInitiative, blockedMaintainer.name),
+  childSpawnedEvent(blockedSequenceThreadId, `slice:${sequencePlan.slices[0]!.id}`, weaveSliceRunner.name, "blocked-child-slice-1", firstSliceRunnerInput, `Run development slice ${sequencePlan.slices[0]!.id}: ${sequencePlan.slices[0]!.title}`, blockedMaintainer.name),
+];
+const blockedPlanner = createAgentPlanner(blockedMaintainer);
+const blockedFirstPlan = await blockedPlanner.plan(blockedSequenceThreadId, blockedSequenceHistory);
+assert(blockedFirstPlan);
+const blockedContextRequest = blockedFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(blockedContextRequest);
+const blockedContextCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  ...contextCompleted,
+  eventId: eventKey(blockedSequenceThreadId, "tool.completed", "read-repo-context"),
+  threadId: blockedSequenceThreadId,
+  correlationId: blockedContextRequest.correlationId,
+  causationId: blockedContextRequest.eventId,
+  scopeKey: blockedContextRequest.scopeKey,
+  stepKey: blockedContextRequest.stepKey,
+  payload: { ...contextCompleted.payload, toolCallId: blockedContextRequest.payload.toolCallId },
+};
+const blockedPlanned = await blockedPlanner.plan(blockedSequenceThreadId, [...blockedSequenceHistory, ...blockedFirstPlan.events, blockedContextCompleted]);
+assert(blockedPlanned);
+const blockedGate = blockedPlanned.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> => candidate.type === "gate.created");
+assert(blockedGate);
+const blockedGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  ...sequenceGateResolved,
+  eventId: eventKey(blockedSequenceThreadId, "gate.resolved", "approve-slice-plan"),
+  threadId: blockedSequenceThreadId,
+  correlationId: blockedGate.correlationId,
+  causationId: blockedGate.eventId,
+  scopeKey: blockedGate.scopeKey,
+  stepKey: blockedGate.stepKey,
+  payload: { gateId: blockedGate.payload.gateId, resolution: "approved", comment: "run slices" },
+};
+const blockedOutputPlan = await blockedPlanner.plan(blockedSequenceThreadId, [
+  ...blockedSequenceHistory,
+  ...blockedFirstPlan.events,
+  blockedContextCompleted,
+  ...blockedPlanned.events,
+  blockedGateResolved,
+  childCompletedEvent(
+    blockedSequenceThreadId,
+    `wait-slice:${sequencePlan.slices[0]!.id}`,
+    "blocked-child-slice-1",
+    weaveSliceRunner.name,
+    { status: "failed", sliceId: sequencePlan.slices[0]!.id, branch: sequencePlan.workingBranch, reason: "slice failed", findings: [] },
+    blockedMaintainer.name,
+  ),
+]);
+assert(blockedOutputPlan);
+const blockedSequenceOutput = blockedOutputPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(blockedSequenceOutput);
+assert.equal((blockedSequenceOutput.payload.output as { status: string }).status, "blocked");
+assert.equal((blockedSequenceOutput.payload.output as { blockedSlice: string }).blockedSlice, sequencePlan.slices[0]!.id);
 
 const branchState = {
   repo: "weave",
@@ -1197,19 +1422,21 @@ function childSpawnedEvent(
   childThreadId: string,
   input: Record<string, unknown>,
   inputSummary: string,
+  parentAgentName: string = "weave.sliceRunner",
 ): Extract<ThreadEvent, { type: "child_thread.spawned" }> {
+  const scopeKey = `agent:${parentAgentName}`;
   return {
-    eventId: eventKey(threadId, "child_thread.spawned", `agent:weave.sliceRunner:${stepKey}`),
+    eventId: eventKey(threadId, "child_thread.spawned", `${scopeKey}:${stepKey}`),
     threadId,
     type: "child_thread.spawned",
     occurredAt: nowIso(),
-    scopeKey: "agent:weave.sliceRunner",
+    scopeKey,
     stepKey,
-    actor: { type: "agent", id: "weave.sliceRunner" },
+    actor: { type: "agent", id: parentAgentName },
     payload: {
       childThreadId,
       childAgentName,
-      scopeKey: "agent:weave.sliceRunner",
+      scopeKey,
       stepKey,
       mode: "attached",
       inputHash: stableJsonHash(input),
@@ -1224,13 +1451,15 @@ function childCompletedEvent(
   childThreadId: string,
   childAgentName: string,
   output: unknown,
+  parentAgentName: string = "weave.sliceRunner",
 ): Extract<ThreadEvent, { type: "child_thread.completed" }> {
+  const scopeKey = `agent:${parentAgentName}`;
   return {
-    eventId: eventKey(threadId, "child_thread.completed", `agent:weave.sliceRunner:${stepKey}`),
+    eventId: eventKey(threadId, "child_thread.completed", `${scopeKey}:${stepKey}`),
     threadId,
     type: "child_thread.completed",
     occurredAt: nowIso(),
-    scopeKey: "agent:weave.sliceRunner",
+    scopeKey,
     stepKey,
     actor: { type: "worker", id: "test-worker" },
     payload: {
