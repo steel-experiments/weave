@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
-- Last updated: `2026-06-03`
+- Status: `Shipped`
+- Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
 ## Goal
@@ -51,32 +51,42 @@ As a maintainer, I can delegate one approved slice to OpenCode while Weave keeps
 
 ## Acceptance Criteria
 
-- [ ] OpenCode implementer runs as a child thread for one slice.
-- [ ] Implementer receives objective, acceptance criteria, `WorkspaceRef`, branch, constraints, and allowed files when present.
-- [ ] Implementer output is schema-validated.
-- [ ] Branch write policy is enforced.
-- [ ] OpenCode cannot access secrets or merge PRs.
-- [ ] Implementation summary is checkpointed.
-- [ ] Weave does not treat OpenCode claims as verification results.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] OpenCode implementer runs as a child thread for one slice.
+- [x] Implementer receives objective, acceptance criteria, `WorkspaceRef`, branch, constraints, and allowed files when present.
+- [x] Implementer output is schema-validated.
+- [x] Branch write policy is enforced.
+- [x] OpenCode cannot access secrets or merge PRs.
+- [x] Implementation summary is checkpointed.
+- [x] Weave does not treat OpenCode claims as verification results.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Define implementer role schema.
-- [ ] Add policy integration.
-- [ ] Wire OpenCode adapter boundary.
-- [ ] Add lifecycle events.
-- [ ] Add mocked implementation tests.
-- [ ] Update docs.
+- [x] Define implementer role schema.
+- [x] Add policy integration.
+- [x] Wire OpenCode adapter boundary.
+- [x] Add lifecycle events.
+- [x] Add mocked implementation tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `OpenCodeImplementerInputSchema` as a workspace-scoped implementation request containing slice id/title, objective, acceptance criteria, `WorkspaceRef`, working branch, optional allowed files, and constraints.
+- Added `OpenCodeImplementerOutputSchema` with `completed` and `blocked` outcomes.
+- Added `OpenCodeImplementationRunner`, `createOpenCodeImplementationTool(...)`, and `createOpenCodeImplementerAgent(...)`.
+- `dev.opencode.implement` is a normal tool boundary with capability intent for `repo.read`, `repo.write.branch`, `opencode.run`, and `shell.exec.bounded`.
+- The implementer agent emits `dev.implementation.started`, requests the OpenCode implementation tool, checkpoints `implementation-summary`, emits `dev.implementation.completed`, and returns a schema-validated summary.
+- Branch policy blocks `main` and `WorkspaceRef` branch mismatches before the OpenCode runner can execute.
+- Allowed-file scope is enforced against the returned implementation summary; out-of-scope changed files produce a structured `blocked` result instead of a completed implementation.
+- The boundary does not request GitHub merge capabilities or credentials, so OpenCode cannot merge PRs or access secrets through this role.
+- Added mocked runner replay tests proving lifecycle events, tool request, summary checkpoint, completed output, blocked `main` behavior, and allowed-file scope checks.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: this is still a boundary with a mockable runner. A real OpenCode CLI/session runner and actual patch capture should land after verification/reviewer threads exist.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `../../agent-adapters.md`
+- [x] this slice document
+- [x] `../README.md`
+- [x] `../../agent-adapters.md`
 - [ ] relevant OpenCode adapter example docs

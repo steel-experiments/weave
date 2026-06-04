@@ -10,10 +10,14 @@ import {
   ReviewResultSchema,
   VerificationResultSchema,
   buildDevelopmentSlicePlan,
+  createOpenCodeImplementationTool,
+  createOpenCodeImplementerAgent,
   developmentBranchStateReadTool,
   developmentRepoContextReadTool,
   developmentEvents,
+  evaluateOpenCodeImplementerInput,
   evaluateSliceBranchState,
+  outOfScopeImplementationFiles,
   readDevelopmentRepoContext,
   weaveMaintainer,
   weaveSliceRunner,
@@ -68,15 +72,33 @@ assert.equal(DevelopmentCheckpointKeys.approvedSlicePlan, "approved-slice-plan")
 assert.equal(DevelopmentCheckpointKeys.workspaceRef, "workspace-ref");
 assert.equal(buildDevelopmentSlicePlan(initiative).summary, "Plan 1 development slice for Build Weave Maintainer.");
 
+const workspaceRef = {
+  provider: "git-worktree",
+  workspaceId: "workspace-01",
+  path: "/tmp/weave/workspace-01",
+  repo: "weave",
+  baseBranch: "main",
+  workingBranch: initiative.workingBranch,
+  baseCommit: "abc123",
+};
+
 const implementerInput = OpenCodeImplementerInputSchema.parse({
+  sliceId: validSlice.id,
   sliceTitle: validSlice.title,
   objective: validSlice.objective,
   acceptanceCriteria: validSlice.acceptanceCriteria,
-  allowedFiles: ["src/development-orchestrator.ts"],
+  allowedFiles: ["src/example.ts", "src/example.test.ts"],
   branch: initiative.workingBranch,
+  workspaceRef,
 });
 
 assert.deepEqual(implementerInput.constraints, []);
+assert.equal(evaluateOpenCodeImplementerInput(implementerInput), undefined);
+assert.equal(evaluateOpenCodeImplementerInput({ ...implementerInput, branch: "main" })?.status, "blocked");
+assert.equal(
+  evaluateOpenCodeImplementerInput({ ...implementerInput, workspaceRef: { ...workspaceRef, workingBranch: "other-branch" } })?.status,
+  "blocked",
+);
 
 const implementation = ImplementationSummarySchema.parse({
   filesChanged: ["src/development-orchestrator.ts"],
@@ -86,6 +108,8 @@ const implementation = ImplementationSummarySchema.parse({
 
 assert.deepEqual(implementation.testsAdded, []);
 assert.deepEqual(implementation.knownLimitations, []);
+assert.deepEqual(outOfScopeImplementationFiles(implementerInput, { ...implementation, filesChanged: ["src/example.ts"] }), []);
+assert.deepEqual(outOfScopeImplementationFiles(implementerInput, { ...implementation, filesChanged: ["src/other.ts"] }), ["src/other.ts"]);
 
 const verification = VerificationResultSchema.parse({
   status: "passed",
@@ -350,6 +374,107 @@ const runnerOutput = runnerReadyPlan.events.find((candidate): candidate is Extra
 );
 assert(runnerOutput);
 assert.equal((runnerOutput.payload.output as { status: string }).status, "ready");
+
+const mockImplementationTool = createOpenCodeImplementationTool({
+  run(input) {
+    assert.equal(input.workspaceRef.workspaceId, workspaceRef.workspaceId);
+    assert.equal(input.branch, workspaceRef.workingBranch);
+    return {
+      filesChanged: ["src/example.ts"],
+      testsAdded: ["src/example.test.ts"],
+      behaviorChanged: ["Example behavior changed."],
+      docsChanged: [],
+      knownLimitations: [],
+      followUpSuggestions: [],
+      summary: "Implemented mocked slice.",
+    };
+  },
+});
+assert.equal(mockImplementationTool.name, "dev.opencode.implement");
+
+const openCodeImplementer = createOpenCodeImplementerAgent({
+  runner: {
+    run() {
+      return {
+        filesChanged: ["src/example.ts"],
+        testsAdded: ["src/example.test.ts"],
+        behaviorChanged: ["Example behavior changed."],
+        docsChanged: [],
+        knownLimitations: [],
+        followUpSuggestions: [],
+        summary: "Implemented mocked slice.",
+      };
+    },
+  },
+});
+const implementationThreadId = "opencode-implementer-boundary";
+const implementationHistory = createInitialHistory(implementationThreadId, implementerInput, openCodeImplementer.name);
+const implementationPlanner = createAgentPlanner(openCodeImplementer);
+const implementationFirstPlan = await implementationPlanner.plan(implementationThreadId, implementationHistory);
+
+assert(implementationFirstPlan);
+assert.equal(implementationFirstPlan.events.some((candidate) => candidate.type === "dev.implementation.started"), true);
+const implementationRequest = implementationFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(implementationRequest);
+assert.equal(implementationRequest.payload.toolName, "dev.opencode.implement");
+
+const implementationCompletedTool: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(implementationThreadId, "tool.completed", "run-opencode-implementation"),
+  threadId: implementationThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: implementationRequest.correlationId,
+  causationId: implementationRequest.eventId,
+  scopeKey: implementationRequest.scopeKey,
+  stepKey: implementationRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: implementationRequest.payload.toolCallId,
+    output: {
+      filesChanged: ["src/example.ts"],
+      testsAdded: ["src/example.test.ts"],
+      behaviorChanged: ["Example behavior changed."],
+      docsChanged: [],
+      knownLimitations: [],
+      followUpSuggestions: [],
+      summary: "Implemented mocked slice.",
+    },
+  },
+};
+
+const implementationFinishedPlan = await implementationPlanner.plan(implementationThreadId, [
+  ...implementationHistory,
+  ...implementationFirstPlan.events,
+  implementationCompletedTool,
+]);
+assert(implementationFinishedPlan);
+assert.equal(implementationFinishedPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "implementation-summary"), true);
+assert.equal(implementationFinishedPlan.events.some((candidate) => candidate.type === "dev.implementation.completed"), true);
+const implementationOutput = implementationFinishedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(implementationOutput);
+assert.equal((implementationOutput.payload.output as { status: string }).status, "completed");
+
+const blockedImplementer = createOpenCodeImplementerAgent({
+  runner: {
+    run() {
+      throw new Error("runner should not execute for blocked input");
+    },
+  },
+});
+const blockedThreadId = "opencode-implementer-blocked";
+const blockedHistory = createInitialHistory(blockedThreadId, { ...implementerInput, branch: "main" }, blockedImplementer.name);
+const blockedPlan = await createAgentPlanner(blockedImplementer).plan(blockedThreadId, blockedHistory);
+assert(blockedPlan);
+assert.equal(blockedPlan.events.some((candidate) => candidate.type === "tool.requested"), false);
+const blockedOutput = blockedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(blockedOutput);
+assert.equal((blockedOutput.payload.output as { status: string }).status, "blocked");
 
 console.log("Development orchestrator contract tests passed");
 

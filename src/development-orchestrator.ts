@@ -196,12 +196,13 @@ export const SliceRunnerOutputSchema = z.discriminatedUnion("status", [
 export type SliceRunnerOutput = z.infer<typeof SliceRunnerOutputSchema>;
 
 export const OpenCodeImplementerInputSchema = z.object({
+  sliceId: NonEmptyStringSchema.optional(),
   sliceTitle: NonEmptyStringSchema,
   objective: NonEmptyStringSchema,
   acceptanceCriteria: z.array(NonEmptyStringSchema).min(1),
   allowedFiles: z.array(NonEmptyStringSchema).optional(),
   branch: NonEmptyStringSchema,
-  workspaceRef: WorkspaceRefSchema.optional(),
+  workspaceRef: WorkspaceRefSchema,
   constraints: z.array(NonEmptyStringSchema).default([]),
 });
 export type OpenCodeImplementerInput = z.infer<typeof OpenCodeImplementerInputSchema>;
@@ -216,6 +217,26 @@ export const ImplementationSummarySchema = z.object({
   summary: NonEmptyStringSchema,
 });
 export type ImplementationSummary = z.infer<typeof ImplementationSummarySchema>;
+
+export const OpenCodeImplementerOutputSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("completed"),
+    branch: NonEmptyStringSchema,
+    workspaceRef: WorkspaceRefSchema,
+    summary: ImplementationSummarySchema,
+  }),
+  z.object({
+    status: z.literal("blocked"),
+    branch: NonEmptyStringSchema,
+    workspaceRef: WorkspaceRefSchema.optional(),
+    reason: NonEmptyStringSchema,
+  }),
+]);
+export type OpenCodeImplementerOutput = z.infer<typeof OpenCodeImplementerOutputSchema>;
+
+export type OpenCodeImplementationRunner = {
+  run(input: OpenCodeImplementerInput): Promise<ImplementationSummary> | ImplementationSummary;
+};
 
 export const VerificationResultSchema = z.object({
   status: z.enum(["passed", "failed", "blocked"]),
@@ -292,6 +313,34 @@ export const repoReadCapability = capability({
   }),
 });
 
+export const repoWriteBranchCapability = capability({
+  name: "repo.write.branch",
+  description: "Write repository files only on the configured working branch.",
+  params: z.object({
+    repo: NonEmptyStringSchema,
+    branch: NonEmptyStringSchema,
+    workspaceId: NonEmptyStringSchema,
+  }),
+});
+
+export const opencodeRunCapability = capability({
+  name: "opencode.run",
+  description: "Run OpenCode as a bounded implementation worker.",
+  params: z.object({
+    workspaceId: NonEmptyStringSchema,
+    agentRole: NonEmptyStringSchema,
+  }),
+});
+
+export const boundedShellCapability = capability({
+  name: "shell.exec.bounded",
+  description: "Run bounded local commands inside a configured workspace.",
+  params: z.object({
+    workspaceId: NonEmptyStringSchema,
+    purpose: NonEmptyStringSchema,
+  }),
+});
+
 export const developmentRepoContextReadTool = tool({
   name: "dev.repoContext.read",
   description: "Read bounded, explicit repository context files for development initiative planning.",
@@ -323,6 +372,34 @@ export const developmentBranchStateReadTool = tool({
     return readDevelopmentBranchState(ctx.input);
   },
 });
+
+export function createOpenCodeImplementationTool(runner: OpenCodeImplementationRunner) {
+  return tool({
+    name: "dev.opencode.implement",
+    description: "Run OpenCode to implement one bounded development slice inside a configured workspace.",
+    input: OpenCodeImplementerInputSchema,
+    output: ImplementationSummarySchema,
+    capabilities(context) {
+      return [
+        repoReadCapability.request({ repo: context.input.workspaceRef.repo, paths: [context.input.workspaceRef.path] }),
+        repoWriteBranchCapability.request({
+          repo: context.input.workspaceRef.repo,
+          branch: context.input.branch,
+          workspaceId: context.input.workspaceRef.workspaceId,
+        }),
+        opencodeRunCapability.request({ workspaceId: context.input.workspaceRef.workspaceId, agentRole: "implementer" }),
+        boundedShellCapability.request({ workspaceId: context.input.workspaceRef.workspaceId, purpose: "implementation" }),
+      ];
+    },
+    summarize(output) {
+      return output.summary;
+    },
+    async run(ctx) {
+      const result = await runner.run(ctx.input);
+      return ImplementationSummarySchema.parse(result);
+    },
+  });
+}
 
 export const developmentEvents = {
   initiativeStarted: event({
@@ -572,6 +649,106 @@ export function evaluateSliceBranchState(input: SliceRunnerInput, branchState: D
     branchState,
     workspaceRef: input.workspaceRef,
   });
+}
+
+export function evaluateOpenCodeImplementerInput(input: OpenCodeImplementerInput): OpenCodeImplementerOutput | undefined {
+  if (input.branch === "main") {
+    return OpenCodeImplementerOutputSchema.parse({
+      status: "blocked",
+      branch: input.branch,
+      workspaceRef: input.workspaceRef,
+      reason: "Refusing to run OpenCode implementation on main.",
+    });
+  }
+
+  if (input.workspaceRef.workingBranch !== input.branch) {
+    return OpenCodeImplementerOutputSchema.parse({
+      status: "blocked",
+      branch: input.branch,
+      workspaceRef: input.workspaceRef,
+      reason: `Workspace branch ${input.workspaceRef.workingBranch} does not match requested branch ${input.branch}.`,
+    });
+  }
+
+  return undefined;
+}
+
+export function outOfScopeImplementationFiles(input: OpenCodeImplementerInput, summary: ImplementationSummary): string[] {
+  if (!input.allowedFiles?.length) {
+    return [];
+  }
+
+  return summary.filesChanged.filter((changedFile) => !input.allowedFiles?.some((allowedFile) => pathMatchesAllowedFile(changedFile, allowedFile)));
+}
+
+export function createOpenCodeImplementerAgent(options: {
+  name?: string;
+  description?: string;
+  runner: OpenCodeImplementationRunner;
+}) {
+  const implementationTool = createOpenCodeImplementationTool(options.runner);
+
+  return agent({
+    name: options.name ?? "weave.opencodeImplementer",
+    description: options.description ?? "Runs OpenCode for one bounded implementation slice inside a configured workspace.",
+    input: OpenCodeImplementerInputSchema,
+    output: OpenCodeImplementerOutputSchema,
+    tools: [implementationTool],
+    async run(ctx, rawInput) {
+      const input = OpenCodeImplementerInputSchema.parse(rawInput);
+      const blocked = evaluateOpenCodeImplementerInput(input);
+      if (blocked) {
+        return blocked;
+      }
+
+      await ctx.emit(
+        `implementation-started:${input.workspaceRef.workspaceId}`,
+        developmentEvents.implementationStarted({
+          sliceId: input.sliceId ?? input.sliceTitle,
+          branch: input.branch,
+          agentName: ctx.actor.id,
+        }),
+      );
+
+      const claimedSummary = await ctx.tool("run-opencode-implementation", implementationTool, input);
+      const outOfScopeFiles = outOfScopeImplementationFiles(input, claimedSummary);
+      if (outOfScopeFiles.length > 0) {
+        return OpenCodeImplementerOutputSchema.parse({
+          status: "blocked",
+          branch: input.branch,
+          workspaceRef: input.workspaceRef,
+          reason: `OpenCode changed files outside allowed scope: ${outOfScopeFiles.join(", ")}.`,
+        });
+      }
+
+      const summary = await ctx.checkpoint(DevelopmentCheckpointKeys.implementationSummary, () => claimedSummary);
+
+      await ctx.emit(
+        `implementation-completed:${input.workspaceRef.workspaceId}`,
+        developmentEvents.implementationCompleted({
+          sliceId: input.sliceId ?? input.sliceTitle,
+          branch: input.branch,
+          summary: summary.summary,
+          filesChanged: summary.filesChanged,
+          testsAdded: summary.testsAdded,
+          knownLimitations: summary.knownLimitations,
+        }),
+      );
+
+      return OpenCodeImplementerOutputSchema.parse({
+        status: "completed",
+        branch: input.branch,
+        workspaceRef: input.workspaceRef,
+        summary,
+      });
+    },
+  });
+}
+
+function pathMatchesAllowedFile(changedFile: string, allowedFile: string): boolean {
+  const normalizedChanged = changedFile.replace(/^\.\//, "");
+  const normalizedAllowed = allowedFile.replace(/^\.\//, "");
+  return normalizedChanged === normalizedAllowed || (normalizedAllowed.endsWith("/") && normalizedChanged.startsWith(normalizedAllowed));
 }
 
 async function git(cwd: string, args: readonly string[]): Promise<string> {

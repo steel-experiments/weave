@@ -24,6 +24,8 @@ import {
   developmentEvents,
   weaveMaintainer,
   weaveSliceRunner,
+  createOpenCodeImplementerAgent,
+  createOpenCodeImplementationTool,
   GitWorktreeWorkspaceProvider,
   WorkspaceRefSchema,
   createWorkspaceAllocateTool,
@@ -134,6 +136,8 @@ assert.equal(weaveMaintainer.name, "weave.maintainer");
 assert.equal(developmentRepoContextReadTool.name, "dev.repoContext.read");
 assert.equal(developmentBranchStateReadTool.name, "dev.branchState.read");
 assert.equal(weaveSliceRunner.name, "weave.sliceRunner");
+assert.equal(typeof createOpenCodeImplementerAgent, "function");
+assert.equal(typeof createOpenCodeImplementationTool, "function");
 assert.equal(typeof GitWorktreeWorkspaceProvider, "function");
 assert.equal(typeof WorkspaceRefSchema.parse, "function");
 assert.equal(createWorkspaceAllocateTool(new GitWorktreeWorkspaceProvider()).name, "workspace.allocate");

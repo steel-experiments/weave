@@ -204,6 +204,21 @@ This keeps Weave as the durable control layer while leaving the live OpenCode pr
 
 The opt-in prompt workflow integration test is `npm --workspace weave-prompt-workflow-review run test:opencode`.
 
+## Workspace-scoped OpenCode implementer
+
+The development orchestrator adds a separate implementation boundary for coding slices:
+
+- `createOpenCodeImplementerAgent(...)` returns a normal Weave agent role named `weave.opencodeImplementer` by default
+- `createOpenCodeImplementationTool(...)` wraps an injected `OpenCodeImplementationRunner` behind the `dev.opencode.implement` tool
+- input is workspace-scoped through `WorkspaceRef`, not the current process checkout
+- the tool declares `repo.read`, `repo.write.branch`, `opencode.run`, and bounded shell intent for policy inspection
+- the agent emits `dev.implementation.started` and `dev.implementation.completed`
+- the returned implementation summary is schema-validated and checkpointed as `implementation-summary`
+- OpenCode claims are not treated as verification; test/typecheck/reviewer slices must independently validate the workspace diff later
+- branch mismatches, `main`, and out-of-scope changed-file claims become structured blocked results
+
+This boundary is intentionally not a full autonomous coding loop. It is the patching component that the slice runner can spawn after workspace allocation and before independent verification/review.
+
 ## Other Agent Families
 
 ## Function-calling chat agents
