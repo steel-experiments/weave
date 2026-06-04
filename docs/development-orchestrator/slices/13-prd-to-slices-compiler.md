@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
@@ -70,31 +70,40 @@ The compiler should avoid:
 
 ## Acceptance Criteria
 
-- [ ] A compiler boundary converts `InitiativeSpec` into a proposed `InitiativePlan`.
-- [ ] Compiler output is schema validated before persistence.
-- [ ] Invalid compiler output becomes a structured planning failure or revision-needed state.
-- [ ] Generated slice proposals include objectives, constraints, acceptance criteria, and verification strategy.
-- [ ] No implementation, branch, workspace, or PR side effects occur during compilation.
-- [ ] Tests cover success and invalid-output paths.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `git diff --check` passes.
+- [x] A compiler boundary converts `InitiativeSpec` into a proposed `InitiativePlan`.
+- [x] Compiler output is schema validated before persistence.
+- [x] Invalid compiler output becomes a structured planning failure or revision-needed state.
+- [x] Generated slice proposals include objectives, constraints, acceptance criteria, and verification strategy.
+- [x] No implementation, branch, workspace, or PR side effects occur during compilation.
+- [x] Tests cover success and invalid-output paths.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `git diff --check` passes.
 
 ## Progress
 
-- [ ] Add compiler interface.
-- [ ] Add test implementation or fixture runner.
-- [ ] Add validation/persistence path.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Add compiler interface.
+- [x] Add test implementation or fixture runner.
+- [x] Add validation/persistence path.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `InitiativePlanCompilerInputSchema` and `InitiativePlanCompiler` as the compiler boundary from `InitiativeSpec` to proposed `InitiativePlan`.
+- Added `compileInitiativePlan(...)`, which validates compiler output with `InitiativePlanSchema` and refuses repo, base-branch, working-branch, or status mismatches.
+- Added `createMarkdownInitiativePlanCompiler(...)` and `compileMarkdownInitiativePlan(...)` as a deterministic first compiler for markdown PRDs/SOWs.
+- The markdown compiler recognizes `## Slice ...` sections, extracts slice titles, objectives, acceptance criteria, backticked expected touchpoints, default verification strategy, constraints, reviewers, and risk notes.
+- `createWeaveMaintainerAgent(...)` can now accept `initiativeSpec` input plus an injected `planCompiler` to produce a proposed plan when explicit slices are not provided.
+- The maintainer checkpoints `initiative-spec`, `proposed-initiative-plan`, `approved-initiative-plan`, and `latest-plan-decision` and emits compact plan lifecycle events.
+- Existing explicit-slice initiatives remain supported.
+- Added tests for deterministic markdown compilation, output validation failures, and the maintainer planning path proving compilation stops at the slice-plan gate without implementation events.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: this slice adds the compiler boundary and deterministic compiler only. Slice 14 should add operator commands to inspect and approve generated plans without raw event inspection.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `README.md`
-- [ ] dogfood runbook docs
+- [x] this slice document
+- [x] `../README.md`
+- [x] `README.md`
+- [x] dogfood runbook docs

@@ -7,6 +7,9 @@ import {
   DevelopmentWorkspacePolicySchema,
   InitiativePlanSchema,
   InitiativeSpecSchema,
+  compileInitiativePlan,
+  compileMarkdownInitiativePlan,
+  createMarkdownInitiativePlanCompiler,
   InitiativeExecutionStateSchema,
   SliceExecutionStateSchema,
   SliceRunnerInputSchema,
@@ -158,6 +161,94 @@ assert.equal(DevelopmentCheckpointKeys.latestPlanDecision, "latest-plan-decision
 assert.equal(DevelopmentCheckpointKeys.approvedSlicePlan, "approved-slice-plan");
 assert.equal(DevelopmentCheckpointKeys.workspaceRef, "workspace-ref");
 assert.equal(buildDevelopmentSlicePlan(initiative).summary, "Plan 1 development slice for Build Weave Maintainer.");
+
+const compiledPlan = compileMarkdownInitiativePlan({
+  spec: {
+    ...initiativeSpec,
+    statementOfWork: `Build automation for PRD-backed initiatives.
+
+## Slice 1: Initiative compiler boundary
+
+Add a compiler that turns a PRD into a validated plan.
+
+### Acceptance Criteria
+
+- Compiler output validates before persistence.
+- Compilation emits no implementation events.
+
+Expected files include \`src/development-orchestrator.ts\`.
+
+## Slice 2: Operator approval flow
+
+Add commands to inspect and approve generated plans.
+
+### Acceptance Criteria
+
+- Pending gates can be listed.
+- Approvals are durable.
+`,
+  },
+  repo: initiative.repo,
+  baseBranch: initiative.baseBranch,
+  workingBranch: initiative.workingBranch,
+  contextFiles: initiative.contextFiles,
+});
+
+assert.equal(compiledPlan.slices.length, 2);
+assert.equal(compiledPlan.slices[0]?.id, "01-initiative-compiler-boundary");
+assert.equal(compiledPlan.slices[0]?.verificationStrategy.includes("npm test"), true);
+assert.equal(compiledPlan.slices[0]?.expectedTouchpoints.includes("src/development-orchestrator.ts"), true);
+assert.deepEqual(compiledPlan.slices[1]?.acceptanceCriteria, ["Pending gates can be listed.", "Approvals are durable."]);
+assert.equal(compiledPlan.status, "proposed");
+
+const markdownCompiler = createMarkdownInitiativePlanCompiler({ defaultReviewers: ["architecture-reviewer", "docs-reviewer"] });
+const validatedCompiledPlan = await compileInitiativePlan(
+  {
+    spec: initiativeSpec,
+    repo: initiative.repo,
+    baseBranch: initiative.baseBranch,
+    workingBranch: initiative.workingBranch,
+    contextFiles: initiative.contextFiles,
+  },
+  markdownCompiler,
+);
+
+assert.equal(validatedCompiledPlan.slices.length, 1);
+assert.deepEqual(validatedCompiledPlan.slices[0]?.requiredReviewers, ["architecture-reviewer", "docs-reviewer"]);
+await assert.rejects(
+  () =>
+    compileInitiativePlan(
+      {
+        spec: initiativeSpec,
+        repo: initiative.repo,
+        baseBranch: initiative.baseBranch,
+        workingBranch: initiative.workingBranch,
+      },
+      {
+        compile() {
+          return { ...validatedCompiledPlan, repo: "other-repo" };
+        },
+      },
+    ),
+  /does not match requested repo/,
+);
+await assert.rejects(
+  () =>
+    compileInitiativePlan(
+      {
+        spec: initiativeSpec,
+        repo: initiative.repo,
+        baseBranch: initiative.baseBranch,
+        workingBranch: initiative.workingBranch,
+      },
+      {
+        compile() {
+          return { ...validatedCompiledPlan, slices: [] };
+        },
+      },
+    ),
+  /Too small/,
+);
 
 const workspaceRef = {
   provider: "git-worktree",
@@ -420,6 +511,77 @@ assert.equal(gateCreated.stepKey, "approve-slice-plan");
 
 const pendingPlan = await planner.plan(threadId, [...initialHistory, ...firstPlan.events, contextCompleted, ...plannedAfterContext.events]);
 assert.equal(pendingPlan, null);
+
+const compilerThreadId = "development-prd-compiler";
+const compilerInitiative = DevelopmentInitiativeInputSchema.parse({
+  initiative: initiativeSpec.title,
+  repo: "weave",
+  baseBranch: "main",
+  workingBranch: "prd-backed-automation",
+  contextFiles: ["docs/development-orchestrator/README.md"],
+  initiativeSpec: {
+    ...initiativeSpec,
+    statementOfWork: `Build the next automation layer.
+
+## Slice 1: PRD compiler
+
+Convert a PRD into proposed implementation slices.
+
+### Acceptance Criteria
+
+- Plans are schema validated.
+- No implementation starts during compilation.
+`,
+  },
+});
+const compilerPlanner = createAgentPlanner(createWeaveMaintainerAgent({ planCompiler: createMarkdownInitiativePlanCompiler() }));
+const compilerInitialHistory = createInitialHistory(compilerThreadId, compilerInitiative);
+const compilerFirstPlan = await compilerPlanner.plan(compilerThreadId, compilerInitialHistory);
+assert(compilerFirstPlan);
+assert.equal(compilerFirstPlan.events.some((candidate) => candidate.type === "dev.initiative.spec_received"), true);
+const compilerContextRequest = compilerFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(compilerContextRequest);
+const compilerContextCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(compilerThreadId, "tool.completed", "read-repo-context"),
+  threadId: compilerThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: compilerContextRequest.correlationId,
+  causationId: compilerContextRequest.eventId,
+  scopeKey: compilerContextRequest.scopeKey,
+  stepKey: compilerContextRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: compilerContextRequest.payload.toolCallId,
+    output: {
+      repo: "weave",
+      filesRead: ["docs/development-orchestrator/README.md"],
+      totalBytes: 16,
+      truncated: false,
+      entries: [{ path: "docs/development-orchestrator/README.md", kind: "file", bytes: 16, content: "orchestrator docs" }],
+    },
+  },
+};
+const compilerPlanned = await compilerPlanner.plan(compilerThreadId, [
+  ...compilerInitialHistory,
+  ...compilerFirstPlan.events,
+  compilerContextCompleted,
+]);
+assert(compilerPlanned);
+assert.equal(compilerPlanned.events.some((candidate) => candidate.type === "dev.initiative.plan_proposed"), true);
+assert.equal(compilerPlanned.events.some((candidate) => candidate.type === "dev.slice.proposed"), true);
+assert.equal(compilerPlanned.events.some((candidate) => candidate.type === "dev.implementation.started"), false);
+assert.equal(
+  compilerPlanned.events.some(
+    (candidate) =>
+      candidate.type === "checkpoint.completed" &&
+      candidate.payload.stepKey === DevelopmentCheckpointKeys.proposedInitiativePlan &&
+      InitiativePlanSchema.safeParse(candidate.payload.value).success,
+  ),
+  true,
+);
 
 const gateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
   eventId: eventKey(threadId, "gate.resolved", "approve-slice-plan"),

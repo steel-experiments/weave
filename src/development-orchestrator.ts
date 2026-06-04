@@ -177,12 +177,27 @@ export const DevelopmentWorkspacePolicySchema = z.object({
 });
 export type DevelopmentWorkspacePolicy = z.infer<typeof DevelopmentWorkspacePolicySchema>;
 
+export const InitiativePlanCompilerInputSchema = z.object({
+  spec: InitiativeSpecSchema,
+  repo: NonEmptyStringSchema,
+  baseBranch: NonEmptyStringSchema,
+  workingBranch: NonEmptyStringSchema,
+  contextFiles: z.array(NonEmptyStringSchema).default([]),
+  repoContext: z.unknown().optional(),
+});
+export type InitiativePlanCompilerInput = z.input<typeof InitiativePlanCompilerInputSchema>;
+
+export type InitiativePlanCompiler = {
+  compile(input: InitiativePlanCompilerInput): Promise<unknown> | unknown;
+};
+
 export const DevelopmentInitiativeInputSchema = z.object({
   initiative: NonEmptyStringSchema,
   repo: NonEmptyStringSchema,
   baseBranch: NonEmptyStringSchema,
   workingBranch: NonEmptyStringSchema,
   contextFiles: z.array(NonEmptyStringSchema).min(1),
+  initiativeSpec: InitiativeSpecSchema.optional(),
   slices: z.array(DevelopmentSliceInputSchema).optional(),
   workspaceRef: WorkspaceRefSchema.optional(),
   workspacePolicy: DevelopmentWorkspacePolicySchema.default(DefaultDevelopmentWorkspacePolicy),
@@ -633,6 +648,7 @@ export const InitiativeActionSchema = z.discriminatedUnion("type", [
 export type InitiativeAction = z.infer<typeof InitiativeActionSchema>;
 
 export type InitiativeRunnerAgentOptions = {
+  planCompiler?: InitiativePlanCompiler;
   sliceRunnerAgent?: AgentContract<string, any, SliceRunnerOutput>;
   prAgent?: AgentContract<string, any, PrDraftResult>;
   workspaceProvider?: WorkspaceProvider;
@@ -1076,6 +1092,89 @@ export function buildDevelopmentSlicePlan(input: DevelopmentInitiativeInput): De
     slices,
     approvalRequired: true,
     summary: `Plan ${slices.length} development slice${slices.length === 1 ? "" : "s"} for ${input.initiative}.`,
+  });
+}
+
+export async function compileInitiativePlan(rawInput: InitiativePlanCompilerInput, compiler: InitiativePlanCompiler): Promise<InitiativePlan> {
+  const input = InitiativePlanCompilerInputSchema.parse(rawInput);
+  const compiled = InitiativePlanSchema.parse(await compiler.compile(input));
+
+  if (compiled.repo !== input.repo) {
+    throw new Error(`Compiled plan repo ${compiled.repo} does not match requested repo ${input.repo}.`);
+  }
+
+  if (compiled.baseBranch !== input.baseBranch) {
+    throw new Error(`Compiled plan base branch ${compiled.baseBranch} does not match requested base branch ${input.baseBranch}.`);
+  }
+
+  if (compiled.workingBranch !== input.workingBranch) {
+    throw new Error(`Compiled plan working branch ${compiled.workingBranch} does not match requested working branch ${input.workingBranch}.`);
+  }
+
+  if (compiled.status !== "proposed") {
+    throw new Error(`Compiled plans must be proposed, received ${compiled.status}.`);
+  }
+
+  return compiled;
+}
+
+export function createMarkdownInitiativePlanCompiler(options: {
+  defaultVerificationStrategy?: readonly string[];
+  defaultReviewers?: readonly DevelopmentReviewerRole[];
+} = {}): InitiativePlanCompiler {
+  return {
+    compile(input) {
+      return compileMarkdownInitiativePlan(input, options);
+    },
+  };
+}
+
+export function compileMarkdownInitiativePlan(
+  rawInput: InitiativePlanCompilerInput,
+  options: {
+    defaultVerificationStrategy?: readonly string[];
+    defaultReviewers?: readonly DevelopmentReviewerRole[];
+  } = {},
+): InitiativePlan {
+  const input = InitiativePlanCompilerInputSchema.parse(rawInput);
+  const sections = extractSliceSections(input.spec.statementOfWork);
+  const defaultVerificationStrategy = [...(options.defaultVerificationStrategy ?? ["npm test", "npm run typecheck", "git diff --check"])];
+  const defaultReviewers = [...(options.defaultReviewers ?? ["architecture-reviewer"])] satisfies DevelopmentReviewerRole[];
+  const sliceSections = sections.length > 0 ? sections : [{ title: input.spec.title, body: input.spec.statementOfWork }];
+  const slices = sliceSections.map((section, index) => {
+    const title = normalizeSliceTitle(section.title);
+    return DevelopmentSliceInputSchema.parse({
+      id: `${String(index + 1).padStart(2, "0")}-${slugify(title)}`,
+      title,
+      objective: firstSentence(section.body) ?? `Implement ${title}.`,
+      acceptanceCriteria: extractAcceptanceCriteria(section.body, input.spec.acceptanceCriteria, title),
+      expectedTouchpoints: uniqueStrings([...input.spec.affectedAreas, ...extractBacktickPaths(section.body)]),
+      verificationStrategy: defaultVerificationStrategy,
+      constraints: input.spec.constraints,
+      requiredReviewers: defaultReviewers,
+      riskNotes: input.spec.risks,
+      status: "proposed",
+    });
+  });
+
+  return InitiativePlanSchema.parse({
+    initiative: input.spec.title,
+    repo: input.repo,
+    baseBranch: input.baseBranch,
+    workingBranch: input.workingBranch,
+    specTitle: input.spec.title,
+    goals: input.spec.goals,
+    nonGoals: input.spec.nonGoals,
+    constraints: input.spec.constraints,
+    acceptanceCriteria: input.spec.acceptanceCriteria,
+    risks: input.spec.risks,
+    affectedAreas: input.spec.affectedAreas,
+    slices,
+    approvalRequired: true,
+    summary: `Proposed ${slices.length} development slice${slices.length === 1 ? "" : "s"} for ${input.spec.title}.`,
+    status: "proposed",
+    revision: 1,
+    revisionHistory: [{ revision: 1, reason: "Initial PRD/SOW compiler proposal.", changedBy: "weave.maintainer" }],
   });
 }
 
@@ -1883,6 +1982,77 @@ function markdownList(values: readonly string[], emptyText: string): string[] {
   return values.length > 0 ? values.map((value) => `- ${value}`) : [`- ${emptyText}`];
 }
 
+function extractSliceSections(markdown: string): Array<{ title: string; body: string }> {
+  const lines = markdown.split(/\r?\n/);
+  const headings = lines
+    .map((line, index) => ({ line, index, match: /^(#{2,6})\s+(?:slice\s*)?(\d+)?[:.)\-\s]*(.+)$/i.exec(line.trim()) }))
+    .filter((entry): entry is { line: string; index: number; match: RegExpExecArray } => Boolean(entry.match))
+    .filter((entry) => /\bslice\b/i.test(entry.line));
+
+  return headings.map((heading, index) => {
+    const next = headings[index + 1]?.index ?? lines.length;
+    return {
+      title: heading.match[3]?.trim() ?? `Slice ${index + 1}`,
+      body: lines.slice(heading.index + 1, next).join("\n").trim(),
+    };
+  });
+}
+
+function normalizeSliceTitle(title: string): string {
+  return title.replace(/^slice\s*\d*[:.)\-\s]*/i, "").trim() || "Development Slice";
+}
+
+function slugify(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "slice";
+}
+
+function firstSentence(markdown: string): string | undefined {
+  const paragraph = markdown
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0 && !line.startsWith("#") && !line.startsWith("-") && !line.startsWith("*"));
+  return paragraph?.replace(/\s+/g, " ").trim();
+}
+
+function extractAcceptanceCriteria(markdown: string, fallback: readonly string[], title: string): string[] {
+  const criteriaSection = sectionAfterHeading(markdown, /acceptance criteria|acceptance/i);
+  const bullets = extractBullets(criteriaSection ?? markdown);
+  return bullets.length > 0 ? bullets : fallback.length > 0 ? [...fallback] : [`${title} is implemented and verified.`];
+}
+
+function sectionAfterHeading(markdown: string, headingPattern: RegExp): string | undefined {
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^#{2,6}\s+/.test(line.trim()) && headingPattern.test(line));
+  if (start === -1) {
+    return undefined;
+  }
+  const end = lines.findIndex((line, index) => index > start && /^#{2,6}\s+/.test(line.trim()));
+  return lines.slice(start + 1, end === -1 ? lines.length : end).join("\n");
+}
+
+function extractBullets(markdown: string): string[] {
+  return markdown
+    .split(/\r?\n/)
+    .map((line) => /^\s*[-*]\s+(?:\[[ xX]\]\s*)?(.+)$/.exec(line)?.[1]?.trim())
+    .filter((line): line is string => Boolean(line));
+}
+
+function extractBacktickPaths(markdown: string): string[] {
+  const paths: string[] = [];
+  for (const match of markdown.matchAll(/`([^`]+)`/g)) {
+    const value = match[1]?.trim();
+    if (value && /[/.]/.test(value) && !/\s/.test(value)) {
+      paths.push(value);
+    }
+  }
+  return paths;
+}
+
 function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values.filter((value) => value.length > 0))];
 }
@@ -1940,6 +2110,24 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
         }),
       );
 
+      const initiativeSpec = input.initiativeSpec
+        ? await ctx.checkpoint(DevelopmentCheckpointKeys.initiativeSpec, () => input.initiativeSpec)
+        : undefined;
+
+      if (initiativeSpec) {
+        await ctx.emit(
+          "initiative-spec-received",
+          developmentEvents.initiativeSpecReceived({
+            title: initiativeSpec.title,
+            source: initiativeSpec.source,
+            summary: initiativeSpec.summary,
+            goals: initiativeSpec.goals,
+            acceptanceCriteria: initiativeSpec.acceptanceCriteria,
+            contextFiles: initiativeSpec.contextFiles,
+          }),
+        );
+      }
+
       const context = await ctx.tool("read-repo-context", developmentRepoContextReadTool, {
         repo: input.repo,
         contextFiles: input.contextFiles,
@@ -1949,9 +2137,43 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
 
       const repoContext = await ctx.checkpoint(DevelopmentCheckpointKeys.repoContext, () => context);
 
-      const plan = await ctx.checkpoint(DevelopmentCheckpointKeys.slicePlan, () => buildDevelopmentSlicePlan(input));
+      const plan = await ctx.checkpoint(DevelopmentCheckpointKeys.slicePlan, async () => {
+        if (input.slices?.length) {
+          return buildDevelopmentSlicePlan(input);
+        }
 
-      for (const slice of plan.slices) {
+        if (!initiativeSpec || !options.planCompiler) {
+          return buildDevelopmentSlicePlan(input);
+        }
+
+        return compileInitiativePlan(
+          {
+            spec: initiativeSpec,
+            repo: input.repo,
+            baseBranch: input.baseBranch,
+            workingBranch: input.workingBranch,
+            contextFiles: input.contextFiles,
+            repoContext,
+          },
+          options.planCompiler,
+        );
+      });
+
+      const proposedPlan = await ctx.checkpoint(DevelopmentCheckpointKeys.proposedInitiativePlan, () => plan);
+
+      await ctx.emit(
+        "initiative-plan-proposed",
+        developmentEvents.initiativePlanProposed({
+          initiative: proposedPlan.initiative,
+          repo: proposedPlan.repo,
+          workingBranch: proposedPlan.workingBranch,
+          revision: proposedPlan.revision,
+          sliceCount: proposedPlan.slices.length,
+          summary: proposedPlan.summary,
+        }),
+      );
+
+      for (const slice of proposedPlan.slices) {
         await ctx.emit(
           `slice-proposed:${slice.id}`,
           developmentEvents.sliceProposed({
@@ -1966,21 +2188,49 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
 
       const gate = await ctx.gate("approve-slice-plan", {
         reason: "slice-plan-approval",
-        proposedAction: `Approve ${plan.slices.length} slice${plan.slices.length === 1 ? "" : "s"} for ${plan.initiative}.`,
+        proposedAction: `Approve ${proposedPlan.slices.length} slice${proposedPlan.slices.length === 1 ? "" : "s"} for ${proposedPlan.initiative}.`,
       });
 
       if (gate.resolution !== "approved") {
+        const decision = await ctx.checkpoint(DevelopmentCheckpointKeys.latestPlanDecision, () =>
+          InitiativePlanDecisionSchema.parse({ status: "rejected", decidedBy: ctx.actor.id, note: gate.comment }),
+        );
+        await ctx.emit(
+          "initiative-plan-rejected",
+          developmentEvents.initiativePlanRejected({
+            initiative: proposedPlan.initiative,
+            revision: proposedPlan.revision,
+            rejectedBy: decision.decidedBy,
+            reason: decision.note ?? "Slice plan gate denied.",
+          }),
+        );
         return InitiativePlannerOutputSchema.parse({
           status: "denied",
-          plan,
+          plan: InitiativePlanSchema.parse({ ...proposedPlan, status: "rejected", decision }),
           contextFilesRead: input.contextFiles,
           repoContext,
-          proposedEventCount: plan.slices.length,
+          proposedEventCount: proposedPlan.slices.length,
           gateComment: gate.comment,
         });
       }
 
-      const approvedPlan = await ctx.checkpoint(DevelopmentCheckpointKeys.approvedSlicePlan, () => plan);
+      const approvalDecision = await ctx.checkpoint(DevelopmentCheckpointKeys.latestPlanDecision, () =>
+        InitiativePlanDecisionSchema.parse({ status: "approved", decidedBy: ctx.actor.id, note: gate.comment }),
+      );
+      const approvedPlan = await ctx.checkpoint(DevelopmentCheckpointKeys.approvedSlicePlan, () =>
+        InitiativePlanSchema.parse({ ...proposedPlan, status: "approved", decision: approvalDecision }),
+      );
+      await ctx.checkpoint(DevelopmentCheckpointKeys.approvedInitiativePlan, () => approvedPlan);
+      await ctx.emit(
+        "initiative-plan-approved",
+        developmentEvents.initiativePlanApproved({
+          initiative: approvedPlan.initiative,
+          revision: approvedPlan.revision,
+          approvedBy: approvalDecision.decidedBy,
+          sliceCount: approvedPlan.slices.length,
+          summary: approvedPlan.summary,
+        }),
+      );
 
       for (const slice of approvedPlan.slices) {
         await ctx.emit(

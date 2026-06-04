@@ -169,7 +169,7 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 10. Workspace Lifecycle Ownership | Shipped | `slices/10-workspace-lifecycle-ownership.md` | Initiatives explicitly allocate, reuse, preserve, and clean up workspaces through `WorkspaceRef`. |
 | 11. Real OpenCode Runner Adapter | Shipped | `slices/11-real-opencode-runner-adapter.md` | OpenCode implementation and repair runners execute in selected workspaces behind existing boundaries. |
 | 12. Initiative Spec And Plan Contracts | Shipped | `slices/12-initiative-spec-and-plan-contracts.md` | Stable PRD/SOW input and initiative-plan contracts define what automation stores, proposes, approves, and executes. |
-| 13. PRD To Slices Compiler | Planned | `slices/13-prd-to-slices-compiler.md` | A compiler turns a pasted PRD/SOW into schema-valid proposed slices without executing them. |
+| 13. PRD To Slices Compiler | Shipped | `slices/13-prd-to-slices-compiler.md` | A compiler turns a pasted PRD/SOW into schema-valid proposed slices without executing them. |
 | 14. Slice Plan Approval And Operator CLI | Planned | `slices/14-slice-plan-approval-and-operator-cli.md` | Operator commands list initiatives and gates, inspect proposed plans, and durably approve or reject them. |
 | 15. Resumable Initiative Runner Command | Planned | `slices/15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
 | 16. PR Draft Handoff Automation | Planned | `slices/16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
@@ -209,6 +209,20 @@ During long-running tools, the script also prints selected live events such as `
 If OpenCode auto-rejects a permission request or exceeds the configured output bound, the runner returns a structured blocked result instead of `tool.failed`, and the slice runner stops at the `repair-stop` human gate for operator action.
 
 The dry run wires `PostgresObservabilitySink`, so runner/tool spans and logs are persisted in `weave.observability_span` and `weave.observability_log` for runs started after this wiring was added.
+
+## PRD/SOW Compiler Path
+
+The first automation path is contract-first and compile-only. A maintainer can pass an `initiativeSpec` with a PRD or statement of work into `createWeaveMaintainerAgent({ planCompiler })`. If explicit `slices` are not supplied, the maintainer uses the injected compiler to produce a schema-valid proposed `InitiativePlan`.
+
+Current behavior:
+
+- `InitiativeSpec` is checkpointed as `initiative-spec`.
+- Proposed plans are checkpointed as `proposed-initiative-plan` and mirrored through the legacy `slice-plan` checkpoint for current runner compatibility.
+- Compact planning audit events are emitted for spec receipt, plan proposal, plan approval, and plan rejection.
+- The deterministic markdown compiler recognizes `## Slice ...` sections and extracts acceptance criteria from markdown bullets.
+- Compilation stops at the normal `slice-plan-approval` gate and does not allocate workspaces, start OpenCode, run verification, or create PRs.
+
+Until slice 14 ships, approving generated plans still requires the existing gate-resolution path or a bespoke dry-run script.
 
 ## Completion Rule
 
