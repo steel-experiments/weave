@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Planned`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
@@ -73,33 +73,41 @@ Expected behavior:
 
 ## Acceptance Criteria
 
-- [ ] `initiative:run` or equivalent command exists.
-- [ ] The command can create a PRD-backed initiative.
-- [ ] The command creates/reuses a plan approval gate and stops before approval.
-- [ ] After approval, the command executes approved slices sequentially.
-- [ ] The command resumes safely after process restart or gate resolution.
-- [ ] Blocked slices stop the initiative with actionable output.
-- [ ] Tests cover planning pause, approved execution, and blocked stop behavior.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `git diff --check` passes.
+- [x] `initiative:run` or equivalent command exists.
+- [x] The command can create a PRD-backed initiative.
+- [x] The command creates/reuses a plan approval gate and stops before approval.
+- [x] After approval, the command executes approved slices sequentially.
+- [x] The command resumes safely after process restart or gate resolution.
+- [x] Blocked slices stop the initiative with actionable output.
+- [x] Tests cover planning pause, approved execution, and blocked stop behavior.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `git diff --check` passes.
 
 ## Progress
 
-- [ ] Add command wrapper.
-- [ ] Add PRD loading.
-- [ ] Wire compiler and approval gate.
-- [ ] Wire approved sequential execution.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Add command wrapper.
+- [x] Add PRD loading.
+- [x] Wire compiler and approval gate.
+- [x] Wire approved sequential execution.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `npm run initiative:run -- --from <prd.md>` backed by `src/scripts/initiative-run.ts`.
+- Added `src/development-initiative-runner.ts` with option parsing, PRD markdown title extraction, slug generation, and `DevelopmentInitiativeInput` construction.
+- The command starts an idempotent `weave.maintainer` session with `initiativeSpec`, `createMarkdownInitiativePlanCompiler(...)`, workspace allocation, OpenCode implementation/repair runners, deterministic verification, reviewer agents, and local PR draft handoff.
+- The command starts local runner/tool daemons, waits until a human gate or terminal root state, prints initiative status, and prints the next operator command.
+- Rerunning with the same generated or explicit `--idempotency-key` resumes after gate resolution because the same root thread is reused.
+- Added `src/tests/development-initiative-runner.test.ts` for option parsing and PRD-to-initiative input construction.
+- Existing orchestrator contract tests cover planning pause, approved sequential execution, and blocked stop behavior through the maintainer/slice-runner state machine.
+- Commands run: `npm exec -- tsx src/tests/development-initiative-runner.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: the command is intentionally local/Postgres-backed and uses the same real OpenCode CLI boundary as other dogfood paths. It does not push, merge, or create a remote PR.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `README.md`
-- [ ] dogfood runbook docs
+- [x] this slice document
+- [x] `../README.md`
+- [x] `README.md`
+- [x] dogfood runbook docs

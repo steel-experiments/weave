@@ -56,6 +56,8 @@ import {
   WorkspaceRefSchema,
   createWorkspaceAllocateTool,
   repairAttemptKey,
+  parseInitiativeRunOptions,
+  titleFromMarkdown,
 } from "weave";
 import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
@@ -158,6 +160,8 @@ const echoApp = weave({
 
 assert.equal(defineTool(echoTool), echoTool);
 assert.equal(defineAgent(echoAgent), echoAgent);
+assert.equal(titleFromMarkdown("# Public API"), "Public API");
+assert.equal(parseInitiativeRunOptions(["--from", "docs/prd.md"]).from, "docs/prd.md");
 assert.equal(defineIntegration(echoIntegration), echoIntegration);
 assert.equal(defineWeaveApp(echoApp), echoApp);
 assert.equal(githubRead.name, "github.read");

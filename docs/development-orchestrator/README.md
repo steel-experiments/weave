@@ -171,7 +171,7 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 12. Initiative Spec And Plan Contracts | Shipped | `slices/12-initiative-spec-and-plan-contracts.md` | Stable PRD/SOW input and initiative-plan contracts define what automation stores, proposes, approves, and executes. |
 | 13. PRD To Slices Compiler | Shipped | `slices/13-prd-to-slices-compiler.md` | A compiler turns a pasted PRD/SOW into schema-valid proposed slices without executing them. |
 | 14. Slice Plan Approval And Operator CLI | Shipped | `slices/14-slice-plan-approval-and-operator-cli.md` | Operator commands list initiatives and gates, inspect proposed plans, and durably approve or reject them. |
-| 15. Resumable Initiative Runner Command | Planned | `slices/15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
+| 15. Resumable Initiative Runner Command | Shipped | `slices/15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
 | 16. PR Draft Handoff Automation | Planned | `slices/16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
 | 17. Local Workflow Dashboard | Planned | `slices/17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
 
@@ -243,6 +243,38 @@ Typical approval flow:
 2. Inspect the plan with `npm run gates:show -- <gate-id>`.
 3. Approve or reject the gate with a note.
 4. Check progress with `npm run initiative:status -- <thread-id>`.
+
+## Resumable Initiative Run Command
+
+Use `npm run initiative:run -- --from <prd-or-sow.md>` to create or resume a PRD-backed initiative.
+
+Example:
+
+```txt
+npm run initiative:run -- --from docs/prds/local-workflow-dashboard.md
+```
+
+Behavior:
+
+- Loads the markdown file as an `InitiativeSpec`.
+- Uses the deterministic markdown compiler to propose slices when explicit slices are not provided.
+- Starts an idempotent `weave.maintainer` root thread.
+- Stops at the `slice-plan-approval` gate before implementation.
+- After the gate is approved, rerunning the same command resumes the thread and executes approved slices sequentially.
+- Stops again on repair, review, PR handoff, or other human gates.
+- Prints the root thread id, branch, pending gates, initiative status, and next operator command.
+
+Useful options:
+
+- `--base-branch <branch>`
+- `--working-branch <branch>`
+- `--workspace-root <path>`
+- `--idempotency-key <key>`
+- `--timeout-ms <ms>`
+- `--opencode-command <command>`
+- `--opencode-args "run --format json"`
+
+The command is local/Postgres-backed. It does not push, merge, or create a remote PR.
 
 ## Completion Rule
 
