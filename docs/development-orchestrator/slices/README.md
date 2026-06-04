@@ -19,6 +19,7 @@ These slices are intentionally separate from `../../slices/51-auth-gateway-threa
 | 9. Initiative-Level Sequencing | Shipped | `09-initiative-level-sequencing.md` | Approved plans execute slices serially and stop on failure before producing a PR draft. |
 | 10. Workspace Lifecycle Ownership | Shipped | `10-workspace-lifecycle-ownership.md` | Initiatives explicitly allocate, reuse, preserve, and clean up workspaces through `WorkspaceRef`. |
 | 11. Real OpenCode Runner Adapter | Shipped | `11-real-opencode-runner-adapter.md` | OpenCode implementation and repair runners execute in selected workspaces behind existing boundaries. |
+| 12. Local Workflow Dashboard | Planned | `12-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
 
 ## Auth Execution Readiness Path
 
