@@ -76,3 +76,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `54-authenticated-integration-ingress.md`: proposed slice proving integration ingress auth with a Slack-shaped stable-principal flow.
 - `55-auth-decision-audit-trail.md`: proposed slice adding safe thread-scoped auth audit events without storing raw tokens or full claims.
 - `56-auth-provider-adapter-boundary.md`: proposed slice stabilizing provider-neutral identity adapter boundaries and optional dependency-light token adapters.
+- `57-workspace-provider-boundary.md`: proposed slice defining provider-neutral workspace allocation with Git worktree first and future Rift/CoW/Firecracker providers.
