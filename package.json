@@ -32,6 +32,7 @@
     "db:migrate": "tsx src/scripts/migrate.ts",
     "poc": "tsx src/scripts/poc.ts",
     "system:poc": "tsx src/scripts/system-poc.ts",
+    "auth:dry-run": "tsx src/scripts/auth-gateway-slice-51-dry-run.ts",
     "sre:demo": "tsx examples/sre-demo/src/index.ts",
     "assistant:demo": "tsx examples/simple-assistant/src/index.ts",
     "assistant:server": "tsx examples/simple-assistant/src/server.ts",
@@ -42,7 +43,7 @@
     "daemon:runner": "tsx src/scripts/runner-daemon.ts",
     "daemon:tool": "tsx src/scripts/tool-daemon.ts",
     "typecheck": "tsc --noEmit && npm --workspace weave-sre-demo run typecheck && npm --workspace weave-steel-docs-sync run typecheck && npm --workspace weave-simple-assistant run typecheck && npm --workspace weave-prompt-workflow-review run typecheck",
-    "test": "tsx src/tests/replay-authoring.test.ts && tsx src/tests/public-api-exports.test.ts && tsx src/tests/migration-compatibility.test.ts && npm --workspace weave-prompt-workflow-review run test"
+    "test": "tsx src/tests/replay-authoring.test.ts && tsx src/tests/public-api-exports.test.ts && tsx src/tests/migration-compatibility.test.ts && tsx src/tests/development-orchestrator-contracts.test.ts && tsx src/tests/workspace-provider.test.ts && tsx src/tests/opencode-runner.test.ts && tsx src/tests/tool-worker-progress.test.ts && npm --workspace weave-prompt-workflow-review run test"
   },
   "dependencies": {
     "pg": "^8.16.3",

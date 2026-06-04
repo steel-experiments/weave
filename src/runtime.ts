@@ -49,9 +49,9 @@ export function createWeaveRuntime(options: WeaveRuntimeOptions): WeaveRuntime {
 
   return {
     runner,
-    toolWorker,
-    runnerDaemon: new RunnerDaemon(options.engine, runner, options.intervalMs),
-    toolDaemon: new ToolWorkerDaemon(options.engine, toolWorker, options.intervalMs),
+      toolWorker,
+      runnerDaemon: new RunnerDaemon(options.engine, runner, options.intervalMs),
+      toolDaemon: new ToolWorkerDaemon(options.engine, toolWorker, options.intervalMs, "tool-worker", runner),
   };
 }
 

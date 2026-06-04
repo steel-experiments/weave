@@ -204,6 +204,47 @@ This keeps Weave as the durable control layer while leaving the live OpenCode pr
 
 The opt-in prompt workflow integration test is `npm --workspace weave-prompt-workflow-review run test:opencode`.
 
+## Workspace-scoped OpenCode implementer
+
+The development orchestrator adds a separate implementation boundary for coding slices:
+
+- `createOpenCodeImplementerAgent(...)` returns a normal Weave agent role named `weave.opencodeImplementer` by default
+- `createOpenCodeImplementationTool(...)` wraps an injected `OpenCodeImplementationRunner` behind the `dev.opencode.implement` tool
+- input is workspace-scoped through `WorkspaceRef`, not the current process checkout
+- the tool declares `repo.read`, `repo.write.branch`, `opencode.run`, and bounded shell intent for policy inspection
+- the agent emits `dev.implementation.started` and `dev.implementation.completed`
+- the returned implementation summary is schema-validated and checkpointed as `implementation-summary`
+- OpenCode claims are not treated as verification; test/typecheck/reviewer slices must independently validate the workspace diff later
+- branch mismatches, `main`, and out-of-scope changed-file claims become structured blocked results
+
+This boundary is intentionally not a full autonomous coding loop. It is the patching component that the slice runner can spawn after workspace allocation and before independent verification/review.
+
+## OpenCode CLI runner adapter
+
+The development orchestrator also exposes a configurable CLI runner module for real OpenCode execution:
+
+- `createOpenCodeCliImplementationRunner(...)` satisfies `OpenCodeImplementationRunner`
+- `createOpenCodeCliRepairRunner(...)` satisfies `RepairRunner`
+- `buildOpenCodeImplementationPrompt(...)` and `buildOpenCodeRepairPrompt(...)` construct bounded prompts from typed slice inputs
+- `runOpenCodeCliCommand(...)` shells out with explicit `cwd`, timeout, and bounded output capture
+- `OpenCodeCliRunnerConfigSchema` defaults to `opencode run --format json --dir <workspace> <prompt>`, but tests and deployments can override command, args, workspace directory argument, and prompt delivery
+- stdout must be strict JSON matching the implementation summary or repair result schema
+- branch mismatches are refused before the OpenCode process starts
+- reported implementation files outside `allowedFiles` fail the runner before Weave treats the output as complete
+
+The runner executes inside `WorkspaceRef.path` and still returns claims only. The slice runner must rerun verification and reviewer children after every implementation or repair run.
+
+Example configuration:
+
+```ts
+const implementationRunner = createOpenCodeCliImplementationRunner({
+  command: "opencode",
+  args: ["run", "--format", "json"],
+  timeoutMs: 600_000,
+  maxOutputBytes: 256_000,
+});
+```
+
 ## Other Agent Families
 
 ## Function-calling chat agents

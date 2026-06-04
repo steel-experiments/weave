@@ -119,10 +119,12 @@ export class ContractToolWorker {
       return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
     }
 
-    const progressEvents: ThreadEvent[] = [];
+    let progressEventCount = 0;
     const credentialEvents: ThreadEvent[] = [];
     const progress = async (update: ToolProgressUpdate): Promise<void> => {
-      progressEvents.push(this.progressEvent(threadId, request, progressEvents.length, update));
+      const event = this.progressEvent(threadId, request, progressEventCount, update);
+      progressEventCount += 1;
+      await this.engine.append([event]);
     };
 
     await this.emitToolLog(spanContext, "info", "Tool execution started", {
@@ -198,7 +200,7 @@ export class ContractToolWorker {
           errorCode: "execution_failed",
           error: runResult.error.message,
         });
-        await this.engine.append([...credentialEvents, ...progressEvents, event]);
+        await this.engine.append([...credentialEvents, event]);
         return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
       }
 
@@ -217,21 +219,21 @@ export class ContractToolWorker {
         await this.emitToolSpan(spanContext, rootStartedAt, "error", {
           errorCode: "output_validation_failed",
         });
-        await this.engine.append([...credentialEvents, ...progressEvents, event]);
+        await this.engine.append([...credentialEvents, event]);
         return { acted: true, eventType: event.type, errorCode: event.payload.errorCode, errorMessage: event.payload.message };
       }
 
       const event = this.completedEvent(threadId, request, outputResult.data, summarizeToolOutput(tool, outputResult.data));
       await this.emitToolLog(spanContext, "info", "Tool execution completed", {
         attempt,
-        progressEvents: progressEvents.length,
+        progressEvents: progressEventCount,
       });
       await this.emitToolSpan(spanContext, rootStartedAt, "ok", {
         attempt,
         credentialCount: credentialResult.credentials.names().length,
-        progressEvents: progressEvents.length,
+        progressEvents: progressEventCount,
       });
-      await this.engine.append([...credentialEvents, ...progressEvents, event]);
+      await this.engine.append([...credentialEvents, event]);
       return { acted: true, eventType: event.type };
     }
   }

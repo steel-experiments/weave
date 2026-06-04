@@ -16,6 +16,7 @@ export class RunnerDaemon {
     private readonly engine: PostgresThreadEngine,
     private readonly runner: ThreadRunner,
     private readonly intervalMs = 100,
+    private readonly maxRunsPerThread = 20,
   ) {}
 
   start(): void {
@@ -47,7 +48,8 @@ export class RunnerDaemon {
       const byThread = groupByThread(items);
 
       for (const [threadId, threadItems] of byThread) {
-        await this.runner.runOnce(threadId);
+        await runThreadUntilIdle(this.runner, threadId, this.maxRunsPerThread);
+        await wakeParentIfTerminal(this.engine, this.runner, threadId, this.maxRunsPerThread);
         await this.engine.completeInbox(
           threadItems.map((item) => item.id),
           this.ownerId,
@@ -69,6 +71,8 @@ export class ToolWorkerDaemon {
     private readonly worker: ToolWorker = new MockAsyncToolWorker(engine),
     private readonly intervalMs = 100,
     private readonly consumer: InboxConsumer = "tool-worker",
+    private readonly parentRunner?: ThreadRunner,
+    private readonly maxParentRuns = 20,
   ) {}
 
   start(): void {
@@ -111,6 +115,9 @@ export class ToolWorkerDaemon {
         }
 
         if (lastResult.eventType === "tool.failed") {
+          if (this.parentRunner) {
+            await wakeParentIfTerminal(this.engine, this.parentRunner, threadId, this.maxParentRuns);
+          }
           await this.engine.deadLetterInbox(
             threadItems.map((item) => item.id),
             this.ownerId,
@@ -118,6 +125,9 @@ export class ToolWorkerDaemon {
             lastResult.errorMessage,
           );
         } else {
+          if (this.parentRunner) {
+            await wakeParentIfTerminal(this.engine, this.parentRunner, threadId, this.maxParentRuns);
+          }
           await this.engine.completeInbox(
             threadItems.map((item) => item.id),
             this.ownerId,
@@ -128,6 +138,29 @@ export class ToolWorkerDaemon {
       this.running = false;
     }
   }
+}
+
+async function runThreadUntilIdle(runner: ThreadRunner, threadId: string, maxRuns: number): Promise<void> {
+  for (let count = 0; count < maxRuns; count += 1) {
+    const result = await runner.runOnce(threadId);
+    if (!result.acted) {
+      return;
+    }
+  }
+}
+
+async function wakeParentIfTerminal(
+  engine: PostgresThreadEngine,
+  runner: ThreadRunner,
+  threadId: string,
+  maxRuns: number,
+): Promise<void> {
+  const projection = await engine.getProjection(threadId);
+  if (!projection?.parentThreadId || (projection.status !== "completed" && projection.status !== "failed")) {
+    return;
+  }
+
+  await runThreadUntilIdle(runner, projection.parentThreadId, maxRuns);
 }
 
 type ThreadWorkItem = { id: number; threadId: string };

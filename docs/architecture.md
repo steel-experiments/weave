@@ -140,6 +140,14 @@ Capability contracts are not credentials. Credentials resolve secret material; c
 
 Runtime request policies can inspect capability declarations and capability requests during `ctx.tool` planning. Tool workers do not re-evaluate policies; they use capability requests only to resolve credential material through the configured provider.
 
+### Workspace
+
+A provider-managed development checkout or sandbox where coding agents can inspect, modify, test, diff, and later promote changes without assuming the current process working directory is the unit of isolation.
+
+The core workspace boundary is provider-neutral. The first provider is `git-worktree`; future providers can use Rift-style CoW workspaces, ZFS/btrfs/APFS snapshots, Firecracker snapshots, Docker volumes, or remote sandboxes behind the same `WorkspaceRef` shape.
+
+Workspace lifecycle operations should happen through normal tools such as `workspace.allocate`, `workspace.state`, `workspace.diff`, and `workspace.remove`, with capabilities and policies controlling allocation, inspection, cleanup, promotion, and branch writes. Filesystem snapshots are an efficiency/isolation mechanism, not a security boundary by themselves.
+
 ### Policy
 
 A runtime request rule that can allow, deny, or require approval before a supported durable request is recorded. Current enforcement happens at the `ctx.tool` planning boundary and records `policy.evaluated` audit evidence.
