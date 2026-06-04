@@ -27,7 +27,16 @@ import {
   type DevReviewFinding,
 } from "./events.js";
 import { tool } from "./tool-contract.js";
-import { WorkspaceRefSchema, workspaceDiffCapability } from "./workspace-provider.js";
+import {
+  WorkspaceRefSchema,
+  WorkspaceAllocateInputSchema,
+  createWorkspaceAllocateTool,
+  createWorkspaceRemoveTool,
+  workspaceDiffCapability,
+  type WorkspaceProvider,
+  type WorkspaceRef,
+  type WorkspaceRemovalResult,
+} from "./workspace-provider.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 const execFileAsync = promisify(execFile);
@@ -95,6 +104,32 @@ export const DevelopmentSliceInputSchema = z.object({
 });
 export type DevelopmentSliceInput = z.infer<typeof DevelopmentSliceInputSchema>;
 
+export const DevelopmentWorkspaceModeSchema = z.enum(["initiative", "slice"]);
+export type DevelopmentWorkspaceMode = z.infer<typeof DevelopmentWorkspaceModeSchema>;
+
+const DefaultDevelopmentWorkspacePolicy = {
+  mode: "initiative" as const,
+  provider: "git-worktree",
+  preserveOnFailure: true,
+  preserveOnHumanGate: true,
+  cleanupOnSuccess: false,
+  requireCleanOnCleanup: true,
+  forceCleanup: false,
+};
+
+export const DevelopmentWorkspacePolicySchema = z.object({
+  mode: DevelopmentWorkspaceModeSchema.default("initiative"),
+  provider: NonEmptyStringSchema.default("git-worktree"),
+  sourceRepoPath: NonEmptyStringSchema.optional(),
+  workspaceRoot: NonEmptyStringSchema.optional(),
+  preserveOnFailure: z.boolean().default(true),
+  preserveOnHumanGate: z.boolean().default(true),
+  cleanupOnSuccess: z.boolean().default(false),
+  requireCleanOnCleanup: z.boolean().default(true),
+  forceCleanup: z.boolean().default(false),
+});
+export type DevelopmentWorkspacePolicy = z.infer<typeof DevelopmentWorkspacePolicySchema>;
+
 export const DevelopmentInitiativeInputSchema = z.object({
   initiative: NonEmptyStringSchema,
   repo: NonEmptyStringSchema,
@@ -102,6 +137,8 @@ export const DevelopmentInitiativeInputSchema = z.object({
   workingBranch: NonEmptyStringSchema,
   contextFiles: z.array(NonEmptyStringSchema).min(1),
   slices: z.array(DevelopmentSliceInputSchema).optional(),
+  workspaceRef: WorkspaceRefSchema.optional(),
+  workspacePolicy: DevelopmentWorkspacePolicySchema.default(DefaultDevelopmentWorkspacePolicy),
 });
 export type DevelopmentInitiativeInput = z.infer<typeof DevelopmentInitiativeInputSchema>;
 
@@ -154,6 +191,9 @@ export const InitiativePlannerOutputSchema = z.object({
   blockedSlice: NonEmptyStringSchema.optional(),
   blockerReason: NonEmptyStringSchema.optional(),
   prDraft: z.unknown().optional(),
+  workspacePolicy: DevelopmentWorkspacePolicySchema.optional(),
+  workspaceRefs: z.array(WorkspaceRefSchema).default([]),
+  workspaceCleanup: z.array(z.unknown()).default([]),
 });
 export type InitiativePlannerOutput = z.infer<typeof InitiativePlannerOutputSchema>;
 
@@ -163,6 +203,7 @@ export const SliceRunnerInputSchema = z.object({
   branch: NonEmptyStringSchema,
   baseCommit: NonEmptyStringSchema.optional(),
   workspaceRef: WorkspaceRefSchema.optional(),
+  workspacePolicy: DevelopmentWorkspacePolicySchema.optional(),
   slice: DevelopmentSliceInputSchema,
   maxRepairAttempts: z.number().int().nonnegative().default(0),
 });
@@ -520,6 +561,7 @@ export type InitiativeAction = z.infer<typeof InitiativeActionSchema>;
 export type InitiativeRunnerAgentOptions = {
   sliceRunnerAgent?: AgentContract<string, any, SliceRunnerOutput>;
   prAgent?: AgentContract<string, any, PrDraftResult>;
+  workspaceProvider?: WorkspaceProvider;
   github?: z.input<typeof PrDraftInputSchema>["github"];
 };
 
@@ -1416,6 +1458,48 @@ export function decideNextInitiativeAction(rawState: InitiativeExecutionState): 
   return InitiativeActionSchema.parse({ type: "complete-initiative" });
 }
 
+export function shouldCleanupWorkspace(input: {
+  policy: DevelopmentWorkspacePolicy;
+  outcome: "success" | "failure" | "human-gate";
+}): boolean {
+  if (input.outcome === "success") {
+    return input.policy.cleanupOnSuccess;
+  }
+
+  if (input.outcome === "failure") {
+    return !input.policy.preserveOnFailure;
+  }
+
+  return !input.policy.preserveOnHumanGate;
+}
+
+export function buildWorkspaceAllocateInput(input: {
+  policy: DevelopmentWorkspacePolicy;
+  plan: DevelopmentSlicePlan;
+  slice?: DevelopmentSliceInput;
+  parentWorkspaceId?: string;
+}): z.infer<typeof WorkspaceAllocateInputSchema> {
+  if (!input.policy.sourceRepoPath || !input.policy.workspaceRoot) {
+    throw new Error("Workspace allocation requires workspacePolicy.sourceRepoPath and workspacePolicy.workspaceRoot.");
+  }
+
+  return WorkspaceAllocateInputSchema.parse({
+    provider: input.policy.provider,
+    repo: input.plan.repo,
+    sourceRepoPath: input.policy.sourceRepoPath,
+    workspaceRoot: input.policy.workspaceRoot,
+    initiative: input.plan.initiative,
+    sliceId: input.slice?.id,
+    baseBranch: input.plan.baseBranch,
+    workingBranch: input.plan.workingBranch,
+    parentWorkspaceId: input.parentWorkspaceId,
+    metadata: {
+      workspaceMode: input.policy.mode,
+      ...(input.slice ? { sliceId: input.slice.id } : {}),
+    },
+  });
+}
+
 export function createPrAgent(options: {
   name?: string;
   description?: string;
@@ -1684,12 +1768,16 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
 }
 
 export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions = {}) {
+  const workspaceAllocateTool = options.workspaceProvider ? createWorkspaceAllocateTool(options.workspaceProvider) : undefined;
+  const workspaceRemoveTool = options.workspaceProvider ? createWorkspaceRemoveTool(options.workspaceProvider) : undefined;
+  const tools = [developmentRepoContextReadTool, ...(workspaceAllocateTool ? [workspaceAllocateTool] : []), ...(workspaceRemoveTool ? [workspaceRemoveTool] : [])];
+
   return agent({
     name: "weave.maintainer",
     description: "Plans a Weave-managed development initiative and optionally coordinates approved slices serially.",
     input: DevelopmentInitiativeInputSchema,
     output: InitiativePlannerOutputSchema,
-    tools: [developmentRepoContextReadTool],
+    tools,
     async run(ctx, rawInput) {
       const input = await ctx.checkpoint(DevelopmentCheckpointKeys.initiativeContext, () =>
         DevelopmentInitiativeInputSchema.parse(rawInput),
@@ -1770,12 +1858,46 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
         });
       }
 
+      const workspacePolicy = await ctx.checkpoint("workspace-policy", () => input.workspacePolicy);
+      const workspaceRefs: WorkspaceRef[] = [];
+      const workspaceCleanup: WorkspaceRemovalResult[] = [];
+      let initiativeWorkspaceRef = input.workspaceRef;
+      if (initiativeWorkspaceRef) {
+        workspaceRefs.push(initiativeWorkspaceRef);
+      }
+
+      if (workspacePolicy.mode === "initiative" && !initiativeWorkspaceRef && workspaceAllocateTool) {
+        const allocated = await ctx.tool(
+          "workspace-allocate:initiative",
+          workspaceAllocateTool,
+          buildWorkspaceAllocateInput({ policy: workspacePolicy, plan: approvedPlan }),
+        );
+        initiativeWorkspaceRef = await ctx.checkpoint(`${DevelopmentCheckpointKeys.workspaceRef}:initiative`, () => allocated);
+        workspaceRefs.push(initiativeWorkspaceRef);
+      }
+
       const completedSlices: CompletedDevelopmentSliceSummary[] = [];
       for (const [index, slice] of approvedPlan.slices.entries()) {
         const state = createInitialInitiativeExecutionState({ plan: approvedPlan, completedSlices });
         const action = decideNextInitiativeAction(state);
         if (action.type !== "run-slice") {
           break;
+        }
+
+        let sliceWorkspaceRef = workspacePolicy.mode === "initiative" ? initiativeWorkspaceRef : input.workspaceRef;
+        if (workspacePolicy.mode === "slice" && workspaceAllocateTool) {
+          const allocated = await ctx.tool(
+            `workspace-allocate:${slice.id}`,
+            workspaceAllocateTool,
+            buildWorkspaceAllocateInput({
+              policy: workspacePolicy,
+              plan: approvedPlan,
+              slice,
+              parentWorkspaceId: initiativeWorkspaceRef?.workspaceId,
+            }),
+          );
+          sliceWorkspaceRef = await ctx.checkpoint(`${DevelopmentCheckpointKeys.workspaceRef}:${slice.id}`, () => allocated);
+          workspaceRefs.push(sliceWorkspaceRef);
         }
 
         const sliceThread = await ctx.spawn(
@@ -1786,6 +1908,8 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
             repo: approvedPlan.repo,
             branch: approvedPlan.workingBranch,
             slice,
+            workspaceRef: sliceWorkspaceRef,
+            workspacePolicy,
             maxRepairAttempts: 1,
           },
           { source: "system", prompt: `Run development slice ${slice.id}: ${slice.title}` },
@@ -1802,6 +1926,9 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
             completedSlices,
             blockedSlice: slice.id,
             blockerReason: `Slice child failed: ${sliceRun.status === "failed" ? sliceRun.message : "missing output"}.`,
+            workspacePolicy,
+            workspaceRefs,
+            workspaceCleanup,
           });
         }
 
@@ -1816,11 +1943,24 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
             completedSlices,
             blockedSlice: slice.id,
             blockerReason: "reason" in sliceRun.output ? sliceRun.output.reason : `Slice ${slice.id} did not complete.`,
+            workspacePolicy,
+            workspaceRefs,
+            workspaceCleanup,
           });
         }
 
         completedSlices.push(completedSliceSummaryFromOutput(slice, sliceRun.output));
         await ctx.checkpoint(`initiative-slice-completed:${slice.id}`, () => ({ sliceId: slice.id, index }));
+
+        if (workspacePolicy.mode === "slice" && sliceWorkspaceRef && workspaceRemoveTool && workspacePolicy.workspaceRoot && shouldCleanupWorkspace({ policy: workspacePolicy, outcome: "success" })) {
+          const cleanup = await ctx.tool(`workspace-remove:${slice.id}`, workspaceRemoveTool, {
+            ref: sliceWorkspaceRef,
+            workspaceRoot: workspacePolicy.workspaceRoot,
+            requireClean: workspacePolicy.requireCleanOnCleanup,
+            force: workspacePolicy.forceCleanup,
+          });
+          workspaceCleanup.push(cleanup);
+        }
       }
 
       let prDraft: PrDraftResult | undefined;
@@ -1848,9 +1988,22 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
             gateComment: gate.comment,
             completedSlices,
             blockerReason: `PR draft child failed: ${prRun.status === "failed" ? prRun.message : "missing output"}.`,
+            workspacePolicy,
+            workspaceRefs,
+            workspaceCleanup,
           });
         }
         prDraft = prRun.output;
+      }
+
+      if (workspacePolicy.mode === "initiative" && initiativeWorkspaceRef && workspaceRemoveTool && workspacePolicy.workspaceRoot && shouldCleanupWorkspace({ policy: workspacePolicy, outcome: "success" })) {
+        const cleanup = await ctx.tool("workspace-remove:initiative", workspaceRemoveTool, {
+          ref: initiativeWorkspaceRef,
+          workspaceRoot: workspacePolicy.workspaceRoot,
+          requireClean: workspacePolicy.requireCleanOnCleanup,
+          force: workspacePolicy.forceCleanup,
+        });
+        workspaceCleanup.push(cleanup);
       }
 
       return InitiativePlannerOutputSchema.parse({
@@ -1862,6 +2015,9 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
         gateComment: gate.comment,
         completedSlices,
         prDraft,
+        workspacePolicy,
+        workspaceRefs,
+        workspaceCleanup,
       });
     },
   });

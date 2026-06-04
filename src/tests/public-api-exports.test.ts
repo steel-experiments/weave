@@ -19,12 +19,14 @@ import {
   weave,
   definePolicy,
   DevelopmentInitiativeInputSchema,
+  DevelopmentWorkspacePolicySchema,
   developmentBranchStateReadTool,
   developmentRepoContextReadTool,
   developmentEvents,
   weaveMaintainer,
   weaveSliceRunner,
   buildPrDraft,
+  buildWorkspaceAllocateInput,
   createWeaveMaintainerAgent,
   createGithubPrUpsertTool,
   createSliceRunnerAgent,
@@ -39,6 +41,7 @@ import {
   decideNextSliceAction,
   decideNextInitiativeAction,
   decideRepairLoop,
+  shouldCleanupWorkspace,
   InitiativeActionSchema,
   InitiativeExecutionStateSchema,
   SliceActionSchema,
@@ -149,6 +152,7 @@ assert.equal(allowEchoPolicy.name, "public-api.allow-echo");
 assert.equal(denyNothingPolicy.name, "public-api.deny-nothing");
 assert.equal(echoApp.policies?.[0], allowEchoPolicy);
 assert.equal(typeof DevelopmentInitiativeInputSchema.parse, "function");
+assert.equal(DevelopmentWorkspacePolicySchema.parse({}).mode, "initiative");
 assert.equal(developmentEvents.sliceCompleted.type, "dev.slice.completed");
 assert.equal(weaveMaintainer.name, "weave.maintainer");
 assert.equal(developmentRepoContextReadTool.name, "dev.repoContext.read");
@@ -166,6 +170,8 @@ assert.equal(typeof createPrAgent, "function");
 assert.equal(typeof createGithubPrUpsertTool, "function");
 assert.equal(typeof createSliceRunnerAgent, "function");
 assert.equal(typeof createInitialInitiativeExecutionState, "function");
+assert.equal(typeof buildWorkspaceAllocateInput, "function");
+assert.equal(typeof shouldCleanupWorkspace, "function");
 assert.equal(typeof decideNextSliceAction, "function");
 assert.equal(typeof decideNextInitiativeAction, "function");
 assert.equal(typeof InitiativeExecutionStateSchema.parse, "function");

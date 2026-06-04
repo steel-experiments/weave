@@ -17,12 +17,12 @@ These slices are intentionally separate from `../../slices/51-auth-gateway-threa
 | 7. PR Draft And Initiative Handoff | Shipped | `07-pr-draft-and-initiative-handoff.md` | Completed initiatives produce a reviewable PR draft, test summary, and handoff artifact. |
 | 8. Parent Slice Loop Composition | Shipped | `08-parent-slice-loop-composition.md` | One approved slice runs through implement, verify, review, bounded repair, and completion with state-driven replay. |
 | 9. Initiative-Level Sequencing | Shipped | `09-initiative-level-sequencing.md` | Approved plans execute slices serially and stop on failure before producing a PR draft. |
-| 10. Workspace Lifecycle Ownership | Proposed | `10-workspace-lifecycle-ownership.md` | Initiatives explicitly allocate, reuse, preserve, and clean up workspaces through `WorkspaceRef`. |
+| 10. Workspace Lifecycle Ownership | Shipped | `10-workspace-lifecycle-ownership.md` | Initiatives explicitly allocate, reuse, preserve, and clean up workspaces through `WorkspaceRef`. |
 | 11. Real OpenCode Runner Adapter | Proposed | `11-real-opencode-runner-adapter.md` | OpenCode implementation and repair runners execute in selected workspaces behind existing boundaries. |
 
 ## Auth Execution Readiness Path
 
-Ship development-orchestrator slices `10` and `11` before asking Weave Maintainer to build auth gateway slices `51` through `56`.
+Ship development-orchestrator slice `11` before asking Weave Maintainer to build auth gateway slices `51` through `56`.
 
 Start with a dry run of `../../slices/51-auth-gateway-thread-start.md` only. Expand to the full auth sequence after that single slice has completed implementation, verification, review, and human approval through the orchestrator.
 

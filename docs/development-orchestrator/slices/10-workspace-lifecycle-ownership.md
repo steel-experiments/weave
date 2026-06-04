@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
@@ -95,34 +95,46 @@ interface DevelopmentWorkspacePolicy {
 
 ## Acceptance Criteria
 
-- [ ] Workspace lifecycle policy is explicit and schema-validated.
-- [ ] Default mode is initiative-scoped workspace reuse.
-- [ ] Initiative mode allocates one workspace and passes it to every slice.
-- [ ] Slice mode can allocate one workspace per slice.
-- [ ] Workspace allocation is checkpointed and replay-safe.
-- [ ] Dirty or failed workspaces are preserved by default.
-- [ ] Cleanup uses `WorkspaceProvider` and respects policy.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `git diff --check` passes.
+- [x] Workspace lifecycle policy is explicit and schema-validated.
+- [x] Default mode is initiative-scoped workspace reuse.
+- [x] Initiative mode allocates one workspace and passes it to every slice.
+- [x] Slice mode can allocate one workspace per slice.
+- [x] Workspace allocation is checkpointed and replay-safe.
+- [x] Dirty or failed workspaces are preserved by default.
+- [x] Cleanup uses `WorkspaceProvider` and respects policy.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `git diff --check` passes.
 
 ## Progress
 
-- [ ] Add workspace policy schemas.
-- [ ] Add initiative workspace allocation path.
-- [ ] Add slice workspace allocation path.
-- [ ] Add checkpoint behavior.
-- [ ] Add cleanup/preserve decisions.
-- [ ] Add replay tests.
-- [ ] Update docs.
+- [x] Add workspace policy schemas.
+- [x] Add initiative workspace allocation path.
+- [x] Add slice workspace allocation path.
+- [x] Add checkpoint behavior.
+- [x] Add cleanup/preserve decisions.
+- [x] Add replay tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `DevelopmentWorkspaceModeSchema` and `DevelopmentWorkspacePolicySchema`.
+- `DevelopmentInitiativeInputSchema` now accepts optional `workspaceRef` and `workspacePolicy`; the default policy is initiative-scoped `git-worktree`, preserve on failure/human gate, and no cleanup on success.
+- `SliceRunnerInputSchema` now accepts optional `workspacePolicy` so child slice runners receive the lifecycle policy used to create their workspace.
+- Added `buildWorkspaceAllocateInput(...)` to produce schema-valid `workspace.allocate` inputs without embedding provider internals in the orchestrator.
+- Added `shouldCleanupWorkspace(...)` to make cleanup/preserve decisions explicit and testable.
+- `createWeaveMaintainerAgent(...)` can accept a `WorkspaceProvider`; when supplied, it registers `workspace.allocate` and `workspace.remove` tools.
+- In initiative mode, the maintainer allocates one workspace with key `workspace-allocate:initiative`, checkpoints it under `workspace-ref:initiative`, and passes the same `WorkspaceRef` to every slice child.
+- In slice mode, the maintainer allocates with keys `workspace-allocate:<sliceId>`, checkpoints each `workspace-ref:<sliceId>`, and passes a fresh `WorkspaceRef` to each slice child.
+- Successful cleanup is opt-in via `cleanupOnSuccess`; cleanup uses `workspace.remove` and respects `requireCleanOnCleanup` and `forceCleanup`.
+- Failed or human-gated initiatives preserve workspaces by default via `preserveOnFailure` and `preserveOnHumanGate`.
+- Added replay tests for initiative-mode allocation/reuse, slice-mode per-slice allocation, allocation checkpointing, successful cleanup request, and default preservation decisions.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm exec -- tsx src/tests/public-api-exports.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: real OpenCode execution remains slice 11. This slice wires workspace ownership around existing child boundaries only.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `README.md`
+- [x] this slice document
+- [x] `../README.md`
+- [x] `README.md`
 - [ ] `../../slices/57-workspace-provider-boundary.md` if provider contracts change

@@ -3,6 +3,7 @@ import {
   DevelopmentCheckpointKeys,
   DevelopmentInitiativeInputSchema,
   DevelopmentSlicePlanSchema,
+  DevelopmentWorkspacePolicySchema,
   InitiativeExecutionStateSchema,
   SliceExecutionStateSchema,
   SliceRunnerInputSchema,
@@ -16,6 +17,7 @@ import {
   ReviewResultSchema,
   VerificationResultSchema,
   buildPrDraft,
+  buildWorkspaceAllocateInput,
   createGithubPrUpsertTool,
   buildDevelopmentSlicePlan,
   createOpenCodeImplementationTool,
@@ -37,6 +39,7 @@ import {
   decideNextSliceAction,
   decideNextInitiativeAction,
   decideRepairLoop,
+  shouldCleanupWorkspace,
   evaluateOpenCodeImplementerInput,
   evaluateSliceReadinessForCompletion,
   evaluateSliceBranchState,
@@ -48,6 +51,7 @@ import {
 } from "../development-orchestrator.js";
 import { createAgentPlanner } from "../agent-runner.js";
 import { ThreadEventSchema, deterministicUuid, eventKey, nowIso, stableJsonHash, type ThreadEvent } from "../events.js";
+import type { WorkspaceProvider } from "../workspace-provider.js";
 
 const validSlice = {
   id: "01-contracts",
@@ -421,6 +425,7 @@ const firstSliceRunnerInput = SliceRunnerInputSchema.parse({
   repo: sequencePlan.repo,
   branch: sequencePlan.workingBranch,
   slice: sequencePlan.slices[0]!,
+  workspacePolicy: sequenceInitiative.workspacePolicy,
   maxRepairAttempts: 1,
 });
 const secondSliceRunnerInput = SliceRunnerInputSchema.parse({
@@ -428,6 +433,7 @@ const secondSliceRunnerInput = SliceRunnerInputSchema.parse({
   repo: sequencePlan.repo,
   branch: sequencePlan.workingBranch,
   slice: sequencePlan.slices[1]!,
+  workspacePolicy: sequenceInitiative.workspacePolicy,
   maxRepairAttempts: 1,
 });
 const sequenceHistory = [
@@ -559,6 +565,284 @@ const blockedSequenceOutput = blockedOutputPlan.events.find((candidate): candida
 assert(blockedSequenceOutput);
 assert.equal((blockedSequenceOutput.payload.output as { status: string }).status, "blocked");
 assert.equal((blockedSequenceOutput.payload.output as { blockedSlice: string }).blockedSlice, sequencePlan.slices[0]!.id);
+
+const defaultWorkspacePolicy = DevelopmentWorkspacePolicySchema.parse({});
+assert.equal(defaultWorkspacePolicy.mode, "initiative");
+assert.equal(defaultWorkspacePolicy.cleanupOnSuccess, false);
+assert.equal(shouldCleanupWorkspace({ policy: defaultWorkspacePolicy, outcome: "failure" }), false);
+assert.equal(shouldCleanupWorkspace({ policy: { ...defaultWorkspacePolicy, cleanupOnSuccess: true }, outcome: "success" }), true);
+assert.deepEqual(
+  buildWorkspaceAllocateInput({
+    policy: { ...defaultWorkspacePolicy, sourceRepoPath: "/repo/weave", workspaceRoot: "/tmp/weave-workspaces" },
+    plan: sequencePlan,
+  }).metadata,
+  { workspaceMode: "initiative" },
+);
+
+const fakeWorkspaceProvider: WorkspaceProvider = {
+  name: "git-worktree",
+  async allocate() {
+    throw new Error("workspace provider should be replayed in this test");
+  },
+  async state() {
+    throw new Error("workspace state should not run in this test");
+  },
+  async diff() {
+    throw new Error("workspace diff should not run in this test");
+  },
+  async remove() {
+    throw new Error("workspace remove should be replayed in this test");
+  },
+};
+const lifecycleWorkspaceRef = {
+  ...workspaceRef,
+  workspaceId: "initiative-workspace",
+  path: "/tmp/weave-workspaces/weave/initiative-workspace",
+  metadata: { workspaceMode: "initiative" },
+};
+const lifecyclePolicy = DevelopmentWorkspacePolicySchema.parse({
+  sourceRepoPath: "/repo/weave",
+  workspaceRoot: "/tmp/weave-workspaces",
+  cleanupOnSuccess: true,
+});
+const lifecycleInitiative = DevelopmentInitiativeInputSchema.parse({
+  ...sequenceInitiative,
+  workspacePolicy: lifecyclePolicy,
+});
+const lifecyclePlan = buildDevelopmentSlicePlan(lifecycleInitiative);
+const lifecycleFirstSliceInput = SliceRunnerInputSchema.parse({
+  initiative: lifecyclePlan.initiative,
+  repo: lifecyclePlan.repo,
+  branch: lifecyclePlan.workingBranch,
+  slice: lifecyclePlan.slices[0]!,
+  workspaceRef: lifecycleWorkspaceRef,
+  workspacePolicy: lifecyclePolicy,
+  maxRepairAttempts: 1,
+});
+const lifecycleSecondSliceInput = SliceRunnerInputSchema.parse({
+  initiative: lifecyclePlan.initiative,
+  repo: lifecyclePlan.repo,
+  branch: lifecyclePlan.workingBranch,
+  slice: lifecyclePlan.slices[1]!,
+  workspaceRef: lifecycleWorkspaceRef,
+  workspacePolicy: lifecyclePolicy,
+  maxRepairAttempts: 1,
+});
+const lifecycleMaintainer = createWeaveMaintainerAgent({ sliceRunnerAgent: weaveSliceRunner, workspaceProvider: fakeWorkspaceProvider });
+const lifecycleThreadId = "initiative-workspace-lifecycle";
+const lifecycleHistory = [
+  ...createInitialHistory(lifecycleThreadId, lifecycleInitiative, lifecycleMaintainer.name),
+  childSpawnedEvent(lifecycleThreadId, `slice:${lifecyclePlan.slices[0]!.id}`, weaveSliceRunner.name, "lifecycle-child-slice-1", lifecycleFirstSliceInput, `Run development slice ${lifecyclePlan.slices[0]!.id}: ${lifecyclePlan.slices[0]!.title}`, lifecycleMaintainer.name),
+  childSpawnedEvent(lifecycleThreadId, `slice:${lifecyclePlan.slices[1]!.id}`, weaveSliceRunner.name, "lifecycle-child-slice-2", lifecycleSecondSliceInput, `Run development slice ${lifecyclePlan.slices[1]!.id}: ${lifecyclePlan.slices[1]!.title}`, lifecycleMaintainer.name),
+];
+const lifecyclePlanner = createAgentPlanner(lifecycleMaintainer);
+const lifecycleFirstPlan = await lifecyclePlanner.plan(lifecycleThreadId, lifecycleHistory);
+assert(lifecycleFirstPlan);
+const lifecycleContextRequest = lifecycleFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(lifecycleContextRequest);
+const lifecycleContextCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  ...contextCompleted,
+  eventId: eventKey(lifecycleThreadId, "tool.completed", "read-repo-context"),
+  threadId: lifecycleThreadId,
+  correlationId: lifecycleContextRequest.correlationId,
+  causationId: lifecycleContextRequest.eventId,
+  scopeKey: lifecycleContextRequest.scopeKey,
+  stepKey: lifecycleContextRequest.stepKey,
+  payload: { ...contextCompleted.payload, toolCallId: lifecycleContextRequest.payload.toolCallId },
+};
+const lifecyclePlanned = await lifecyclePlanner.plan(lifecycleThreadId, [...lifecycleHistory, ...lifecycleFirstPlan.events, lifecycleContextCompleted]);
+assert(lifecyclePlanned);
+const lifecycleGate = lifecyclePlanned.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> => candidate.type === "gate.created");
+assert(lifecycleGate);
+const lifecycleGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  ...sequenceGateResolved,
+  eventId: eventKey(lifecycleThreadId, "gate.resolved", "approve-slice-plan"),
+  threadId: lifecycleThreadId,
+  correlationId: lifecycleGate.correlationId,
+  causationId: lifecycleGate.eventId,
+  scopeKey: lifecycleGate.scopeKey,
+  stepKey: lifecycleGate.stepKey,
+  payload: { gateId: lifecycleGate.payload.gateId, resolution: "approved", comment: "allocate workspace" },
+};
+const lifecycleAfterApproval = await lifecyclePlanner.plan(lifecycleThreadId, [
+  ...lifecycleHistory,
+  ...lifecycleFirstPlan.events,
+  lifecycleContextCompleted,
+  ...lifecyclePlanned.events,
+  lifecycleGateResolved,
+]);
+assert(lifecycleAfterApproval);
+const lifecycleAllocateRequest = lifecycleAfterApproval.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested" && candidate.payload.toolName === "workspace.allocate",
+);
+assert(lifecycleAllocateRequest);
+const lifecycleAllocateCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(lifecycleThreadId, "tool.completed", "workspace-allocate-initiative"),
+  threadId: lifecycleThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: lifecycleAllocateRequest.correlationId,
+  causationId: lifecycleAllocateRequest.eventId,
+  scopeKey: lifecycleAllocateRequest.scopeKey,
+  stepKey: lifecycleAllocateRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: { toolCallId: lifecycleAllocateRequest.payload.toolCallId, output: lifecycleWorkspaceRef },
+};
+const lifecycleCleanupPlan = await lifecyclePlanner.plan(lifecycleThreadId, [
+  ...lifecycleHistory,
+  ...lifecycleFirstPlan.events,
+  lifecycleContextCompleted,
+  ...lifecyclePlanned.events,
+  lifecycleGateResolved,
+  ...lifecycleAfterApproval.events,
+  lifecycleAllocateCompleted,
+  childCompletedEvent(lifecycleThreadId, `wait-slice:${lifecyclePlan.slices[0]!.id}`, "lifecycle-child-slice-1", weaveSliceRunner.name, firstSliceOutput, lifecycleMaintainer.name),
+  childCompletedEvent(lifecycleThreadId, `wait-slice:${lifecyclePlan.slices[1]!.id}`, "lifecycle-child-slice-2", weaveSliceRunner.name, secondSliceOutput, lifecycleMaintainer.name),
+]);
+assert(lifecycleCleanupPlan);
+const lifecycleRemoveRequest = lifecycleCleanupPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested" && candidate.payload.toolName === "workspace.remove",
+);
+assert(lifecycleRemoveRequest);
+const lifecycleCompleted = await lifecyclePlanner.plan(lifecycleThreadId, [
+  ...lifecycleHistory,
+  ...lifecycleFirstPlan.events,
+  lifecycleContextCompleted,
+  ...lifecyclePlanned.events,
+  lifecycleGateResolved,
+  ...lifecycleAfterApproval.events,
+  lifecycleAllocateCompleted,
+  childCompletedEvent(lifecycleThreadId, `wait-slice:${lifecyclePlan.slices[0]!.id}`, "lifecycle-child-slice-1", weaveSliceRunner.name, firstSliceOutput, lifecycleMaintainer.name),
+  childCompletedEvent(lifecycleThreadId, `wait-slice:${lifecyclePlan.slices[1]!.id}`, "lifecycle-child-slice-2", weaveSliceRunner.name, secondSliceOutput, lifecycleMaintainer.name),
+  ...lifecycleCleanupPlan.events,
+  {
+    eventId: eventKey(lifecycleThreadId, "tool.completed", "workspace-remove-initiative"),
+    threadId: lifecycleThreadId,
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: lifecycleRemoveRequest.correlationId,
+    causationId: lifecycleRemoveRequest.eventId,
+    scopeKey: lifecycleRemoveRequest.scopeKey,
+    stepKey: lifecycleRemoveRequest.stepKey,
+    actor: { type: "worker", id: "test-worker" },
+    payload: {
+      toolCallId: lifecycleRemoveRequest.payload.toolCallId,
+      output: { status: "removed", ref: lifecycleWorkspaceRef, removedPath: lifecycleWorkspaceRef.path },
+    },
+  } satisfies Extract<ThreadEvent, { type: "tool.completed" }>,
+]);
+assert(lifecycleCompleted);
+const lifecycleOutput = lifecycleCompleted.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(lifecycleOutput);
+assert.equal((lifecycleOutput.payload.output as { workspaceRefs: unknown[] }).workspaceRefs.length, 1);
+assert.equal((lifecycleOutput.payload.output as { workspaceCleanup: unknown[] }).workspaceCleanup.length, 1);
+
+const sliceModePolicy = DevelopmentWorkspacePolicySchema.parse({
+  mode: "slice",
+  sourceRepoPath: "/repo/weave",
+  workspaceRoot: "/tmp/weave-workspaces",
+});
+const sliceModeRefOne = { ...lifecycleWorkspaceRef, workspaceId: "slice-workspace-1", metadata: { workspaceMode: "slice", sliceId: sequencePlan.slices[0]!.id } };
+const sliceModeRefTwo = { ...lifecycleWorkspaceRef, workspaceId: "slice-workspace-2", metadata: { workspaceMode: "slice", sliceId: sequencePlan.slices[1]!.id } };
+const sliceModeInitiative = DevelopmentInitiativeInputSchema.parse({ ...sequenceInitiative, workspacePolicy: sliceModePolicy });
+const sliceModePlan = buildDevelopmentSlicePlan(sliceModeInitiative);
+const sliceModeFirstInput = SliceRunnerInputSchema.parse({
+  initiative: sliceModePlan.initiative,
+  repo: sliceModePlan.repo,
+  branch: sliceModePlan.workingBranch,
+  slice: sliceModePlan.slices[0]!,
+  workspaceRef: sliceModeRefOne,
+  workspacePolicy: sliceModePolicy,
+  maxRepairAttempts: 1,
+});
+const sliceModeSecondInput = SliceRunnerInputSchema.parse({
+  initiative: sliceModePlan.initiative,
+  repo: sliceModePlan.repo,
+  branch: sliceModePlan.workingBranch,
+  slice: sliceModePlan.slices[1]!,
+  workspaceRef: sliceModeRefTwo,
+  workspacePolicy: sliceModePolicy,
+  maxRepairAttempts: 1,
+});
+const sliceModeMaintainer = createWeaveMaintainerAgent({ sliceRunnerAgent: weaveSliceRunner, workspaceProvider: fakeWorkspaceProvider });
+const sliceModeThreadId = "initiative-workspace-slice-mode";
+const sliceModeHistory = [
+  ...createInitialHistory(sliceModeThreadId, sliceModeInitiative, sliceModeMaintainer.name),
+  childSpawnedEvent(sliceModeThreadId, `slice:${sliceModePlan.slices[0]!.id}`, weaveSliceRunner.name, "slice-mode-child-1", sliceModeFirstInput, `Run development slice ${sliceModePlan.slices[0]!.id}: ${sliceModePlan.slices[0]!.title}`, sliceModeMaintainer.name),
+  childSpawnedEvent(sliceModeThreadId, `slice:${sliceModePlan.slices[1]!.id}`, weaveSliceRunner.name, "slice-mode-child-2", sliceModeSecondInput, `Run development slice ${sliceModePlan.slices[1]!.id}: ${sliceModePlan.slices[1]!.title}`, sliceModeMaintainer.name),
+];
+const sliceModePlanner = createAgentPlanner(sliceModeMaintainer);
+const sliceModeFirstPlan = await sliceModePlanner.plan(sliceModeThreadId, sliceModeHistory);
+assert(sliceModeFirstPlan);
+const sliceModeContextRequest = sliceModeFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> => candidate.type === "tool.requested");
+assert(sliceModeContextRequest);
+const sliceModeContextCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  ...contextCompleted,
+  eventId: eventKey(sliceModeThreadId, "tool.completed", "read-repo-context"),
+  threadId: sliceModeThreadId,
+  correlationId: sliceModeContextRequest.correlationId,
+  causationId: sliceModeContextRequest.eventId,
+  scopeKey: sliceModeContextRequest.scopeKey,
+  stepKey: sliceModeContextRequest.stepKey,
+  payload: { ...contextCompleted.payload, toolCallId: sliceModeContextRequest.payload.toolCallId },
+};
+const sliceModePlanned = await sliceModePlanner.plan(sliceModeThreadId, [...sliceModeHistory, ...sliceModeFirstPlan.events, sliceModeContextCompleted]);
+assert(sliceModePlanned);
+const sliceModeGate = sliceModePlanned.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> => candidate.type === "gate.created");
+assert(sliceModeGate);
+const sliceModeGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  ...sequenceGateResolved,
+  eventId: eventKey(sliceModeThreadId, "gate.resolved", "approve-slice-plan"),
+  threadId: sliceModeThreadId,
+  correlationId: sliceModeGate.correlationId,
+  causationId: sliceModeGate.eventId,
+  scopeKey: sliceModeGate.scopeKey,
+  stepKey: sliceModeGate.stepKey,
+  payload: { gateId: sliceModeGate.payload.gateId, resolution: "approved", comment: "slice workspaces" },
+};
+const sliceModeAfterApproval = await sliceModePlanner.plan(sliceModeThreadId, [
+  ...sliceModeHistory,
+  ...sliceModeFirstPlan.events,
+  sliceModeContextCompleted,
+  ...sliceModePlanned.events,
+  sliceModeGateResolved,
+]);
+assert(sliceModeAfterApproval);
+const sliceModeFirstAllocate = sliceModeAfterApproval.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested" && candidate.payload.toolName === "workspace.allocate",
+);
+assert(sliceModeFirstAllocate);
+const sliceModeSecondAllocatePlan = await sliceModePlanner.plan(sliceModeThreadId, [
+  ...sliceModeHistory,
+  ...sliceModeFirstPlan.events,
+  sliceModeContextCompleted,
+  ...sliceModePlanned.events,
+  sliceModeGateResolved,
+  ...sliceModeAfterApproval.events,
+  {
+    eventId: eventKey(sliceModeThreadId, "tool.completed", "workspace-allocate-first-slice"),
+    threadId: sliceModeThreadId,
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: sliceModeFirstAllocate.correlationId,
+    causationId: sliceModeFirstAllocate.eventId,
+    scopeKey: sliceModeFirstAllocate.scopeKey,
+    stepKey: sliceModeFirstAllocate.stepKey,
+    actor: { type: "worker", id: "test-worker" },
+    payload: { toolCallId: sliceModeFirstAllocate.payload.toolCallId, output: sliceModeRefOne },
+  } satisfies Extract<ThreadEvent, { type: "tool.completed" }>,
+  childCompletedEvent(sliceModeThreadId, `wait-slice:${sliceModePlan.slices[0]!.id}`, "slice-mode-child-1", weaveSliceRunner.name, firstSliceOutput, sliceModeMaintainer.name),
+]);
+assert(sliceModeSecondAllocatePlan);
+const sliceModeSecondAllocate = sliceModeSecondAllocatePlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested" && candidate.payload.toolName === "workspace.allocate",
+);
+assert(sliceModeSecondAllocate);
+assert.notEqual(sliceModeSecondAllocate.stepKey, sliceModeFirstAllocate.stepKey);
 
 const branchState = {
   repo: "weave",
