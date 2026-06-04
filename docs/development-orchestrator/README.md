@@ -164,7 +164,7 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 5. Verification And Reviewer Threads | Shipped | `slices/05-verification-and-reviewer-threads.md` | Test/typecheck verification and read-only review run as child threads with structured results. |
 | 6. Repair Loop And Human Stop Gates | Shipped | `slices/06-repair-loop-and-human-stop-gates.md` | Failed slices can enter bounded repair attempts or pause for human decision without drift. |
 | 7. PR Draft And Initiative Handoff | Shipped | `slices/07-pr-draft-and-initiative-handoff.md` | Completed initiatives produce a reviewable PR draft, test summary, and handoff artifact. |
-| 8. Parent Slice Loop Composition | Proposed | `slices/08-parent-slice-loop-composition.md` | One approved slice runs through implement, verify, review, bounded repair, and completion with state-driven replay. |
+| 8. Parent Slice Loop Composition | Shipped | `slices/08-parent-slice-loop-composition.md` | One approved slice runs through implement, verify, review, bounded repair, and completion with state-driven replay. |
 | 9. Initiative-Level Sequencing | Proposed | `slices/09-initiative-level-sequencing.md` | Approved plans execute slices serially and stop on failure before producing a PR draft. |
 | 10. Workspace Lifecycle Ownership | Proposed | `slices/10-workspace-lifecycle-ownership.md` | Initiatives explicitly allocate, reuse, preserve, and clean up workspaces through `WorkspaceRef`. |
 | 11. Real OpenCode Runner Adapter | Proposed | `slices/11-real-opencode-runner-adapter.md` | OpenCode implementation and repair runners execute in selected workspaces behind existing boundaries. |
@@ -173,10 +173,9 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 
 Before running auth gateway slices `51` through `56`, ship these in order:
 
-1. `08-parent-slice-loop-composition.md`
-2. `09-initiative-level-sequencing.md`
-3. `10-workspace-lifecycle-ownership.md`
-4. `11-real-opencode-runner-adapter.md`
+1. `09-initiative-level-sequencing.md`
+2. `10-workspace-lifecycle-ownership.md`
+3. `11-real-opencode-runner-adapter.md`
 
 Then dry-run only `../../slices/51-auth-gateway-thread-start.md` first. Do not run auth slices `51` through `56` unattended until one low-risk auth slice has completed implementation, verification, review, repair handling if needed, and a human gate.
 

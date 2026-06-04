@@ -26,6 +26,7 @@ import {
   weaveSliceRunner,
   buildPrDraft,
   createGithubPrUpsertTool,
+  createSliceRunnerAgent,
   createOpenCodeImplementerAgent,
   createOpenCodeImplementationTool,
   createPrAgent,
@@ -33,7 +34,10 @@ import {
   createRepairTool,
   createReviewerAgent,
   createVerificationAgent,
+  decideNextSliceAction,
   decideRepairLoop,
+  SliceActionSchema,
+  SliceExecutionStateSchema,
   GitWorktreeWorkspaceProvider,
   WorkspaceRefSchema,
   createWorkspaceAllocateTool,
@@ -154,6 +158,10 @@ assert.equal(typeof createRepairTool, "function");
 assert.equal(typeof buildPrDraft, "function");
 assert.equal(typeof createPrAgent, "function");
 assert.equal(typeof createGithubPrUpsertTool, "function");
+assert.equal(typeof createSliceRunnerAgent, "function");
+assert.equal(typeof decideNextSliceAction, "function");
+assert.equal(typeof SliceExecutionStateSchema.parse, "function");
+assert.equal(typeof SliceActionSchema.parse, "function");
 assert.equal(repairAttemptKey(1), "repair:1");
 assert.equal(decideRepairLoop({ currentAttempt: 0, maxAttempts: 1, findings: [{ severity: "low", issue: "test" }] }).status, "attempt-repair");
 assert.equal(typeof GitWorktreeWorkspaceProvider, "function");

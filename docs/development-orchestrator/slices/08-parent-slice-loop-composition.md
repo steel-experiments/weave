@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
@@ -135,38 +135,48 @@ Do not use timestamps, random IDs, or mutable counters for child keys.
 
 ## Acceptance Criteria
 
-- [ ] `SliceExecutionState` is explicit, schema-validated, and durably projectable.
-- [ ] `decideNextSliceAction(...)` is pure and covered by unit tests.
-- [ ] `weave.sliceRunner` coordinates child agents but does not perform child work inline.
-- [ ] A slice can complete after implementation, verification, and reviews pass.
-- [ ] A slice can repair after failed verification and complete after rerun checks pass.
-- [ ] A slice opens a human gate when max repair attempts are exceeded.
-- [ ] A slice opens a human gate when high-risk reviewer findings remain.
-- [ ] Replay does not duplicate child threads, repair attempts, or completion events.
-- [ ] Child failure is handled deterministically.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `git diff --check` passes.
+- [x] `SliceExecutionState` is explicit, schema-validated, and durably projectable.
+- [x] `decideNextSliceAction(...)` is pure and covered by unit tests.
+- [x] `weave.sliceRunner` coordinates child agents but does not perform child work inline.
+- [x] A slice can complete after implementation, verification, and reviews pass.
+- [x] A slice can repair after failed verification and complete after rerun checks pass.
+- [x] A slice opens a human gate when max repair attempts are exceeded.
+- [x] A slice opens a human gate when high-risk reviewer findings remain.
+- [x] Replay does not duplicate child threads, repair attempts, or completion events.
+- [x] Child failure is handled deterministically.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `git diff --check` passes.
 
 ## Progress
 
-- [ ] Add execution state schemas.
-- [ ] Add action schemas.
-- [ ] Add next-action decision helper.
-- [ ] Add state projection helper.
-- [ ] Wire child spawn/join coordination.
-- [ ] Add repair rerun loop.
-- [ ] Add human stop gates.
-- [ ] Add replay tests.
-- [ ] Update docs.
+- [x] Add execution state schemas.
+- [x] Add action schemas.
+- [x] Add next-action decision helper.
+- [x] Add state projection helper.
+- [x] Wire child spawn/join coordination.
+- [x] Add repair rerun loop.
+- [x] Add human stop gates.
+- [x] Add replay tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `SliceExecutionPhaseSchema`, `SliceExecutionStateSchema`, and `SliceActionSchema`.
+- Added `createInitialSliceExecutionState(...)`, `requiredReviewersForSlice(...)`, and pure `decideNextSliceAction(...)` helpers.
+- Added `createSliceRunnerAgent(...)` so tests and future runtime wiring can supply implementation, verification, reviewer, and repair child agents.
+- Kept exported `weaveSliceRunner` backward-compatible as the default branch/workspace readiness runner when no child agents are configured.
+- Extended composed slice execution to coordinate existing child boundaries with deterministic keys: `implement`, `verify:<attempt>`, `review:<reviewer>:<attempt>`, `repair:<attempt>`, and matching wait keys.
+- The composed runner emits `dev.slice.completed` once after implementation, verification, and reviews pass.
+- The composed runner can run repair after failed verification, then rerun verification and review before completion.
+- The composed runner opens a `repair-stop` human gate when repair attempts are exhausted or high-risk reviewer findings remain.
+- Added replay tests for pure next-action decisions, happy-path composed completion, repair-rerun completion, and exhausted-repair human gate creation.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm exec -- tsx src/tests/public-api-exports.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gaps: workspace allocation remains explicit input for composed execution until slice 10. Initiative-level sequencing remains slice 09. Real OpenCode execution remains slice 11.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `README.md`
+- [x] this slice document
+- [x] `../README.md`
+- [x] `README.md`
 - [ ] architecture docs if `SliceExecutionState` becomes a reusable workflow primitive

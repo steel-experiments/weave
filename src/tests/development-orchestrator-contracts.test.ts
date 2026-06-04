@@ -3,9 +3,12 @@ import {
   DevelopmentCheckpointKeys,
   DevelopmentInitiativeInputSchema,
   DevelopmentSlicePlanSchema,
+  SliceExecutionStateSchema,
   ImplementationSummarySchema,
   OpenCodeImplementerInputSchema,
+  VerificationAgentInputSchema,
   PrDraftResultSchema,
+  RepairAgentInputSchema,
   RepairResultSchema,
   ReviewResultSchema,
   VerificationResultSchema,
@@ -17,6 +20,7 @@ import {
   createPrAgent,
   createRepairAgent,
   createRepairTool,
+  createSliceRunnerAgent,
   createReviewerAgent,
   createReviewerTool,
   createVerificationAgent,
@@ -24,6 +28,8 @@ import {
   developmentBranchStateReadTool,
   developmentRepoContextReadTool,
   developmentEvents,
+  createInitialSliceExecutionState,
+  decideNextSliceAction,
   decideRepairLoop,
   evaluateOpenCodeImplementerInput,
   evaluateSliceReadinessForCompletion,
@@ -35,7 +41,7 @@ import {
   weaveSliceRunner,
 } from "../development-orchestrator.js";
 import { createAgentPlanner } from "../agent-runner.js";
-import { ThreadEventSchema, deterministicUuid, eventKey, nowIso, type ThreadEvent } from "../events.js";
+import { ThreadEventSchema, deterministicUuid, eventKey, nowIso, stableJsonHash, type ThreadEvent } from "../events.js";
 
 const validSlice = {
   id: "01-contracts",
@@ -908,7 +914,332 @@ assert(prOutput);
 assert.equal((prOutput.payload.output as { humanApproval: string }).humanApproval, "approved");
 assert.equal((prOutput.payload.output as { prUrl: string }).prUrl, "https://github.com/acme/weave/pull/123");
 
+const initialSliceState = createInitialSliceExecutionState({ ...sliceRunnerInput, workspaceRef, maxRepairAttempts: 1 });
+assert.equal(initialSliceState.phase, "workspace-ready");
+assert.deepEqual(decideNextSliceAction(initialSliceState), { type: "run-implementation" });
+assert.equal(SliceExecutionStateSchema.parse(initialSliceState).sliceId, validSlice.id);
+
+const implementationChildInput = OpenCodeImplementerInputSchema.parse({
+  sliceId: validSlice.id,
+  sliceTitle: validSlice.title,
+  objective: validSlice.objective,
+  acceptanceCriteria: validSlice.acceptanceCriteria,
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
+  constraints: [],
+});
+const implementationChildOutput = {
+  status: "completed" as const,
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
+  summary: implementation,
+};
+const verificationChildInput = VerificationAgentInputSchema.parse({
+  sliceId: validSlice.id,
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
+});
+const composedSliceRunner = createSliceRunnerAgent({
+  implementationAgent: openCodeImplementer,
+  verificationAgent: verifier,
+  reviewerAgents: { "architecture-reviewer": reviewerAgent },
+});
+const composedThreadId = "slice-runner-composed-happy";
+const composedInput = {
+  ...sliceRunnerInput,
+  workspaceRef,
+  slice: { ...initiative.slices[0]!, requiredReviewers: ["architecture-reviewer" as const] },
+  maxRepairAttempts: 1,
+};
+const reviewChildInput = {
+  slice: composedInput.slice,
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
+  reviewer: "architecture-reviewer" as const,
+  implementationSummary: implementation,
+  verificationResult,
+};
+const composedHistory = [
+  ...createInitialHistory(composedThreadId, composedInput, composedSliceRunner.name),
+  childSpawnedEvent(composedThreadId, "implement", openCodeImplementer.name, "child-implement", implementationChildInput, `Implement development slice ${validSlice.id}: ${validSlice.title}`),
+  childSpawnedEvent(composedThreadId, "verify:0", verifier.name, "child-verify-0", verificationChildInput, `Verify development slice ${validSlice.id} attempt 0.`),
+  childSpawnedEvent(composedThreadId, "review:architecture-reviewer:0", reviewerAgent.name, "child-review-architecture-0", reviewChildInput, `Review development slice ${validSlice.id} as architecture-reviewer.`),
+];
+const composedPlanner = createAgentPlanner(composedSliceRunner);
+const composedFirstPlan = await composedPlanner.plan(composedThreadId, composedHistory);
+assert(composedFirstPlan);
+const composedBranchRequest = composedFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(composedBranchRequest);
+const composedBranchCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(composedThreadId, "tool.completed", "read-branch-state"),
+  threadId: composedThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: composedBranchRequest.correlationId,
+  causationId: composedBranchRequest.eventId,
+  scopeKey: composedBranchRequest.scopeKey,
+  stepKey: composedBranchRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: composedBranchRequest.payload.toolCallId,
+    output: branchState,
+  },
+};
+const composedAfterBranch = await composedPlanner.plan(composedThreadId, [...composedHistory, ...composedFirstPlan.events, composedBranchCompleted]);
+assert(composedAfterBranch);
+assert.equal(composedAfterBranch.events.some((candidate) => candidate.type === "dev.slice.started"), true);
+const composedAfterImplementation = await composedPlanner.plan(composedThreadId, [
+  ...composedHistory,
+  ...composedFirstPlan.events,
+  composedBranchCompleted,
+  ...composedAfterBranch.events,
+  childCompletedEvent(composedThreadId, "wait-implement", "child-implement", openCodeImplementer.name, implementationChildOutput),
+]);
+assert.equal(composedAfterImplementation, null);
+const composedAfterVerification = await composedPlanner.plan(composedThreadId, [
+  ...composedHistory,
+  ...composedFirstPlan.events,
+  composedBranchCompleted,
+  ...composedAfterBranch.events,
+  childCompletedEvent(composedThreadId, "wait-implement", "child-implement", openCodeImplementer.name, implementationChildOutput),
+  childCompletedEvent(composedThreadId, "wait-verify:0", "child-verify-0", verifier.name, verificationResult),
+]);
+assert.equal(composedAfterVerification, null);
+const composedFinished = await composedPlanner.plan(composedThreadId, [
+  ...composedHistory,
+  ...composedFirstPlan.events,
+  composedBranchCompleted,
+  ...composedAfterBranch.events,
+  childCompletedEvent(composedThreadId, "wait-implement", "child-implement", openCodeImplementer.name, implementationChildOutput),
+  childCompletedEvent(composedThreadId, "wait-verify:0", "child-verify-0", verifier.name, verificationResult),
+  childCompletedEvent(composedThreadId, "wait-review:architecture-reviewer:0", "child-review-architecture-0", reviewerAgent.name, passingReview),
+]);
+assert(composedFinished);
+assert.equal(composedFinished.events.some((candidate) => candidate.type === "dev.slice.completed"), true);
+assert.equal(composedFinished.events.filter((candidate) => candidate.type === "dev.slice.completed").length, 1);
+const composedOutput = composedFinished.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(composedOutput);
+assert.equal((composedOutput.payload.output as { status: string }).status, "completed");
+
+const failedVerificationResult = {
+  status: "failed" as const,
+  failureSummary: "typecheck failed",
+  commands: [
+    {
+      command: "npm run typecheck",
+      exitCode: 1,
+      status: "failed" as const,
+      durationMs: 100,
+      summary: "Typecheck failed.",
+      output: "error TS1234",
+    },
+  ],
+};
+const repairFinding = { severity: "high" as const, issue: "typecheck failed" };
+const repairableState = SliceExecutionStateSchema.parse({
+  ...initialSliceState,
+  requiredReviewers: ["architecture-reviewer"],
+  implementation: implementationChildOutput,
+  verification: failedVerificationResult,
+  reviews: [passingReview],
+  maxRepairAttempts: 1,
+});
+assert.deepEqual(decideNextSliceAction(repairableState), { type: "run-repair", attempt: 0, findings: [repairFinding] });
+assert.equal(decideNextSliceAction({ ...repairableState, maxRepairAttempts: 0 }).type, "require-human-stop");
+assert.equal(
+  decideNextSliceAction({
+    ...repairableState,
+    verification: verificationResult,
+    reviews: [{ reviewer: "architecture-reviewer", verdict: "needs-fixes", findings: [{ severity: "high", issue: "Auth policy risk." }] }],
+  }).type,
+  "require-human-stop",
+);
+
+const repairVerificationInput = VerificationAgentInputSchema.parse({
+  sliceId: validSlice.id,
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
+});
+const repairReviewAttemptZeroInput = {
+  ...reviewChildInput,
+  verificationResult: failedVerificationResult,
+};
+const repairChildInput = RepairAgentInputSchema.parse({
+  branch: workspaceRef.workingBranch,
+  workspaceRef,
+  slice: composedInput.slice,
+  attempt: 0,
+  maxAttempts: 1,
+  failingCommands: failedVerificationResult.commands,
+  findings: [repairFinding],
+});
+const repairReviewAttemptOneInput = {
+  ...reviewChildInput,
+  verificationResult,
+};
+const repairComposedRunner = createSliceRunnerAgent({
+  implementationAgent: openCodeImplementer,
+  verificationAgent: verifier,
+  reviewerAgents: { "architecture-reviewer": reviewerAgent },
+  repairAgent,
+});
+const repairComposedThreadId = "slice-runner-composed-repair";
+const repairComposedHistory = [
+  ...createInitialHistory(repairComposedThreadId, composedInput, repairComposedRunner.name),
+  childSpawnedEvent(repairComposedThreadId, "implement", openCodeImplementer.name, "repair-child-implement", implementationChildInput, `Implement development slice ${validSlice.id}: ${validSlice.title}`),
+  childSpawnedEvent(repairComposedThreadId, "verify:0", verifier.name, "repair-child-verify-0", repairVerificationInput, `Verify development slice ${validSlice.id} attempt 0.`),
+  childSpawnedEvent(repairComposedThreadId, "review:architecture-reviewer:0", reviewerAgent.name, "repair-child-review-0", repairReviewAttemptZeroInput, `Review development slice ${validSlice.id} as architecture-reviewer.`),
+  childSpawnedEvent(repairComposedThreadId, "repair:0", repairAgent.name, "repair-child-repair-0", repairChildInput, `Repair development slice ${validSlice.id} attempt 0.`),
+  childSpawnedEvent(repairComposedThreadId, "verify:1", verifier.name, "repair-child-verify-1", repairVerificationInput, `Verify development slice ${validSlice.id} attempt 1.`),
+  childSpawnedEvent(repairComposedThreadId, "review:architecture-reviewer:1", reviewerAgent.name, "repair-child-review-1", repairReviewAttemptOneInput, `Review development slice ${validSlice.id} as architecture-reviewer.`),
+];
+const repairComposedPlanner = createAgentPlanner(repairComposedRunner);
+const repairComposedFirstPlan = await repairComposedPlanner.plan(repairComposedThreadId, repairComposedHistory);
+assert(repairComposedFirstPlan);
+const repairComposedBranchRequest = repairComposedFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(repairComposedBranchRequest);
+const repairComposedFinished = await repairComposedPlanner.plan(repairComposedThreadId, [
+  ...repairComposedHistory,
+  ...repairComposedFirstPlan.events,
+  {
+    eventId: eventKey(repairComposedThreadId, "tool.completed", "read-branch-state"),
+    threadId: repairComposedThreadId,
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: repairComposedBranchRequest.correlationId,
+    causationId: repairComposedBranchRequest.eventId,
+    scopeKey: repairComposedBranchRequest.scopeKey,
+    stepKey: repairComposedBranchRequest.stepKey,
+    actor: { type: "worker", id: "test-worker" },
+    payload: {
+      toolCallId: repairComposedBranchRequest.payload.toolCallId,
+      output: branchState,
+    },
+  } satisfies Extract<ThreadEvent, { type: "tool.completed" }>,
+  childCompletedEvent(repairComposedThreadId, "wait-implement", "repair-child-implement", openCodeImplementer.name, implementationChildOutput),
+  childCompletedEvent(repairComposedThreadId, "wait-verify:0", "repair-child-verify-0", verifier.name, failedVerificationResult),
+  childCompletedEvent(repairComposedThreadId, "wait-review:architecture-reviewer:0", "repair-child-review-0", reviewerAgent.name, passingReview),
+  childCompletedEvent(repairComposedThreadId, "wait-repair:0", "repair-child-repair-0", repairAgent.name, repairResult),
+  childCompletedEvent(repairComposedThreadId, "wait-verify:1", "repair-child-verify-1", verifier.name, verificationResult),
+  childCompletedEvent(repairComposedThreadId, "wait-review:architecture-reviewer:1", "repair-child-review-1", reviewerAgent.name, passingReview),
+]);
+assert(repairComposedFinished);
+assert.equal(repairComposedFinished.events.some((candidate) => candidate.type === "dev.slice.completed"), true);
+const repairComposedOutput = repairComposedFinished.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(repairComposedOutput);
+assert.equal((repairComposedOutput.payload.output as { status: string }).status, "completed");
+assert.equal((repairComposedOutput.payload.output as { repairs: unknown[] }).repairs.length, 1);
+
+const exhaustedComposedInput = { ...composedInput, maxRepairAttempts: 0 };
+const exhaustedComposedRunner = createSliceRunnerAgent({
+  implementationAgent: openCodeImplementer,
+  verificationAgent: verifier,
+  reviewerAgents: { "architecture-reviewer": reviewerAgent },
+});
+const exhaustedComposedThreadId = "slice-runner-composed-exhausted";
+const exhaustedComposedHistory = [
+  ...createInitialHistory(exhaustedComposedThreadId, exhaustedComposedInput, exhaustedComposedRunner.name),
+  childSpawnedEvent(exhaustedComposedThreadId, "implement", openCodeImplementer.name, "exhausted-child-implement", implementationChildInput, `Implement development slice ${validSlice.id}: ${validSlice.title}`),
+  childSpawnedEvent(exhaustedComposedThreadId, "verify:0", verifier.name, "exhausted-child-verify-0", repairVerificationInput, `Verify development slice ${validSlice.id} attempt 0.`),
+  childSpawnedEvent(exhaustedComposedThreadId, "review:architecture-reviewer:0", reviewerAgent.name, "exhausted-child-review-0", repairReviewAttemptZeroInput, `Review development slice ${validSlice.id} as architecture-reviewer.`),
+];
+const exhaustedComposedPlanner = createAgentPlanner(exhaustedComposedRunner);
+const exhaustedSliceFirstPlan = await exhaustedComposedPlanner.plan(exhaustedComposedThreadId, exhaustedComposedHistory);
+assert(exhaustedSliceFirstPlan);
+const exhaustedBranchRequest = exhaustedSliceFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(exhaustedBranchRequest);
+const exhaustedGatePlan = await exhaustedComposedPlanner.plan(exhaustedComposedThreadId, [
+  ...exhaustedComposedHistory,
+  ...exhaustedSliceFirstPlan.events,
+  {
+    eventId: eventKey(exhaustedComposedThreadId, "tool.completed", "read-branch-state"),
+    threadId: exhaustedComposedThreadId,
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: exhaustedBranchRequest.correlationId,
+    causationId: exhaustedBranchRequest.eventId,
+    scopeKey: exhaustedBranchRequest.scopeKey,
+    stepKey: exhaustedBranchRequest.stepKey,
+    actor: { type: "worker", id: "test-worker" },
+    payload: {
+      toolCallId: exhaustedBranchRequest.payload.toolCallId,
+      output: branchState,
+    },
+  } satisfies Extract<ThreadEvent, { type: "tool.completed" }>,
+  childCompletedEvent(exhaustedComposedThreadId, "wait-implement", "exhausted-child-implement", openCodeImplementer.name, implementationChildOutput),
+  childCompletedEvent(exhaustedComposedThreadId, "wait-verify:0", "exhausted-child-verify-0", verifier.name, failedVerificationResult),
+  childCompletedEvent(exhaustedComposedThreadId, "wait-review:architecture-reviewer:0", "exhausted-child-review-0", reviewerAgent.name, passingReview),
+]);
+assert(exhaustedGatePlan);
+const exhaustedGate = exhaustedGatePlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
+  candidate.type === "gate.created",
+);
+assert(exhaustedGate);
+assert.equal(exhaustedGate.payload.reason, "repair-stop");
+assert.equal(exhaustedGate.payload.proposedAction?.includes("Repair attempts exhausted"), true);
+
 console.log("Development orchestrator contract tests passed");
+
+function childSpawnedEvent(
+  threadId: string,
+  stepKey: string,
+  childAgentName: string,
+  childThreadId: string,
+  input: Record<string, unknown>,
+  inputSummary: string,
+): Extract<ThreadEvent, { type: "child_thread.spawned" }> {
+  return {
+    eventId: eventKey(threadId, "child_thread.spawned", `agent:weave.sliceRunner:${stepKey}`),
+    threadId,
+    type: "child_thread.spawned",
+    occurredAt: nowIso(),
+    scopeKey: "agent:weave.sliceRunner",
+    stepKey,
+    actor: { type: "agent", id: "weave.sliceRunner" },
+    payload: {
+      childThreadId,
+      childAgentName,
+      scopeKey: "agent:weave.sliceRunner",
+      stepKey,
+      mode: "attached",
+      inputHash: stableJsonHash(input),
+      inputSummary,
+    },
+  };
+}
+
+function childCompletedEvent(
+  threadId: string,
+  stepKey: string,
+  childThreadId: string,
+  childAgentName: string,
+  output: unknown,
+): Extract<ThreadEvent, { type: "child_thread.completed" }> {
+  return {
+    eventId: eventKey(threadId, "child_thread.completed", `agent:weave.sliceRunner:${stepKey}`),
+    threadId,
+    type: "child_thread.completed",
+    occurredAt: nowIso(),
+    scopeKey: "agent:weave.sliceRunner",
+    stepKey,
+    actor: { type: "worker", id: "test-worker" },
+    payload: {
+      childThreadId,
+      childAgentName,
+      output,
+    },
+  };
+}
 
 function createInitialHistory(threadId: string, metadata: unknown, agentName: string = weaveMaintainer.name): ThreadEvent[] {
   const correlationId = deterministicUuid("correlation", threadId);

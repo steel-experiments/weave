@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { agent, event } from "./agent-contract.js";
+import { agent, event, type AgentContext, type AgentContract } from "./agent-contract.js";
 import { capability } from "./capability-contract.js";
 import {
   DevImplementationCompletedPayloadSchema,
@@ -194,6 +194,25 @@ export const SliceRunnerOutputSchema = z.discriminatedUnion("status", [
     reason: NonEmptyStringSchema,
     branchState: DevelopmentBranchStateSchema.optional(),
   }),
+  z.object({
+    status: z.literal("completed"),
+    sliceId: NonEmptyStringSchema,
+    branch: NonEmptyStringSchema,
+    workspaceRef: WorkspaceRefSchema,
+    implementationSummary: z.unknown(),
+    verificationResult: z.unknown(),
+    reviewResults: z.array(z.unknown()),
+    repairs: z.array(z.unknown()).default([]),
+    summary: NonEmptyStringSchema,
+  }),
+  z.object({
+    status: z.literal("failed"),
+    sliceId: NonEmptyStringSchema,
+    branch: NonEmptyStringSchema,
+    reason: NonEmptyStringSchema,
+    findings: z.array(DevReviewFindingSchema).default([]),
+    workspaceRef: WorkspaceRefSchema.optional(),
+  }),
 ]);
 export type SliceRunnerOutput = z.infer<typeof SliceRunnerOutputSchema>;
 
@@ -352,6 +371,60 @@ export type RepairLoopDecision = z.infer<typeof RepairLoopDecisionSchema>;
 
 export type RepairRunner = {
   run(input: z.infer<typeof RepairAgentInputSchema>): Promise<RepairResult> | RepairResult;
+};
+
+export const SliceExecutionPhaseSchema = z.enum([
+  "approved",
+  "workspace-ready",
+  "implementation-running",
+  "implementation-completed",
+  "verification-running",
+  "verification-completed",
+  "review-running",
+  "review-completed",
+  "repair-running",
+  "repair-completed",
+  "blocked",
+  "completed",
+  "failed",
+]);
+export type SliceExecutionPhase = z.infer<typeof SliceExecutionPhaseSchema>;
+
+export const SliceExecutionStateSchema = z.object({
+  sliceId: NonEmptyStringSchema,
+  title: NonEmptyStringSchema,
+  phase: SliceExecutionPhaseSchema,
+  branch: NonEmptyStringSchema,
+  workspaceRef: WorkspaceRefSchema.optional(),
+  requiredReviewers: z.array(DevelopmentReviewerRoleSchema).default([]),
+  implementation: OpenCodeImplementerOutputSchema.optional(),
+  verification: VerificationResultSchema.optional(),
+  reviews: z.array(ReviewResultSchema).default([]),
+  repairs: z.array(RepairResultSchema).default([]),
+  repairAttempts: z.number().int().nonnegative().default(0),
+  maxRepairAttempts: z.number().int().nonnegative().default(0),
+  blockers: z.array(DevReviewFindingSchema).default([]),
+  finalSummary: NonEmptyStringSchema.optional(),
+});
+export type SliceExecutionState = z.infer<typeof SliceExecutionStateSchema>;
+
+export const SliceActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("allocate-workspace") }),
+  z.object({ type: z.literal("run-implementation") }),
+  z.object({ type: z.literal("run-verification"), attempt: z.number().int().nonnegative() }),
+  z.object({ type: z.literal("run-reviewers"), reviewers: z.array(DevelopmentReviewerRoleSchema).min(1), attempt: z.number().int().nonnegative() }),
+  z.object({ type: z.literal("run-repair"), attempt: z.number().int().nonnegative(), findings: z.array(DevReviewFindingSchema).min(1) }),
+  z.object({ type: z.literal("require-human-stop"), reason: NonEmptyStringSchema, findings: z.array(DevReviewFindingSchema).default([]) }),
+  z.object({ type: z.literal("complete-slice"), summary: NonEmptyStringSchema }),
+  z.object({ type: z.literal("fail-slice"), reason: NonEmptyStringSchema, findings: z.array(DevReviewFindingSchema).default([]) }),
+]);
+export type SliceAction = z.infer<typeof SliceActionSchema>;
+
+export type SliceRunnerAgentOptions = {
+  implementationAgent?: AgentContract<string, any, OpenCodeImplementerOutput>;
+  verificationAgent?: AgentContract<string, any, VerificationResult>;
+  reviewerAgents?: Partial<Record<DevelopmentReviewerRole, AgentContract<string, any, ReviewResult>>>;
+  repairAgent?: AgentContract<string, any, RepairResult>;
 };
 
 export const CompletedDevelopmentSliceSummarySchema = z.object({
@@ -970,6 +1043,85 @@ export function evaluateSliceReadinessForCompletion(input: {
   });
 }
 
+export function requiredReviewersForSlice(slice: DevelopmentSliceInput): DevelopmentReviewerRole[] {
+  return slice.requiredReviewers.length > 0 ? slice.requiredReviewers : ["architecture-reviewer"];
+}
+
+export function createInitialSliceExecutionState(input: SliceRunnerInput): SliceExecutionState {
+  return SliceExecutionStateSchema.parse({
+    sliceId: input.slice.id,
+    title: input.slice.title,
+    phase: input.workspaceRef ? "workspace-ready" : "approved",
+    branch: input.branch,
+    workspaceRef: input.workspaceRef,
+    requiredReviewers: requiredReviewersForSlice(input.slice),
+    reviews: [],
+    repairs: [],
+    repairAttempts: 0,
+    maxRepairAttempts: input.maxRepairAttempts,
+    blockers: [],
+  });
+}
+
+export function decideNextSliceAction(rawState: SliceExecutionState): SliceAction {
+  const state = SliceExecutionStateSchema.parse(rawState);
+
+  if (!state.workspaceRef) {
+    return SliceActionSchema.parse({ type: "allocate-workspace" });
+  }
+
+  if (!state.implementation) {
+    return SliceActionSchema.parse({ type: "run-implementation" });
+  }
+
+  if (state.implementation.status === "blocked") {
+    return SliceActionSchema.parse({ type: "fail-slice", reason: state.implementation.reason, findings: [] });
+  }
+
+  const attempt = state.repairs.length;
+  if (!state.verification) {
+    return SliceActionSchema.parse({ type: "run-verification", attempt });
+  }
+
+  const missingReviewers = state.requiredReviewers.filter((reviewer) => !state.reviews.some((review) => review.reviewer === reviewer));
+  if (missingReviewers.length > 0) {
+    return SliceActionSchema.parse({ type: "run-reviewers", reviewers: missingReviewers, attempt });
+  }
+
+  const decision = evaluateSliceReadinessForCompletion({
+    implementationSummary: state.implementation.summary,
+    verificationResult: state.verification,
+    reviewResults: state.reviews,
+  });
+
+  if (decision.status === "completed") {
+    return SliceActionSchema.parse({ type: "complete-slice", summary: decision.summary });
+  }
+
+  const highRiskFinding = highRiskReviewerFinding(state.reviews);
+  if (highRiskFinding) {
+    return SliceActionSchema.parse({
+      type: "require-human-stop",
+      reason: `High-risk reviewer finding requires human approval: ${highRiskFinding.issue}`,
+      findings: [highRiskFinding],
+    });
+  }
+
+  if (decision.status === "blocked") {
+    return SliceActionSchema.parse({ type: "fail-slice", reason: decision.reason, findings: decision.findings });
+  }
+
+  if (attempt >= state.maxRepairAttempts) {
+    return SliceActionSchema.parse({
+      type: "require-human-stop",
+      reason: `Repair attempts exhausted after ${attempt} attempt(s).`,
+      findings: decision.findings,
+    });
+  }
+
+  return SliceActionSchema.parse({ type: "run-repair", attempt, findings: decision.findings });
+}
+
 export function createVerificationAgent(options: {
   name?: string;
   description?: string;
@@ -1512,33 +1664,294 @@ export const weaveMaintainer = agent({
   },
 });
 
-export const weaveSliceRunner = agent({
-  name: "weave.sliceRunner",
-  description: "Confirms branch/worktree state for one approved development slice before implementation starts.",
-  input: SliceRunnerInputSchema,
-  output: SliceRunnerOutputSchema,
-  tools: [developmentBranchStateReadTool],
-  async run(ctx, rawInput) {
-    const input = SliceRunnerInputSchema.parse(rawInput);
-    const workingBranch = await ctx.checkpoint(DevelopmentCheckpointKeys.workingBranch, () => input.branch);
-    const branchState = await ctx.tool("read-branch-state", developmentBranchStateReadTool, {
-      repo: input.repo,
-    });
-    const decision = evaluateSliceBranchState({ ...input, branch: workingBranch }, branchState);
+export function createSliceRunnerAgent(options: SliceRunnerAgentOptions = {}) {
+  return agent({
+    name: "weave.sliceRunner",
+    description: "Coordinates one approved development slice through implementation, verification, review, and bounded repair.",
+    input: SliceRunnerInputSchema,
+    output: SliceRunnerOutputSchema,
+    tools: [developmentBranchStateReadTool],
+    async run(ctx, rawInput) {
+      const input = SliceRunnerInputSchema.parse(rawInput);
+      const workingBranch = await ctx.checkpoint(DevelopmentCheckpointKeys.workingBranch, () => input.branch);
+      const branchState = await ctx.tool("read-branch-state", developmentBranchStateReadTool, {
+        repo: input.repo,
+      });
+      const branchDecision = evaluateSliceBranchState({ ...input, branch: workingBranch }, branchState);
 
-    if (decision.status === "blocked") {
-      return decision;
-    }
+      if (branchDecision.status === "blocked") {
+        return branchDecision;
+      }
 
-    await ctx.emit(
-      `slice-started:${input.slice.id}`,
-      developmentEvents.sliceStarted({
-        sliceId: input.slice.id,
-        title: input.slice.title,
-        branch: workingBranch,
-      }),
-    );
+      await ctx.emit(
+        `slice-started:${input.slice.id}`,
+        developmentEvents.sliceStarted({
+          sliceId: input.slice.id,
+          title: input.slice.title,
+          branch: workingBranch,
+        }),
+      );
 
-    return decision;
-  },
-});
+      if (!options.implementationAgent || !options.verificationAgent || !options.reviewerAgents) {
+        return branchDecision;
+      }
+
+      let state = createInitialSliceExecutionState({ ...input, branch: workingBranch, workspaceRef: branchDecision.workspaceRef });
+      let action = decideNextSliceAction(state);
+      if (action.type === "allocate-workspace") {
+        return await stopSliceForHuman(ctx, input, workingBranch, "WorkspaceRef is required before composed slice execution can start.", []);
+      }
+
+      const implementationThread = await ctx.spawn(
+        "implement",
+        options.implementationAgent,
+        {
+          sliceId: input.slice.id,
+          sliceTitle: input.slice.title,
+          objective: input.slice.objective,
+          acceptanceCriteria: input.slice.acceptanceCriteria,
+          allowedFiles: input.slice.allowedFiles,
+          branch: workingBranch,
+          workspaceRef: state.workspaceRef!,
+          constraints: input.slice.constraints,
+        },
+        { source: "system", prompt: `Implement development slice ${input.slice.id}: ${input.slice.title}` },
+      );
+      const implementationRun = await ctx.join("wait-implement", implementationThread);
+      if (implementationRun.status === "failed" || !implementationRun.output) {
+        return await failSlice(
+          ctx,
+          input,
+          workingBranch,
+          `Implementation child failed: ${implementationRun.status === "failed" ? implementationRun.message : "missing output"}.`,
+          [],
+          state.workspaceRef,
+        );
+      }
+      state = SliceExecutionStateSchema.parse({ ...state, phase: "implementation-completed", implementation: implementationRun.output });
+      action = decideNextSliceAction(state);
+      if (action.type === "fail-slice") {
+        return await failSlice(ctx, input, workingBranch, action.reason, action.findings, state.workspaceRef);
+      }
+
+      while (true) {
+        action = decideNextSliceAction(state);
+
+        if (action.type === "complete-slice") {
+          return await completeSlice(ctx, input, workingBranch, action.summary, state);
+        }
+
+        if (action.type === "fail-slice") {
+          return await failSlice(ctx, input, workingBranch, action.reason, action.findings, state.workspaceRef);
+        }
+
+        if (action.type === "require-human-stop") {
+          return await stopSliceForHuman(ctx, input, workingBranch, action.reason, action.findings, state.workspaceRef);
+        }
+
+        if (action.type === "run-verification") {
+          const verificationThread = await ctx.spawn(
+            `verify:${action.attempt}`,
+            options.verificationAgent,
+            {
+              sliceId: input.slice.id,
+              branch: workingBranch,
+              workspaceRef: state.workspaceRef!,
+            },
+            { source: "system", prompt: `Verify development slice ${input.slice.id} attempt ${action.attempt}.` },
+          );
+          const verificationRun = await ctx.join(`wait-verify:${action.attempt}`, verificationThread);
+          if (verificationRun.status === "failed" || !verificationRun.output) {
+            return await failSlice(
+              ctx,
+              input,
+              workingBranch,
+              `Verification child failed: ${verificationRun.status === "failed" ? verificationRun.message : "missing output"}.`,
+              [],
+              state.workspaceRef,
+            );
+          }
+          state = SliceExecutionStateSchema.parse({ ...state, phase: "verification-completed", verification: verificationRun.output, reviews: [] });
+          continue;
+        }
+
+        if (action.type === "run-reviewers") {
+          const reviewResults: ReviewResult[] = [...state.reviews];
+          for (const reviewer of action.reviewers) {
+            const reviewerAgent = options.reviewerAgents[reviewer];
+            if (!reviewerAgent) {
+              return await failSlice(ctx, input, workingBranch, `Missing reviewer agent for ${reviewer}.`, [], state.workspaceRef);
+            }
+            const reviewThread = await ctx.spawn(
+              `review:${reviewer}:${action.attempt}`,
+              reviewerAgent,
+              {
+                slice: input.slice,
+                branch: workingBranch,
+                workspaceRef: state.workspaceRef!,
+                reviewer,
+                implementationSummary: state.implementation?.status === "completed" ? state.implementation.summary : undefined,
+                verificationResult: state.verification,
+              },
+              { source: "system", prompt: `Review development slice ${input.slice.id} as ${reviewer}.` },
+            );
+            const reviewRun = await ctx.join(`wait-review:${reviewer}:${action.attempt}`, reviewThread);
+            if (reviewRun.status === "failed" || !reviewRun.output) {
+              return await failSlice(
+                ctx,
+                input,
+                workingBranch,
+                `Reviewer child ${reviewer} failed: ${reviewRun.status === "failed" ? reviewRun.message : "missing output"}.`,
+                [],
+                state.workspaceRef,
+              );
+            }
+            reviewResults.push(reviewRun.output);
+          }
+          state = SliceExecutionStateSchema.parse({ ...state, phase: "review-completed", reviews: reviewResults });
+          continue;
+        }
+
+        if (action.type === "run-repair") {
+          if (!options.repairAgent) {
+            return await stopSliceForHuman(ctx, input, workingBranch, "Repair is required but no repair agent is configured.", action.findings, state.workspaceRef);
+          }
+          const repairThread = await ctx.spawn(
+            repairAttemptKey(action.attempt),
+            options.repairAgent,
+            {
+              branch: workingBranch,
+              workspaceRef: state.workspaceRef!,
+              slice: input.slice,
+              attempt: action.attempt,
+              maxAttempts: input.maxRepairAttempts,
+              failingCommands: state.verification?.status === "passed" ? [] : state.verification?.commands ?? [],
+              findings: action.findings,
+            },
+            { source: "system", prompt: `Repair development slice ${input.slice.id} attempt ${action.attempt}.` },
+          );
+          const repairRun = await ctx.join(`wait-repair:${action.attempt}`, repairThread);
+          if (repairRun.status === "failed" || !repairRun.output) {
+            return await failSlice(
+              ctx,
+              input,
+              workingBranch,
+              `Repair child failed: ${repairRun.status === "failed" ? repairRun.message : "missing output"}.`,
+              action.findings,
+              state.workspaceRef,
+            );
+          }
+          if (repairRun.output.status !== "completed") {
+            return await stopSliceForHuman(ctx, input, workingBranch, repairRun.output.summary, action.findings, state.workspaceRef);
+          }
+          state = SliceExecutionStateSchema.parse({
+            ...state,
+            phase: "repair-completed",
+            verification: undefined,
+            reviews: [],
+            repairs: [...state.repairs, repairRun.output],
+            repairAttempts: state.repairs.length + 1,
+          });
+          continue;
+        }
+
+        return await failSlice(ctx, input, workingBranch, `Unsupported slice action: ${action.type}.`, [], state.workspaceRef);
+      }
+    },
+  });
+}
+
+export const weaveSliceRunner = createSliceRunnerAgent();
+
+async function completeSlice(
+  ctx: AgentContext,
+  input: SliceRunnerInput,
+  branch: string,
+  summary: string,
+  state: SliceExecutionState,
+): Promise<SliceRunnerOutput> {
+  if (!state.workspaceRef || !state.implementation || state.implementation.status !== "completed" || !state.verification) {
+    return failSlice(ctx, input, branch, "Slice completion state is incomplete.", state.blockers, state.workspaceRef);
+  }
+
+  await ctx.emit(
+    `slice-completed:${input.slice.id}`,
+    developmentEvents.sliceCompleted({
+      sliceId: input.slice.id,
+      title: input.slice.title,
+      branch,
+      summary,
+      testsPassed: state.verification.status === "passed",
+      reviewVerdicts: state.reviews.map((review) => review.verdict),
+    }),
+  );
+
+  return SliceRunnerOutputSchema.parse({
+    status: "completed",
+    sliceId: input.slice.id,
+    branch,
+    workspaceRef: state.workspaceRef,
+    implementationSummary: state.implementation.summary,
+    verificationResult: state.verification,
+    reviewResults: state.reviews,
+    repairs: state.repairs,
+    summary,
+  });
+}
+
+async function failSlice(
+  ctx: AgentContext,
+  input: SliceRunnerInput,
+  branch: string,
+  reason: string,
+  findings: DevReviewFinding[] = [],
+  workspaceRef?: z.infer<typeof WorkspaceRefSchema>,
+): Promise<SliceRunnerOutput> {
+  await ctx.emit(
+    `slice-failed:${input.slice.id}`,
+    developmentEvents.sliceFailed({
+      sliceId: input.slice.id,
+      title: input.slice.title,
+      branch,
+      reason,
+      findings,
+    }),
+  );
+
+  return SliceRunnerOutputSchema.parse({
+    status: "failed",
+    sliceId: input.slice.id,
+    branch,
+    reason,
+    findings,
+    workspaceRef,
+  });
+}
+
+async function stopSliceForHuman(
+  ctx: AgentContext,
+  input: SliceRunnerInput,
+  branch: string,
+  reason: string,
+  findings: DevReviewFinding[] = [],
+  workspaceRef?: z.infer<typeof WorkspaceRefSchema>,
+): Promise<SliceRunnerOutput> {
+  await ctx.gate("repair-stop", {
+    reason: "repair-stop",
+    proposedAction: reason,
+  });
+
+  return SliceRunnerOutputSchema.parse({
+    status: "blocked",
+    sliceId: input.slice.id,
+    branch,
+    reason,
+    branchState: undefined,
+    workspaceRef,
+    findings,
+  });
+}
+
+function highRiskReviewerFinding(reviews: readonly ReviewResult[]): DevReviewFinding | undefined {
+  return reviews.flatMap((review) => review.findings).find((finding) => finding.severity === "high");
+}
