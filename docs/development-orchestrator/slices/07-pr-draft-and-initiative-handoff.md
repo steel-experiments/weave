@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
-- Last updated: `2026-06-03`
+- Status: `Shipped`
+- Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
 ## Goal
@@ -67,32 +67,40 @@ The generated PR draft should include:
 
 ## Acceptance Criteria
 
-- [ ] Completed initiatives produce a markdown PR draft summary.
-- [ ] PR draft includes shipped slices, checks, review verdicts, limitations, and follow-ups.
-- [ ] PR draft is durably available after replay.
-- [ ] GitHub PR creation is capability-gated.
-- [ ] Merge is impossible without human approval.
-- [ ] `dev.pr.ready_for_review` or equivalent event is emitted.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Completed initiatives produce a markdown PR draft summary.
+- [x] PR draft includes shipped slices, checks, review verdicts, limitations, and follow-ups.
+- [x] PR draft is durably available after replay.
+- [x] GitHub PR creation is capability-gated.
+- [x] Merge is impossible without human approval.
+- [x] `dev.pr.ready_for_review` or equivalent event is emitted.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Add PR draft schemas.
-- [ ] Add summary aggregation.
-- [ ] Add PR draft artifact/checkpoint.
-- [ ] Add optional GitHub PR create path.
-- [ ] Add final human gate.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Add PR draft schemas.
+- [x] Add summary aggregation.
+- [x] Add PR draft artifact/checkpoint.
+- [x] Add optional GitHub PR create path.
+- [x] Add final human gate.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added completed-slice summary, PR draft input/output, and GitHub PR upsert schemas.
+- Added `buildPrDraft(...)` to generate deterministic markdown from shipped slices, implementation summaries, verification commands, reviewer verdicts, repair attempts, limitations, and follow-ups.
+- Added `DevelopmentCheckpointKeys.prDraft` so the PR draft is durable before any external GitHub operation or final gate.
+- Added `githubPrCreateCapability` and `createGithubPrUpsertTool(...)` as the optional `dev.github.pr.upsert` boundary. It declares `github.pr.create` capability intent and can create or update a draft PR when a real runner is supplied.
+- Added `createPrAgent(...)` as `weave.prAgent`. It checkpoints the PR draft, optionally calls the GitHub PR boundary, checkpoints `pr-url`, emits `dev.pr.opened` or `dev.pr.updated` when applicable, emits `dev.pr.ready_for_review`, and opens a `pr-review-approval` human gate.
+- No merge tool or merge capability is exposed by the PR agent; merge remains outside this agent after human review.
+- Added replay tests for PR draft checkpointing, GitHub PR tool request, `dev.pr.opened`, `dev.pr.ready_for_review`, final human gate, and completed agent output.
+- Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm exec -- tsx src/tests/public-api-exports.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: the parent `weave.sliceRunner` still does not automatically aggregate completed slice children into this PR agent. This slice ships the final PR/handoff child boundary and deterministic draft generation.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] GitHub integration docs if PR creation is implemented
+- [x] this slice document
+- [x] `../README.md`
+- [ ] GitHub integration docs if a real GitHub runner is implemented
 - [ ] auth gateway slice plan if this orchestrator becomes the execution path for auth work

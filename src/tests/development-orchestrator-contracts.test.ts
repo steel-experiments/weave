@@ -9,9 +9,12 @@ import {
   RepairResultSchema,
   ReviewResultSchema,
   VerificationResultSchema,
+  buildPrDraft,
+  createGithubPrUpsertTool,
   buildDevelopmentSlicePlan,
   createOpenCodeImplementationTool,
   createOpenCodeImplementerAgent,
+  createPrAgent,
   createRepairAgent,
   createRepairTool,
   createReviewerAgent,
@@ -764,6 +767,146 @@ const exhaustedOutput = exhaustedFinishedPlan.events.find((candidate): candidate
 );
 assert(exhaustedOutput);
 assert.equal((exhaustedOutput.payload.output as { status: string }).status, "blocked");
+
+const completedSliceSummary = {
+  sliceId: validSlice.id,
+  title: validSlice.title,
+  summary: "Contracts shipped.",
+  implementationSummary: {
+    ...implementation,
+    docsChanged: ["docs/development-orchestrator/README.md"],
+    followUpSuggestions: ["Wire parent slice runner composition."],
+  },
+  verificationResult,
+  reviewResults: [passingReview],
+  repairs: [repairResult],
+  docsChanged: ["docs/development-orchestrator/slices/07-pr-draft-and-initiative-handoff.md"],
+  knownLimitations: ["Parent orchestration loop remains separate."],
+  followUps: ["Add real GitHub runner."],
+};
+const builtPrDraft = buildPrDraft({
+  initiative: initiative.initiative,
+  repo: initiative.repo,
+  baseBranch: initiative.baseBranch,
+  branch: initiative.workingBranch,
+  shippedSlices: [completedSliceSummary],
+});
+assert.equal(builtPrDraft.title, initiative.initiative);
+assert.equal(builtPrDraft.shippedSlices[0], validSlice.id);
+assert.equal(builtPrDraft.repairAttempts, 1);
+assert.equal(builtPrDraft.mergeRequiresHumanApproval, true);
+assert.equal(builtPrDraft.body.includes("## Human Approval Checklist"), true);
+assert.equal(builtPrDraft.body.includes("Wire parent slice runner composition."), true);
+
+const githubTool = createGithubPrUpsertTool({
+  run(input) {
+    assert.equal(input.branch, initiative.workingBranch);
+    return {
+      status: "created",
+      url: "https://github.com/acme/weave/pull/123",
+      summary: "Created PR draft.",
+    };
+  },
+});
+assert.equal(githubTool.name, "dev.github.pr.upsert");
+const githubCapabilities =
+  typeof githubTool.capabilities === "function"
+    ? githubTool.capabilities({
+        input: {
+          repo: initiative.repo,
+          title: builtPrDraft.title,
+          body: builtPrDraft.body,
+          baseBranch: initiative.baseBranch,
+          branch: initiative.workingBranch,
+          draft: true,
+        },
+      })
+    : undefined;
+const githubCapabilityName = Array.isArray(githubCapabilities)
+  ? githubCapabilities[0]?.name
+  : (githubCapabilities as { name?: string } | undefined)?.name;
+assert.equal(githubCapabilityName, "github.pr.create");
+
+const prAgent = createPrAgent({
+  githubRunner: {
+    run() {
+      throw new Error("runner should be represented by a tool request in replay tests");
+    },
+  },
+});
+const prInput = {
+  initiative: initiative.initiative,
+  repo: initiative.repo,
+  baseBranch: initiative.baseBranch,
+  branch: initiative.workingBranch,
+  shippedSlices: [completedSliceSummary],
+  github: { mode: "create" as const, draft: true },
+};
+const prThreadId = "pr-agent-boundary";
+const prHistory = createInitialHistory(prThreadId, prInput, prAgent.name);
+const prPlanner = createAgentPlanner(prAgent);
+const prFirstPlan = await prPlanner.plan(prThreadId, prHistory);
+assert(prFirstPlan);
+assert.equal(prFirstPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "pr-draft"), true);
+const prRequest = prFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(prRequest);
+assert.equal(prRequest.payload.toolName, "dev.github.pr.upsert");
+
+const prCompletedTool: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(prThreadId, "tool.completed", "github-pr-upsert"),
+  threadId: prThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: prRequest.correlationId,
+  causationId: prRequest.eventId,
+  scopeKey: prRequest.scopeKey,
+  stepKey: prRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: prRequest.payload.toolCallId,
+    output: {
+      status: "created",
+      url: "https://github.com/acme/weave/pull/123",
+      summary: "Created PR draft.",
+    },
+  },
+};
+const prGatePlan = await prPlanner.plan(prThreadId, [...prHistory, ...prFirstPlan.events, prCompletedTool]);
+assert(prGatePlan);
+assert.equal(prGatePlan.events.some((candidate) => candidate.type === "dev.pr.opened"), true);
+assert.equal(prGatePlan.events.some((candidate) => candidate.type === "dev.pr.ready_for_review"), true);
+const prGate = prGatePlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
+  candidate.type === "gate.created",
+);
+assert(prGate);
+assert.equal(prGate.payload.reason, "pr-review-approval");
+
+const prGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  eventId: eventKey(prThreadId, "gate.resolved", "pr-review-approval"),
+  threadId: prThreadId,
+  type: "gate.resolved",
+  occurredAt: nowIso(),
+  correlationId: prGate.correlationId,
+  causationId: prGate.eventId,
+  scopeKey: prGate.scopeKey,
+  stepKey: prGate.stepKey,
+  actor: { type: "human", id: "maintainer" },
+  payload: {
+    gateId: prGate.payload.gateId,
+    resolution: "approved",
+    comment: "ready to merge manually",
+  },
+};
+const prFinishedPlan = await prPlanner.plan(prThreadId, [...prHistory, ...prFirstPlan.events, prCompletedTool, ...prGatePlan.events, prGateResolved]);
+assert(prFinishedPlan);
+const prOutput = prFinishedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(prOutput);
+assert.equal((prOutput.payload.output as { humanApproval: string }).humanApproval, "approved");
+assert.equal((prOutput.payload.output as { prUrl: string }).prUrl, "https://github.com/acme/weave/pull/123");
 
 console.log("Development orchestrator contract tests passed");
 

@@ -24,8 +24,11 @@ import {
   developmentEvents,
   weaveMaintainer,
   weaveSliceRunner,
+  buildPrDraft,
+  createGithubPrUpsertTool,
   createOpenCodeImplementerAgent,
   createOpenCodeImplementationTool,
+  createPrAgent,
   createRepairAgent,
   createRepairTool,
   createReviewerAgent,
@@ -148,6 +151,9 @@ assert.equal(typeof createVerificationAgent, "function");
 assert.equal(typeof createReviewerAgent, "function");
 assert.equal(typeof createRepairAgent, "function");
 assert.equal(typeof createRepairTool, "function");
+assert.equal(typeof buildPrDraft, "function");
+assert.equal(typeof createPrAgent, "function");
+assert.equal(typeof createGithubPrUpsertTool, "function");
 assert.equal(repairAttemptKey(1), "repair:1");
 assert.equal(decideRepairLoop({ currentAttempt: 0, maxAttempts: 1, findings: [{ severity: "low", issue: "test" }] }).status, "attempt-repair");
 assert.equal(typeof GitWorktreeWorkspaceProvider, "function");

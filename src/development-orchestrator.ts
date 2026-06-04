@@ -45,6 +45,7 @@ export const DevelopmentCheckpointKeys = {
   testResults: "test-results",
   reviewFindings: "review-findings",
   repairAttemptCount: "repair-attempt-count",
+  prDraft: "pr-draft",
   prUrl: "pr-url",
 } as const;
 export type DevelopmentCheckpointKey = (typeof DevelopmentCheckpointKeys)[keyof typeof DevelopmentCheckpointKeys];
@@ -353,19 +354,79 @@ export type RepairRunner = {
   run(input: z.infer<typeof RepairAgentInputSchema>): Promise<RepairResult> | RepairResult;
 };
 
+export const CompletedDevelopmentSliceSummarySchema = z.object({
+  sliceId: NonEmptyStringSchema,
+  title: NonEmptyStringSchema,
+  summary: NonEmptyStringSchema,
+  implementationSummary: ImplementationSummarySchema.optional(),
+  verificationResult: VerificationResultSchema,
+  reviewResults: z.array(ReviewResultSchema),
+  repairs: z.array(RepairResultSchema).default([]),
+  docsChanged: z.array(NonEmptyStringSchema).default([]),
+  knownLimitations: z.array(NonEmptyStringSchema).default([]),
+  followUps: z.array(NonEmptyStringSchema).default([]),
+});
+export type CompletedDevelopmentSliceSummary = z.infer<typeof CompletedDevelopmentSliceSummarySchema>;
+
+export const PrDraftInputSchema = z.object({
+  initiative: NonEmptyStringSchema,
+  repo: NonEmptyStringSchema,
+  baseBranch: NonEmptyStringSchema,
+  branch: NonEmptyStringSchema,
+  shippedSlices: z.array(CompletedDevelopmentSliceSummarySchema).min(1),
+  knownLimitations: z.array(NonEmptyStringSchema).default([]),
+  followUps: z.array(NonEmptyStringSchema).default([]),
+  prUrl: z.string().url().optional(),
+  github: z
+    .object({
+      mode: z.enum(["none", "create", "update"]).default("none"),
+      draft: z.boolean().default(true),
+    })
+    .default({ mode: "none", draft: true }),
+});
+export type PrDraftInput = z.input<typeof PrDraftInputSchema>;
+
 export const PrDraftResultSchema = z.object({
   title: NonEmptyStringSchema,
   branch: NonEmptyStringSchema,
   baseBranch: NonEmptyStringSchema,
   body: NonEmptyStringSchema,
   shippedSlices: z.array(NonEmptyStringSchema),
+  changedBehavior: z.array(NonEmptyStringSchema).default([]),
+  filesChanged: z.array(NonEmptyStringSchema).default([]),
+  docsChanged: z.array(NonEmptyStringSchema).default([]),
+  repairAttempts: z.number().int().nonnegative().default(0),
   tests: z.array(DevCommandResultSchema),
   reviewerVerdicts: z.array(ReviewResultSchema),
   knownLimitations: z.array(NonEmptyStringSchema).default([]),
   followUps: z.array(NonEmptyStringSchema).default([]),
   prUrl: z.string().url().optional(),
+  mergeRequiresHumanApproval: z.literal(true).default(true),
+  humanApproval: z.enum(["approved", "denied"]).optional(),
 });
 export type PrDraftResult = z.infer<typeof PrDraftResultSchema>;
+
+export const GithubPrUpsertInputSchema = z.object({
+  repo: NonEmptyStringSchema,
+  title: NonEmptyStringSchema,
+  body: NonEmptyStringSchema,
+  baseBranch: NonEmptyStringSchema,
+  branch: NonEmptyStringSchema,
+  existingUrl: z.string().url().optional(),
+  draft: z.boolean().default(true),
+});
+export type GithubPrUpsertInput = z.input<typeof GithubPrUpsertInputSchema>;
+
+export const GithubPrUpsertResultSchema = z.object({
+  status: z.enum(["created", "updated", "skipped"]),
+  url: z.string().url().optional(),
+  summary: NonEmptyStringSchema,
+});
+export type GithubPrUpsertResult = z.infer<typeof GithubPrUpsertResultSchema>;
+
+export type GithubPrRunner = {
+  run(input: z.infer<typeof GithubPrUpsertInputSchema>): Promise<GithubPrUpsertResult> | GithubPrUpsertResult;
+};
 
 export const repoReadCapability = capability({
   name: "repo.read",
@@ -411,6 +472,25 @@ export const repoRunTestsCapability = capability({
     repo: NonEmptyStringSchema,
     workspaceId: NonEmptyStringSchema,
   }),
+});
+
+export const githubPrCreateCapability = capability({
+  name: "github.pr.create",
+  description: "Create or update a GitHub pull request draft for a development initiative.",
+  params: z.object({
+    repo: NonEmptyStringSchema,
+    baseBranch: NonEmptyStringSchema,
+    branch: NonEmptyStringSchema,
+    draft: z.boolean(),
+  }),
+  scope(params) {
+    return {
+      provider: "github",
+      resource: `${params.repo}:${params.branch}`,
+      permissions: ["pull_request:write"],
+      reason: "Create or update a development initiative pull request draft.",
+    };
+  },
 });
 
 export const developmentRepoContextReadTool = tool({
@@ -545,6 +625,30 @@ export function createRepairTool(runner: RepairRunner) {
     async run(ctx) {
       const result = await runner.run(RepairAgentInputSchema.parse(ctx.input));
       return RepairResultSchema.parse(result);
+    },
+  });
+}
+
+export function createGithubPrUpsertTool(runner: GithubPrRunner) {
+  return tool({
+    name: "dev.github.pr.upsert",
+    description: "Create or update a GitHub PR draft for a completed development initiative.",
+    input: GithubPrUpsertInputSchema,
+    output: GithubPrUpsertResultSchema,
+    capabilities(context) {
+      return githubPrCreateCapability.request({
+        repo: context.input.repo,
+        baseBranch: context.input.baseBranch,
+        branch: context.input.branch,
+        draft: context.input.draft,
+      });
+    },
+    summarize(output) {
+      return output.summary;
+    },
+    async run(ctx) {
+      const result = await runner.run(GithubPrUpsertInputSchema.parse(ctx.input));
+      return GithubPrUpsertResultSchema.parse(result);
     },
   });
 }
@@ -1006,6 +1110,141 @@ export function createRepairAgent(options: {
   });
 }
 
+export function buildPrDraft(rawInput: PrDraftInput): PrDraftResult {
+  const input = PrDraftInputSchema.parse(rawInput);
+  const shippedSlices = input.shippedSlices.map((slice) => slice.sliceId);
+  const changedBehavior = uniqueStrings(input.shippedSlices.flatMap((slice) => slice.implementationSummary?.behaviorChanged ?? []));
+  const filesChanged = uniqueStrings(
+    input.shippedSlices.flatMap((slice) => [
+      ...(slice.implementationSummary?.filesChanged ?? []),
+      ...slice.repairs.flatMap((repair) => repair.filesChanged),
+    ]),
+  );
+  const docsChanged = uniqueStrings(
+    input.shippedSlices.flatMap((slice) => [...slice.docsChanged, ...(slice.implementationSummary?.docsChanged ?? [])]),
+  );
+  const tests = input.shippedSlices.flatMap((slice) => slice.verificationResult.commands);
+  const reviewerVerdicts = input.shippedSlices.flatMap((slice) => slice.reviewResults);
+  const repairAttempts = input.shippedSlices.reduce((count, slice) => count + slice.repairs.length, 0);
+  const knownLimitations = uniqueStrings(
+    input.shippedSlices.flatMap((slice) => [
+      ...slice.knownLimitations,
+      ...(slice.implementationSummary?.knownLimitations ?? []),
+      ...slice.repairs.flatMap((repair) => repair.limitations),
+    ]).concat(input.knownLimitations),
+  );
+  const followUps = uniqueStrings(
+    input.shippedSlices.flatMap((slice) => [
+      ...slice.followUps,
+      ...(slice.implementationSummary?.followUpSuggestions ?? []),
+    ]).concat(input.followUps),
+  );
+  const title = input.initiative;
+  const body = renderPrDraftBody({
+    title,
+    baseBranch: input.baseBranch,
+    branch: input.branch,
+    slices: input.shippedSlices,
+    changedBehavior,
+    filesChanged,
+    docsChanged,
+    tests,
+    reviewerVerdicts,
+    repairAttempts,
+    knownLimitations,
+    followUps,
+  });
+
+  return PrDraftResultSchema.parse({
+    title,
+    branch: input.branch,
+    baseBranch: input.baseBranch,
+    body,
+    shippedSlices,
+    changedBehavior,
+    filesChanged,
+    docsChanged,
+    repairAttempts,
+    tests,
+    reviewerVerdicts,
+    knownLimitations,
+    followUps,
+    prUrl: input.prUrl,
+    mergeRequiresHumanApproval: true,
+  });
+}
+
+export function createPrAgent(options: {
+  name?: string;
+  description?: string;
+  githubRunner?: GithubPrRunner;
+} = {}) {
+  const githubTool = options.githubRunner ? createGithubPrUpsertTool(options.githubRunner) : undefined;
+  const tools = githubTool ? [githubTool] : [];
+
+  return agent({
+    name: options.name ?? "weave.prAgent",
+    description: options.description ?? "Creates a durable PR draft and stops for human review before merge.",
+    input: PrDraftInputSchema,
+    output: PrDraftResultSchema,
+    tools,
+    async run(ctx, rawInput) {
+      const input = PrDraftInputSchema.parse(rawInput);
+      const draft = await ctx.checkpoint(DevelopmentCheckpointKeys.prDraft, () => buildPrDraft(input));
+      let prUrl = draft.prUrl;
+
+      if (input.github.mode !== "none" && githubTool) {
+        const prResult = await ctx.tool("github-pr-upsert", githubTool, {
+          repo: input.repo,
+          title: draft.title,
+          body: draft.body,
+          baseBranch: input.baseBranch,
+          branch: input.branch,
+          existingUrl: input.prUrl,
+          draft: input.github.draft,
+        });
+        prUrl = prResult.url ?? prUrl;
+
+        if (prUrl) {
+          await ctx.checkpoint(DevelopmentCheckpointKeys.prUrl, () => prUrl);
+        }
+
+        if (prResult.status === "created" && prUrl) {
+          await ctx.emit(
+            "pr-opened",
+            developmentEvents.prOpened({ branch: input.branch, url: prUrl, title: draft.title }),
+          );
+        }
+
+        if (prResult.status === "updated" && prUrl) {
+          await ctx.emit(
+            "pr-updated",
+            developmentEvents.prUpdated({ branch: input.branch, url: prUrl, summary: prResult.summary }),
+          );
+        }
+      }
+
+      const finalDraft = PrDraftResultSchema.parse({ ...draft, prUrl });
+      await ctx.emit(
+        "pr-ready-for-review",
+        developmentEvents.prReadyForReview({
+          branch: input.branch,
+          url: prUrl,
+          summary: `PR draft ready for ${input.initiative}.`,
+          shippedSlices: finalDraft.shippedSlices,
+        }),
+      );
+
+      const gate = await ctx.gate("pr-review-approval", {
+        reason: "pr-review-approval",
+        proposedAction: "Review the PR draft before merge. This agent cannot merge the PR.",
+      });
+
+      return PrDraftResultSchema.parse({ ...finalDraft, humanApproval: gate.resolution });
+    },
+  });
+}
+
 export function createReviewerAgent(options: {
   name?: string;
   description?: string;
@@ -1100,6 +1339,80 @@ export function createOpenCodeImplementerAgent(options: {
       });
     },
   });
+}
+
+function renderPrDraftBody(input: {
+  title: string;
+  baseBranch: string;
+  branch: string;
+  slices: readonly CompletedDevelopmentSliceSummary[];
+  changedBehavior: readonly string[];
+  filesChanged: readonly string[];
+  docsChanged: readonly string[];
+  tests: readonly z.infer<typeof DevCommandResultSchema>[];
+  reviewerVerdicts: readonly ReviewResult[];
+  repairAttempts: number;
+  knownLimitations: readonly string[];
+  followUps: readonly string[];
+}): string {
+  const lines = [
+    `## Summary`,
+    "",
+    `${input.title} is ready for review from \`${input.branch}\` into \`${input.baseBranch}\`.`,
+    "",
+    "## Shipped Slices",
+    "",
+    ...input.slices.map((slice) => `- \`${slice.sliceId}\` ${slice.title}: ${slice.summary}`),
+    "",
+    "## Changed Behavior",
+    "",
+    ...markdownList(input.changedBehavior, "No externally visible behavior changes were reported."),
+    "",
+    "## Files Changed",
+    "",
+    ...markdownList(input.filesChanged.map((file) => `\`${file}\``), "No changed files were reported."),
+    "",
+    "## Docs Updated",
+    "",
+    ...markdownList(input.docsChanged.map((file) => `\`${file}\``), "No documentation updates were reported."),
+    "",
+    "## Verification",
+    "",
+    ...input.tests.map((command) => `- \`${command.command}\` ${command.status} (${command.exitCode}) - ${command.summary ?? "no summary"}`),
+    "",
+    "## Review Verdicts",
+    "",
+    ...input.reviewerVerdicts.map((review) => `- ${review.reviewer}: ${review.verdict}${review.summary ? ` - ${review.summary}` : ""}`),
+    "",
+    "## Repair Attempts",
+    "",
+    `- ${input.repairAttempts} repair attempt${input.repairAttempts === 1 ? "" : "s"} performed.`,
+    "",
+    "## Known Limitations",
+    "",
+    ...markdownList(input.knownLimitations, "No known limitations reported."),
+    "",
+    "## Follow-Ups",
+    "",
+    ...markdownList(input.followUps, "No follow-ups reported."),
+    "",
+    "## Human Approval Checklist",
+    "",
+    "- [ ] Review shipped slice summaries.",
+    "- [ ] Confirm verification output is acceptable.",
+    "- [ ] Confirm reviewer verdicts are acceptable.",
+    "- [ ] Decide whether to merge outside this agent.",
+  ];
+
+  return lines.join("\n");
+}
+
+function markdownList(values: readonly string[], emptyText: string): string[] {
+  return values.length > 0 ? values.map((value) => `- ${value}`) : [`- ${emptyText}`];
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 function pathMatchesAllowedFile(changedFile: string, allowedFile: string): boolean {
