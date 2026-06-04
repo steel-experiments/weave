@@ -61,6 +61,19 @@ import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } f
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
 import { createApiServer } from "weave/server";
 import { DeterministicMockAgent, MockAsyncToolWorker } from "weave/testing";
+import {
+  authGateway,
+  anonymousAuth,
+  bearerTokenAuth,
+  weaveAccessPolicy,
+  allowService,
+  allowUser,
+  allowGroup,
+  allowEveryone,
+  denyEveryone,
+  toAuthSummary,
+  authRequestFromIncoming,
+} from "weave/auth";
 import { z } from "zod";
 
 const inputSchema = z.object({ text: z.string().min(1) });
@@ -242,6 +255,18 @@ assert.equal(typeof createPool, "function");
 assert.equal(typeof migrate, "function");
 
 assert.equal(typeof createApiServer, "function");
+
+assert.equal(typeof authGateway, "function");
+assert.equal(typeof anonymousAuth, "function");
+assert.equal(typeof bearerTokenAuth, "function");
+assert.equal(typeof weaveAccessPolicy, "function");
+assert.equal(typeof allowService, "function");
+assert.equal(typeof allowUser, "function");
+assert.equal(typeof allowGroup, "function");
+assert.equal(typeof allowEveryone, "function");
+assert.equal(typeof denyEveryone, "function");
+assert.equal(typeof toAuthSummary, "function");
+assert.equal(typeof authRequestFromIncoming, "function");
 
 assert.equal(typeof DeterministicMockAgent, "function");
 assert.equal(typeof MockAsyncToolWorker, "function");

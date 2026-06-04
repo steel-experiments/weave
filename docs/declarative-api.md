@@ -42,6 +42,8 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | subthread lineage fields | Current storage/read model |
 | `capability` | Current tool metadata helper used by request policies |
 | package subpaths | Current runtime boundary |
+| `authGateway` | Current auth composition helper |
+| `weave/auth` subpath | Current auth gateway package boundary |
 
 ## Authoring Primitives
 
@@ -978,6 +980,7 @@ Package subpaths separate authoring from runtime binding:
 - `weave/postgres`: Postgres engine, pool, migrations, artifact store, and observability store.
 - `weave/server`: HTTP API server helpers and server-facing types.
 - `weave/testing`: mock agent and mock tool worker utilities.
+- `weave/auth`: auth gateway interfaces, identity providers, access controllers, and safe auth summary helpers.
 
 The root export remains backward-compatible for now, but examples should use subpaths for runtime, storage, and server concerns.
 

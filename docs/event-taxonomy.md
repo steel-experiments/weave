@@ -153,6 +153,18 @@ const SessionStartedPayload = z.object({
 })
 ```
 
+When an auth gateway is configured and the `thread.start` request is accepted, `metadata.auth` contains a safe auth summary:
+
+```ts
+{
+  principalId: string;
+  provider: string;
+  source: string;
+}
+```
+
+No raw access tokens, raw ID tokens, refresh tokens, or full provider claims are stored in session metadata by default.
+
 ### Prompt received
 
 ```ts
