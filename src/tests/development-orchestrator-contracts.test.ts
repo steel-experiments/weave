@@ -10,10 +10,13 @@ import {
   ReviewResultSchema,
   VerificationResultSchema,
   buildDevelopmentSlicePlan,
+  developmentBranchStateReadTool,
   developmentRepoContextReadTool,
   developmentEvents,
+  evaluateSliceBranchState,
   readDevelopmentRepoContext,
   weaveMaintainer,
+  weaveSliceRunner,
 } from "../development-orchestrator.js";
 import { createAgentPlanner } from "../agent-runner.js";
 import { ThreadEventSchema, deterministicUuid, eventKey, nowIso, type ThreadEvent } from "../events.js";
@@ -198,6 +201,7 @@ const actualRepoContext = await readDevelopmentRepoContext({
 assert.deepEqual(actualRepoContext.filesRead, ["package.json"]);
 assert.equal(actualRepoContext.entries.some((entry) => entry.kind === "denied"), true);
 assert.equal(developmentRepoContextReadTool.name, "dev.repoContext.read");
+assert.equal(developmentBranchStateReadTool.name, "dev.branchState.read");
 
 const threadId = "development-planner";
 const initialHistory = createInitialHistory(threadId, initiative);
@@ -286,9 +290,69 @@ assert(outputCompleted);
 assert.equal((outputCompleted.payload.output as { status: string }).status, "approved");
 assert.deepEqual((outputCompleted.payload.output as { repoContext: { filesRead: string[] } }).repoContext.filesRead, ["AGENTS.md"]);
 
+const branchState = {
+  repo: "weave",
+  repoRoot: "/repo/weave",
+  currentBranch: "weave-development-orchestrator",
+  headCommit: "abc123",
+  isDetachedHead: false,
+};
+const sliceRunnerInput = {
+  initiative: initiative.initiative,
+  repo: initiative.repo,
+  branch: initiative.workingBranch,
+  slice: initiative.slices[0]!,
+  maxRepairAttempts: 0,
+};
+
+assert.equal(evaluateSliceBranchState(sliceRunnerInput, branchState).status, "ready");
+assert.equal(evaluateSliceBranchState({ ...sliceRunnerInput, branch: "main" }, { ...branchState, currentBranch: "main" }).status, "blocked");
+assert.equal(evaluateSliceBranchState(sliceRunnerInput, { ...branchState, currentBranch: "other-branch" }).status, "blocked");
+assert.equal(evaluateSliceBranchState(sliceRunnerInput, { ...branchState, isDetachedHead: true }).status, "blocked");
+
+const runnerThreadId = "slice-runner-branch-control";
+const runnerHistory = createInitialHistory(runnerThreadId, sliceRunnerInput, weaveSliceRunner.name);
+const runnerPlanner = createAgentPlanner(weaveSliceRunner);
+const runnerFirstPlan = await runnerPlanner.plan(runnerThreadId, runnerHistory);
+
+assert(runnerFirstPlan);
+assert.equal(runnerFirstPlan.events.some((candidate) => candidate.type === "dev.slice.started"), false);
+
+const branchRequest = runnerFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(branchRequest);
+assert.equal(branchRequest.payload.toolName, "dev.branchState.read");
+
+const branchCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(runnerThreadId, "tool.completed", "read-branch-state"),
+  threadId: runnerThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: branchRequest.correlationId,
+  causationId: branchRequest.eventId,
+  scopeKey: branchRequest.scopeKey,
+  stepKey: branchRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: branchRequest.payload.toolCallId,
+    output: branchState,
+  },
+};
+
+const runnerReadyPlan = await runnerPlanner.plan(runnerThreadId, [...runnerHistory, ...runnerFirstPlan.events, branchCompleted]);
+assert(runnerReadyPlan);
+assert.equal(runnerReadyPlan.events.some((candidate) => candidate.type === "dev.slice.started"), true);
+
+const runnerOutput = runnerReadyPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
+  candidate.type === "agent.output.completed",
+);
+assert(runnerOutput);
+assert.equal((runnerOutput.payload.output as { status: string }).status, "ready");
+
 console.log("Development orchestrator contract tests passed");
 
-function createInitialHistory(threadId: string, metadata: unknown): ThreadEvent[] {
+function createInitialHistory(threadId: string, metadata: unknown, agentName: string = weaveMaintainer.name): ThreadEvent[] {
   const correlationId = deterministicUuid("correlation", threadId);
   const sessionStarted: Extract<ThreadEvent, { type: "session.started" }> = {
     eventId: eventKey(threadId, "session.started", "initial"),
@@ -299,7 +363,7 @@ function createInitialHistory(threadId: string, metadata: unknown): ThreadEvent[
     actor: { type: "system", id: "test" },
     payload: {
       source: "test",
-      agentName: weaveMaintainer.name,
+      agentName,
       metadata: metadata as Record<string, unknown>,
     },
   };

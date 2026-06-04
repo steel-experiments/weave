@@ -19,9 +19,11 @@ import {
   weave,
   definePolicy,
   DevelopmentInitiativeInputSchema,
+  developmentBranchStateReadTool,
   developmentRepoContextReadTool,
   developmentEvents,
   weaveMaintainer,
+  weaveSliceRunner,
 } from "weave";
 import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
@@ -127,6 +129,8 @@ assert.equal(typeof DevelopmentInitiativeInputSchema.parse, "function");
 assert.equal(developmentEvents.sliceCompleted.type, "dev.slice.completed");
 assert.equal(weaveMaintainer.name, "weave.maintainer");
 assert.equal(developmentRepoContextReadTool.name, "dev.repoContext.read");
+assert.equal(developmentBranchStateReadTool.name, "dev.branchState.read");
+assert.equal(weaveSliceRunner.name, "weave.sliceRunner");
 
 const emitted = event("agent.response.produced", { message: "ok" });
 const defined = defineEvent("agent.response.produced", { message: "ok" });

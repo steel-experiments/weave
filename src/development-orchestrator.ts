@@ -1,5 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import { z } from "zod";
 import { agent, event } from "./agent-contract.js";
 import { capability } from "./capability-contract.js";
@@ -26,6 +28,7 @@ import {
 import { tool } from "./tool-contract.js";
 
 const NonEmptyStringSchema = z.string().min(1);
+const execFileAsync = promisify(execFile);
 
 export const DevelopmentCheckpointKeys = {
   initiativeContext: "initiative-context",
@@ -148,12 +151,45 @@ export type InitiativePlannerOutput = z.infer<typeof InitiativePlannerOutputSche
 
 export const SliceRunnerInputSchema = z.object({
   initiative: NonEmptyStringSchema,
+  repo: NonEmptyStringSchema.default("weave"),
   branch: NonEmptyStringSchema,
   baseCommit: NonEmptyStringSchema.optional(),
   slice: DevelopmentSliceInputSchema,
   maxRepairAttempts: z.number().int().nonnegative().default(0),
 });
 export type SliceRunnerInput = z.infer<typeof SliceRunnerInputSchema>;
+
+export const DevelopmentBranchStateReadInputSchema = z.object({
+  repo: NonEmptyStringSchema,
+  repoRoot: NonEmptyStringSchema.optional(),
+});
+export type DevelopmentBranchStateReadInput = z.infer<typeof DevelopmentBranchStateReadInputSchema>;
+
+export const DevelopmentBranchStateSchema = z.object({
+  repo: NonEmptyStringSchema,
+  repoRoot: NonEmptyStringSchema,
+  currentBranch: NonEmptyStringSchema,
+  headCommit: NonEmptyStringSchema,
+  isDetachedHead: z.boolean(),
+});
+export type DevelopmentBranchState = z.infer<typeof DevelopmentBranchStateSchema>;
+
+export const SliceRunnerOutputSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ready"),
+    sliceId: NonEmptyStringSchema,
+    branch: NonEmptyStringSchema,
+    branchState: DevelopmentBranchStateSchema,
+  }),
+  z.object({
+    status: z.literal("blocked"),
+    sliceId: NonEmptyStringSchema,
+    branch: NonEmptyStringSchema,
+    reason: NonEmptyStringSchema,
+    branchState: DevelopmentBranchStateSchema.optional(),
+  }),
+]);
+export type SliceRunnerOutput = z.infer<typeof SliceRunnerOutputSchema>;
 
 export const OpenCodeImplementerInputSchema = z.object({
   sliceTitle: NonEmptyStringSchema,
@@ -264,6 +300,22 @@ export const developmentRepoContextReadTool = tool({
   },
   async run(ctx) {
     return readDevelopmentRepoContext(ctx.input);
+  },
+});
+
+export const developmentBranchStateReadTool = tool({
+  name: "dev.branchState.read",
+  description: "Read current repository branch and head commit for development slice branch control.",
+  input: DevelopmentBranchStateReadInputSchema,
+  output: DevelopmentBranchStateSchema,
+  capabilities(context) {
+    return repoReadCapability.request({ repo: context.input.repo, paths: [".git"] });
+  },
+  summarize(output) {
+    return `Current branch is ${output.currentBranch} at ${output.headCommit.slice(0, 12)}.`;
+  },
+  async run(ctx) {
+    return readDevelopmentBranchState(ctx.input);
   },
 });
 
@@ -456,6 +508,71 @@ export async function readDevelopmentRepoContext(
   });
 }
 
+export async function readDevelopmentBranchState(
+  rawInput: DevelopmentBranchStateReadInput,
+): Promise<DevelopmentBranchState> {
+  const input = DevelopmentBranchStateReadInputSchema.parse(rawInput);
+  const cwd = path.resolve(input.repoRoot ?? process.cwd());
+  const [root, branch, head] = await Promise.all([
+    git(cwd, ["rev-parse", "--show-toplevel"]),
+    git(cwd, ["branch", "--show-current"]),
+    git(cwd, ["rev-parse", "HEAD"]),
+  ]);
+  const currentBranch = branch.trim();
+
+  return DevelopmentBranchStateSchema.parse({
+    repo: input.repo,
+    repoRoot: root.trim(),
+    currentBranch: currentBranch || "DETACHED_HEAD",
+    headCommit: head.trim(),
+    isDetachedHead: currentBranch.length === 0,
+  });
+}
+
+export function evaluateSliceBranchState(input: SliceRunnerInput, branchState: DevelopmentBranchState): SliceRunnerOutput {
+  if (input.branch === "main") {
+    return SliceRunnerOutputSchema.parse({
+      status: "blocked",
+      sliceId: input.slice.id,
+      branch: input.branch,
+      reason: "Refusing to run development slices on main.",
+      branchState,
+    });
+  }
+
+  if (branchState.isDetachedHead) {
+    return SliceRunnerOutputSchema.parse({
+      status: "blocked",
+      sliceId: input.slice.id,
+      branch: input.branch,
+      reason: "Current worktree is in detached HEAD state.",
+      branchState,
+    });
+  }
+
+  if (branchState.currentBranch !== input.branch) {
+    return SliceRunnerOutputSchema.parse({
+      status: "blocked",
+      sliceId: input.slice.id,
+      branch: input.branch,
+      reason: `Current branch ${branchState.currentBranch} does not match required branch ${input.branch}.`,
+      branchState,
+    });
+  }
+
+  return SliceRunnerOutputSchema.parse({
+    status: "ready",
+    sliceId: input.slice.id,
+    branch: input.branch,
+    branchState,
+  });
+}
+
+async function git(cwd: string, args: readonly string[]): Promise<string> {
+  const { stdout } = await execFileAsync("git", [...args], { cwd });
+  return String(stdout);
+}
+
 export const weaveMaintainer = agent({
   name: "weave.maintainer",
   description: "Plans a Weave-managed development initiative and gates the approved slice plan before implementation.",
@@ -539,5 +656,36 @@ export const weaveMaintainer = agent({
       proposedEventCount: approvedPlan.slices.length,
       gateComment: gate.comment,
     });
+  },
+});
+
+export const weaveSliceRunner = agent({
+  name: "weave.sliceRunner",
+  description: "Confirms branch/worktree state for one approved development slice before implementation starts.",
+  input: SliceRunnerInputSchema,
+  output: SliceRunnerOutputSchema,
+  tools: [developmentBranchStateReadTool],
+  async run(ctx, rawInput) {
+    const input = SliceRunnerInputSchema.parse(rawInput);
+    const workingBranch = await ctx.checkpoint(DevelopmentCheckpointKeys.workingBranch, () => input.branch);
+    const branchState = await ctx.tool("read-branch-state", developmentBranchStateReadTool, {
+      repo: input.repo,
+    });
+    const decision = evaluateSliceBranchState({ ...input, branch: workingBranch }, branchState);
+
+    if (decision.status === "blocked") {
+      return decision;
+    }
+
+    await ctx.emit(
+      `slice-started:${input.slice.id}`,
+      developmentEvents.sliceStarted({
+        sliceId: input.slice.id,
+        title: input.slice.title,
+        branch: workingBranch,
+      }),
+    );
+
+    return decision;
   },
 });
