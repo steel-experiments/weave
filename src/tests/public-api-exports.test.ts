@@ -24,6 +24,9 @@ import {
   developmentEvents,
   weaveMaintainer,
   weaveSliceRunner,
+  GitWorktreeWorkspaceProvider,
+  WorkspaceRefSchema,
+  createWorkspaceAllocateTool,
 } from "weave";
 import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
@@ -131,6 +134,9 @@ assert.equal(weaveMaintainer.name, "weave.maintainer");
 assert.equal(developmentRepoContextReadTool.name, "dev.repoContext.read");
 assert.equal(developmentBranchStateReadTool.name, "dev.branchState.read");
 assert.equal(weaveSliceRunner.name, "weave.sliceRunner");
+assert.equal(typeof GitWorktreeWorkspaceProvider, "function");
+assert.equal(typeof WorkspaceRefSchema.parse, "function");
+assert.equal(createWorkspaceAllocateTool(new GitWorktreeWorkspaceProvider()).name, "workspace.allocate");
 
 const emitted = event("agent.response.produced", { message: "ok" });
 const defined = defineEvent("agent.response.produced", { message: "ok" });

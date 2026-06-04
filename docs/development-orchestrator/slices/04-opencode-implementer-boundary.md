@@ -24,18 +24,18 @@ As a maintainer, I can delegate one approved slice to OpenCode while Weave keeps
 
 ## Architecture Impact
 
-- Extends the OpenCode adapter work from bounded read-only repo tasks toward branch-scoped implementation tasks.
+- Extends the OpenCode adapter work from bounded read-only repo tasks toward workspace-scoped implementation tasks.
 - Adds `weave.opencodeImplementer` or equivalent child agent role.
 - Requires explicit capability requests for repo reads, branch writes, bounded shell commands, and OpenCode execution.
 - Produces structured implementation summaries for later verification and PR summaries.
 
 ## Implementation Plan
 
-1. Define implementer input with slice title, objective, acceptance criteria, branch, allowed files, constraints, and expected output schema.
+1. Define implementer input with slice title, objective, acceptance criteria, `WorkspaceRef`, branch, allowed files, constraints, and expected output schema.
 2. Define output with files changed, tests added, behavior changed, docs changed, known limitations, and follow-up suggestions.
 3. Add policy checks for `repo.read`, `repo.write.branch`, bounded command execution, and denied secret access.
 4. Reuse or extend the existing OpenCode adapter boundary where practical.
-5. Ensure implementer writes happen only on the configured working branch.
+5. Ensure implementer writes happen only inside the configured workspace and working branch.
 6. Emit `dev.implementation.started` and `dev.implementation.completed` events.
 7. Checkpoint implementation summary for replay and review.
 
@@ -52,7 +52,7 @@ As a maintainer, I can delegate one approved slice to OpenCode while Weave keeps
 ## Acceptance Criteria
 
 - [ ] OpenCode implementer runs as a child thread for one slice.
-- [ ] Implementer receives objective, acceptance criteria, branch, constraints, and allowed files when present.
+- [ ] Implementer receives objective, acceptance criteria, `WorkspaceRef`, branch, constraints, and allowed files when present.
 - [ ] Implementer output is schema-validated.
 - [ ] Branch write policy is enforced.
 - [ ] OpenCode cannot access secrets or merge PRs.

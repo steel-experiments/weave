@@ -76,6 +76,7 @@ As a maintainer, I can see one slice move through durable states on the intended
 - Added tests for ready state, `main` blocking, branch mismatch blocking, detached-HEAD blocking, and replay behavior where branch state is requested before `dev.slice.started` is emitted.
 - Commands run: `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
 - Known gap: this slice confirms branch state but does not create branches or switch worktrees. Mutating branch creation should land later behind explicit `repo.createBranch` and `repo.write.branch` capability policies.
+- Follow-up update from core slice `57-workspace-provider-boundary`: slice runner contracts can now carry `WorkspaceRef`; the next orchestrator slice should allocate or consume workspace refs instead of assuming the current checkout is the implementation workspace.
 
 ## Docs To Update On Completion
 

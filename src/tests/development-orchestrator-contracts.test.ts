@@ -65,6 +65,7 @@ const plan = DevelopmentSlicePlanSchema.parse({
 
 assert.equal(plan.slices.length, 1);
 assert.equal(DevelopmentCheckpointKeys.approvedSlicePlan, "approved-slice-plan");
+assert.equal(DevelopmentCheckpointKeys.workspaceRef, "workspace-ref");
 assert.equal(buildDevelopmentSlicePlan(initiative).summary, "Plan 1 development slice for Build Weave Maintainer.");
 
 const implementerInput = OpenCodeImplementerInputSchema.parse({

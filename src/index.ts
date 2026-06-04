@@ -28,3 +28,4 @@ export * from "./timeline.js";
 export * from "./tool-contract.js";
 export * from "./tool-worker.js";
 export * from "./weave-interface.js";
+export * from "./workspace-provider.js";

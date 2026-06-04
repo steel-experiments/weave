@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-core`
 
@@ -187,36 +187,45 @@ Policy requirements:
 
 ## Acceptance Criteria
 
-- [ ] Provider-neutral workspace contracts exist.
-- [ ] Git worktree provider can allocate, inspect, diff, and remove workspaces under a configured root.
-- [ ] Workspace allocation is replay-safe through a checkpointed `WorkspaceRef`.
-- [ ] Writes to `main` are denied by default policy.
-- [ ] Cleanup cannot remove arbitrary paths outside known workspace roots.
-- [ ] Development orchestrator contracts can refer to `WorkspaceRef` rather than only a branch/current checkout.
-- [ ] Rift/CoW and Firecracker future provider requirements are documented without being implemented.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
+- [x] Provider-neutral workspace contracts exist.
+- [x] Git worktree provider can allocate, inspect, diff, and remove workspaces under a configured root.
+- [x] Workspace allocation is replay-safe through a checkpointed `WorkspaceRef`.
+- [x] Writes to `main` are denied by default policy.
+- [x] Cleanup cannot remove arbitrary paths outside known workspace roots.
+- [x] Development orchestrator contracts can refer to `WorkspaceRef` rather than only a branch/current checkout.
+- [x] Rift/CoW and Firecracker future provider requirements are documented without being implemented.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
 
 ## Progress
 
-- [ ] Workspace contracts.
-- [ ] Workspace capabilities and policies.
-- [ ] Git worktree provider.
-- [ ] Allocation checkpointing.
-- [ ] State/diff/remove tools.
-- [ ] Development orchestrator handoff docs.
-- [ ] Future provider notes.
-- [ ] Tests.
+- [x] Workspace contracts.
+- [x] Workspace capabilities and policies.
+- [x] Git worktree provider.
+- [x] Allocation checkpointing.
+- [x] State/diff/remove tools.
+- [x] Development orchestrator handoff docs.
+- [x] Future provider notes.
+- [x] Tests.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `src/workspace-provider.ts` with provider-neutral schemas and types for `WorkspaceRef`, allocation input, workspace state, diff, removal, promotion targets, and provider implementations.
+- Added provider-backed tool factories for `workspace.allocate`, `workspace.state`, `workspace.diff`, and `workspace.remove`.
+- Added workspace capabilities for allocation, inspection, diff reads, and removal.
+- Added `GitWorktreeWorkspaceProvider`, which creates or confirms Git worktrees under a configured workspace root, rejects writable `main` allocation, inspects branch/commit/dirty state, returns bounded diffs, and removes only paths inside known workspace roots.
+- Added deterministic workspace id/path helpers for replay-safe allocation through normal `ctx.checkpoint("workspace-ref", ...)` usage.
+- Updated development orchestrator contracts so slice runner and OpenCode implementer inputs can carry `WorkspaceRef`.
+- Added `src/tests/workspace-provider.test.ts`, which exercises a real temporary Git repository and worktree lifecycle: allocate, inspect, dirty diff, blocked dirty removal, blocked outside-root removal, forced removal, and missing removal.
+- Updated public export smoke coverage and root `npm test`.
+- Commands run: `npm exec -- tsx src/tests/workspace-provider.test.ts`, `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: the current provider allocates Git worktrees only. Rift/CoW, Firecracker, remote sandbox providers, PR promotion, and orchestrator runtime allocation wiring remain follow-up work.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/slices/README.md`
-- [ ] `docs/architecture.md`
-- [ ] `docs/development-orchestrator/README.md`
-- [ ] `docs/development-orchestrator/slices/03-slice-runner-branch-control.md`
-- [ ] `docs/development-orchestrator/slices/04-opencode-implementer-boundary.md`
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/architecture.md`
+- [x] `docs/development-orchestrator/README.md`
+- [x] `docs/development-orchestrator/slices/03-slice-runner-branch-control.md`
+- [x] `docs/development-orchestrator/slices/04-opencode-implementer-boundary.md`

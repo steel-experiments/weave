@@ -26,6 +26,7 @@ import {
   DevCommandResultSchema,
 } from "./events.js";
 import { tool } from "./tool-contract.js";
+import { WorkspaceRefSchema } from "./workspace-provider.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 const execFileAsync = promisify(execFile);
@@ -36,6 +37,7 @@ export const DevelopmentCheckpointKeys = {
   slicePlan: "slice-plan",
   approvedSlicePlan: "approved-slice-plan",
   workingBranch: "working-branch",
+  workspaceRef: "workspace-ref",
   baseCommit: "base-commit",
   sliceAcceptanceCriteria: "slice-acceptance-criteria",
   implementationSummary: "implementation-summary",
@@ -154,6 +156,7 @@ export const SliceRunnerInputSchema = z.object({
   repo: NonEmptyStringSchema.default("weave"),
   branch: NonEmptyStringSchema,
   baseCommit: NonEmptyStringSchema.optional(),
+  workspaceRef: WorkspaceRefSchema.optional(),
   slice: DevelopmentSliceInputSchema,
   maxRepairAttempts: z.number().int().nonnegative().default(0),
 });
@@ -180,6 +183,7 @@ export const SliceRunnerOutputSchema = z.discriminatedUnion("status", [
     sliceId: NonEmptyStringSchema,
     branch: NonEmptyStringSchema,
     branchState: DevelopmentBranchStateSchema,
+    workspaceRef: WorkspaceRefSchema.optional(),
   }),
   z.object({
     status: z.literal("blocked"),
@@ -197,6 +201,7 @@ export const OpenCodeImplementerInputSchema = z.object({
   acceptanceCriteria: z.array(NonEmptyStringSchema).min(1),
   allowedFiles: z.array(NonEmptyStringSchema).optional(),
   branch: NonEmptyStringSchema,
+  workspaceRef: WorkspaceRefSchema.optional(),
   constraints: z.array(NonEmptyStringSchema).default([]),
 });
 export type OpenCodeImplementerInput = z.infer<typeof OpenCodeImplementerInputSchema>;
@@ -565,6 +570,7 @@ export function evaluateSliceBranchState(input: SliceRunnerInput, branchState: D
     sliceId: input.slice.id,
     branch: input.branch,
     branchState,
+    workspaceRef: input.workspaceRef,
   });
 }
 

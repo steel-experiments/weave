@@ -143,6 +143,7 @@ The first workflow should:
 
 - approve a slice plan before execution
 - process slices in order
+- allocate or receive a `WorkspaceRef` for each slice before implementation
 - spawn one OpenCode implementer per slice
 - run test, typecheck, and diff-whitespace checks
 - spawn at least one read-only reviewer
