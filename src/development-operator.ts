@@ -291,12 +291,12 @@ export function formatInitiativeStatus(status: OperatorInitiativeStatus): string
 
 export async function latestPlanForGate(pool: Pool, gate: OperatorGateSummary): Promise<unknown | undefined> {
   const result = await pool.query<EventRow>(
-    `select jsonb_build_object(
+    `select jsonb_strip_nulls(jsonb_build_object(
        'eventId', event_id::text,
        'threadId', thread_id,
        'seq', seq,
        'type', type,
-       'occurredAt', occurred_at,
+       'occurredAt', to_char(occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
        'correlationId', correlation_id::text,
        'causationId', causation_id::text,
        'idempotencyKey', idempotency_key,
@@ -304,7 +304,7 @@ export async function latestPlanForGate(pool: Pool, gate: OperatorGateSummary): 
        'stepKey', step_key,
        'actor', jsonb_build_object('type', actor_type, 'id', actor_id),
        'payload', payload_json
-     ) as event_json
+     )) as event_json
      from weave.thread_event
      where thread_id = $1
        and type = 'checkpoint.completed'
@@ -450,12 +450,12 @@ async function childThreadsForInitiative(pool: Pool, threadId: string): Promise<
 
 async function recentEventsForThread(pool: Pool, threadId: string): Promise<EventRow[]> {
   const result = await pool.query<EventRow>(
-    `select jsonb_build_object(
+    `select jsonb_strip_nulls(jsonb_build_object(
        'eventId', event_id::text,
        'threadId', thread_id,
        'seq', seq,
        'type', type,
-       'occurredAt', occurred_at,
+       'occurredAt', to_char(occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
        'correlationId', correlation_id::text,
        'causationId', causation_id::text,
        'idempotencyKey', idempotency_key,
@@ -463,7 +463,7 @@ async function recentEventsForThread(pool: Pool, threadId: string): Promise<Even
        'stepKey', step_key,
        'actor', jsonb_build_object('type', actor_type, 'id', actor_id),
        'payload', payload_json
-     ) as event_json
+     )) as event_json
      from weave.thread_event
      where thread_id = $1
      order by seq asc`,

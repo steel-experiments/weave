@@ -44,7 +44,7 @@ Run the local workflow dashboard:
 npm run dashboard
 ```
 
-It binds to `127.0.0.1:3010` by default and reads the configured `DATABASE_URL`.
+It binds to `0.0.0.0:3010` by default so it is reachable from localhost and your Tailscale/device IP. It reads the configured `DATABASE_URL`.
 
 Run the mock SRE north-star demo:
 

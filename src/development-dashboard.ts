@@ -179,12 +179,12 @@ async function latestHandoffForInitiative(pool: Pool, rootThreadId: string): Pro
 
 async function eventJsonRows(pool: Pool, rootThreadId: string, types: readonly string[], limit: number): Promise<ThreadEvent[]> {
   const result = await pool.query<{ event_json: unknown }>(
-    `select jsonb_build_object(
+    `select jsonb_strip_nulls(jsonb_build_object(
        'eventId', e.event_id::text,
        'threadId', e.thread_id,
        'seq', e.seq,
        'type', e.type,
-       'occurredAt', e.occurred_at,
+       'occurredAt', to_char(e.occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
        'correlationId', e.correlation_id::text,
        'causationId', e.causation_id::text,
        'idempotencyKey', e.idempotency_key,
@@ -192,7 +192,7 @@ async function eventJsonRows(pool: Pool, rootThreadId: string, types: readonly s
        'stepKey', e.step_key,
        'actor', jsonb_build_object('type', e.actor_type, 'id', e.actor_id),
        'payload', e.payload_json
-     ) as event_json
+     )) as event_json
      from weave.thread_event e
      join weave.thread t on t.id = e.thread_id
      where (t.id = $1 or t.root_thread_id = $1)

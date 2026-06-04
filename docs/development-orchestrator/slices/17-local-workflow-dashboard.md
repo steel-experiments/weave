@@ -14,7 +14,7 @@ Add a minimal local operator dashboard for Weave development workflows so a main
 ## Non-goals
 
 - Do not build a full hosted SaaS UI.
-- Do not expose the dashboard beyond localhost in this slice.
+- Do not expose the dashboard beyond trusted local/Tailscale interfaces in this slice.
 - Do not add authentication, user management, teams, or multi-tenant authorization yet.
 - Do not replace the CLI operator flow; the dashboard should complement it.
 - Do not let the dashboard bypass durable gates, policy checks, or orchestrator state transitions.
@@ -53,7 +53,7 @@ The dashboard should mirror the shipped operator CLI vocabulary from slice 14: g
 - Preserves the event log and checkpoints as source of truth.
 - May add read-only aggregation helpers if the existing API cannot efficiently provide dashboard state.
 - Does not change orchestrator execution semantics.
-- Does not add auth yet because this slice is localhost-only.
+- Does not add auth yet; access should stay limited to trusted local/Tailscale interfaces.
 
 ## Required Views
 
@@ -118,7 +118,7 @@ The dashboard should mirror the shipped operator CLI vocabulary from slice 14: g
 - [x] The dashboard shows current and recent tool progress.
 - [x] The dashboard shows recent important events with raw payload inspection available.
 - [x] The visual design explicitly follows `DESIGN.md`.
-- [x] The dashboard binds to localhost by default and documents that auth is intentionally deferred.
+- [x] The dashboard binds to all interfaces by default for local/Tailscale access and documents that auth is intentionally deferred.
 - [x] No dashboard-only source of truth is introduced.
 - [x] `npm test` passes.
 - [x] `npm run typecheck` passes.
@@ -142,7 +142,7 @@ The dashboard should mirror the shipped operator CLI vocabulary from slice 14: g
 - The dashboard reuses durable Postgres state and the existing operator read model; it does not introduce dashboard-only workflow state.
 - The UI is a vanilla HTML/CSS/JS shell with no framework dependency and follows `DESIGN.md`: deep slate surfaces, compact panels, Geist/JetBrains Mono font stack, cyan live execution accents, indigo durable-logic accents, status-colored execution nodes, and mobile stacking.
 - The dashboard shows initiatives, selected initiative detail, child threads, pending gates, approve/reject actions with confirmation, recent tool progress, recent events, and `pr-handoff` / `pr-remote-handoff` payloads.
-- The server binds to `127.0.0.1` by default and documents that auth is intentionally deferred for localhost-only use.
+- The server binds to `0.0.0.0` by default for localhost and Tailscale/device-IP access, and documents that auth is intentionally deferred for trusted local/Tailscale use.
 - Added `src/tests/development-dashboard.test.ts` for the dashboard shell and root route.
 - Commands run: `npm exec -- tsx src/tests/development-dashboard.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
 - Known gap: the first dashboard is intentionally simple and Postgres-backed. A later slice can add richer graph interactions, server-sent updates, auth, and a dedicated dashboard API if it is exposed beyond localhost.

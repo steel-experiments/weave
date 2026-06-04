@@ -297,9 +297,10 @@ npm run dashboard
 
 Defaults:
 
-- Host: `127.0.0.1`
+- Host: `0.0.0.0`
 - Port: `3010`
-- URL: `http://127.0.0.1:3010`
+- Local URL: `http://127.0.0.1:3010`
+- Tailscale/device URL: `http://<tailscale-or-device-ip>:3010`
 
 Environment overrides:
 
@@ -311,9 +312,9 @@ The dashboard reads durable Postgres state and mirrors the operator CLI vocabula
 
 Security posture:
 
-- The dashboard is localhost-only by default.
-- Auth is intentionally deferred while it remains bound to localhost.
-- Do not expose it on a shared interface until the auth slices are resumed.
+- The dashboard binds to all interfaces by default for local/Tailscale access.
+- It has no auth in this slice.
+- Use it only on trusted local/Tailscale networks until the auth slices are resumed.
 
 ## Completion Rule
 
