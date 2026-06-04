@@ -22,6 +22,7 @@ export * from "./summary.js";
 export * from "./credentials.js";
 export * from "./development-orchestrator.js";
 export * from "./observability.js";
+export * from "./opencode-runner.js";
 export * from "./otlp-observability.js";
 export * from "./policy-contract.js";
 export * from "./timeline.js";

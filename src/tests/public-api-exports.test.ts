@@ -42,6 +42,12 @@ import {
   decideNextInitiativeAction,
   decideRepairLoop,
   shouldCleanupWorkspace,
+  OpenCodeCliRunnerConfigSchema,
+  OpenCodeRunnerError,
+  buildOpenCodeImplementationPrompt,
+  buildOpenCodeRepairPrompt,
+  createOpenCodeCliImplementationRunner,
+  createOpenCodeCliRepairRunner,
   InitiativeActionSchema,
   InitiativeExecutionStateSchema,
   SliceActionSchema,
@@ -172,6 +178,12 @@ assert.equal(typeof createSliceRunnerAgent, "function");
 assert.equal(typeof createInitialInitiativeExecutionState, "function");
 assert.equal(typeof buildWorkspaceAllocateInput, "function");
 assert.equal(typeof shouldCleanupWorkspace, "function");
+assert.equal(OpenCodeCliRunnerConfigSchema.parse({}).command, "opencode");
+assert.equal(typeof OpenCodeRunnerError, "function");
+assert.equal(typeof buildOpenCodeImplementationPrompt, "function");
+assert.equal(typeof buildOpenCodeRepairPrompt, "function");
+assert.equal(typeof createOpenCodeCliImplementationRunner, "function");
+assert.equal(typeof createOpenCodeCliRepairRunner, "function");
 assert.equal(typeof decideNextSliceAction, "function");
 assert.equal(typeof decideNextInitiativeAction, "function");
 assert.equal(typeof InitiativeExecutionStateSchema.parse, "function");

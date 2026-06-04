@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-04`
 - Owner: `weave-maintainer`
 
@@ -97,38 +97,50 @@ Repair runner receives existing `RepairAgentInput`:
 
 ## Acceptance Criteria
 
-- [ ] Real implementation runner satisfies `OpenCodeImplementationRunner`.
-- [ ] Real repair runner satisfies `RepairRunner`.
-- [ ] Runners execute only inside `WorkspaceRef.path`.
-- [ ] Runners enforce timeout and bounded output capture.
-- [ ] Runners require schema-valid structured output.
-- [ ] Runners refuse branch/workspace mismatches.
-- [ ] Runners do not expose merge, PR, secret, or branch-switching capabilities.
-- [ ] Verification and review remain mandatory after every run.
-- [ ] Fake executable integration tests cover success and failure.
-- [ ] `npm test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `git diff --check` passes.
+- [x] Real implementation runner satisfies `OpenCodeImplementationRunner`.
+- [x] Real repair runner satisfies `RepairRunner`.
+- [x] Runners execute only inside `WorkspaceRef.path`.
+- [x] Runners enforce timeout and bounded output capture.
+- [x] Runners require schema-valid structured output.
+- [x] Runners refuse branch/workspace mismatches.
+- [x] Runners do not expose merge, PR, secret, or branch-switching capabilities.
+- [x] Verification and review remain mandatory after every run.
+- [x] Fake executable integration tests cover success and failure.
+- [x] `npm test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `git diff --check` passes.
 
 ## Progress
 
-- [ ] Add runner module.
-- [ ] Add prompt builders.
-- [ ] Add command invocation wrapper.
-- [ ] Add output parser.
-- [ ] Add timeout/failure handling.
-- [ ] Add fake executable tests.
-- [ ] Add local configuration docs.
-- [ ] Update docs.
+- [x] Add runner module.
+- [x] Add prompt builders.
+- [x] Add command invocation wrapper.
+- [x] Add output parser.
+- [x] Add timeout/failure handling.
+- [x] Add fake executable tests.
+- [x] Add local configuration docs.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `src/opencode-runner.ts` as the public OpenCode CLI adapter module.
+- Added `OpenCodeCliRunnerConfigSchema`, `OpenCodeCommandResultSchema`, and `OpenCodeRunnerError`.
+- Added `createOpenCodeCliImplementationRunner(...)`, which satisfies `OpenCodeImplementationRunner` and returns schema-valid `ImplementationSummary` output.
+- Added `createOpenCodeCliRepairRunner(...)`, which satisfies `RepairRunner` and returns schema-valid `RepairResult` output.
+- Added `buildOpenCodeImplementationPrompt(...)` and `buildOpenCodeRepairPrompt(...)` for bounded, workspace-scoped prompts.
+- Added `runOpenCodeCliCommand(...)`, which uses explicit `cwd`, stdin prompt delivery, timeout, bounded stdout/stderr capture, and non-zero exit handling.
+- Added strict JSON parsing and schema validation through `parseOpenCodeJsonOutput(...)`.
+- Runners refuse branch/workspace mismatches before starting OpenCode.
+- Implementation runner rejects reported files outside `allowedFiles` before Weave treats the output as complete.
+- Added `src/tests/opencode-runner.test.ts` with fake executable coverage for implementation success, repair success, branch mismatch, out-of-scope file reporting, invalid JSON, and timeout.
+- Added public API export coverage and updated `docs/agent-adapters.md` with configuration and constraints.
+- Commands run: `npm exec -- tsx src/tests/opencode-runner.test.ts`, `npm exec -- tsx src/tests/public-api-exports.test.ts`, `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gap: the next step is not unattended auth execution. Start with a one-slice dry run of `../../slices/51-auth-gateway-thread-start.md` using the orchestrator path.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `README.md`
-- [ ] `../../agent-adapters.md`
-- [ ] local development setup docs if OpenCode configuration is required
+- [x] this slice document
+- [x] `../README.md`
+- [x] `README.md`
+- [x] `../../agent-adapters.md`
+- [ ] local development setup docs if OpenCode configuration is required beyond the adapter docs
