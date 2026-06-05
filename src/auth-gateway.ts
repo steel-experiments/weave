@@ -31,7 +31,12 @@ export type AuthResult =
 
 export type WeaveAction =
   | { type: "thread.start"; agentName?: string }
-  | { type: "agent.run"; agentName: string };
+  | { type: "agent.run"; agentName: string }
+  | { type: "thread.read"; threadId?: string }
+  | { type: "thread.signal"; threadId?: string; signalName?: string }
+  | { type: "gate.resolve"; threadId?: string; gateId?: string; resolution?: "approved" | "denied" }
+  | { type: "thread.cancel"; threadId?: string }
+  | { type: "artifact.read"; threadId?: string };
 
 export type AuthorizationRequest = {
   context: AuthContext;
@@ -193,7 +198,7 @@ function matchActionTypeAndAgentName(actionType: WeaveAction["type"], agentName:
     if (action.type !== actionType) {
       return false;
     }
-    return action.agentName === agentName;
+    return "agentName" in action && action.agentName === agentName;
   };
 }
 
@@ -272,6 +277,130 @@ export function allowEveryone(): AccessRule {
 
 export function denyEveryone(): AccessRule {
   return buildRule(matchAll(), matchActionType("thread.start"), { allowed: false, reason: "Everyone denied" });
+}
+
+function matchActionTypeAny(...actionTypes: WeaveAction["type"][]): RuleActionMatcher {
+  return (action: WeaveAction) => actionTypes.includes(action.type);
+}
+
+export function allowUserToReadThreads(userId: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchActionTypeAny("thread.read"),
+    { allowed: true, reason: `User ${userId} allowed to read threads` },
+  );
+}
+
+export function allowUserToResolveGate(userId: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchActionTypeAny("gate.resolve"),
+    { allowed: true, reason: `User ${userId} allowed to resolve gates` },
+  );
+}
+
+export function allowUserToDeliverSignal(userId: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchActionTypeAny("thread.signal"),
+    { allowed: true, reason: `User ${userId} allowed to deliver signals` },
+  );
+}
+
+export function allowUserToCancelThread(userId: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchActionTypeAny("thread.cancel"),
+    { allowed: true, reason: `User ${userId} allowed to cancel threads` },
+  );
+}
+
+export function allowUserToReadArtifacts(userId: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchActionTypeAny("artifact.read"),
+    { allowed: true, reason: `User ${userId} allowed to read artifacts` },
+  );
+}
+
+export function allowGroupToReadThreads(group: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchActionTypeAny("thread.read"),
+    { allowed: true, reason: `Group ${group} allowed to read threads` },
+  );
+}
+
+export function allowGroupToResolveGate(group: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchActionTypeAny("gate.resolve"),
+    { allowed: true, reason: `Group ${group} allowed to resolve gates` },
+  );
+}
+
+export function allowGroupToDeliverSignal(group: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchActionTypeAny("thread.signal"),
+    { allowed: true, reason: `Group ${group} allowed to deliver signals` },
+  );
+}
+
+export function allowGroupToCancelThread(group: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchActionTypeAny("thread.cancel"),
+    { allowed: true, reason: `Group ${group} allowed to cancel threads` },
+  );
+}
+
+export function allowGroupToReadArtifacts(group: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchActionTypeAny("artifact.read"),
+    { allowed: true, reason: `Group ${group} allowed to read artifacts` },
+  );
+}
+
+export function allowServiceToReadThreads(serviceName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(serviceName),
+    matchActionTypeAny("thread.read"),
+    { allowed: true, reason: `Service ${serviceName} allowed to read threads` },
+  );
+}
+
+export function allowServiceToResolveGate(serviceName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(serviceName),
+    matchActionTypeAny("gate.resolve"),
+    { allowed: true, reason: `Service ${serviceName} allowed to resolve gates` },
+  );
+}
+
+export function allowServiceToDeliverSignal(serviceName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(serviceName),
+    matchActionTypeAny("thread.signal"),
+    { allowed: true, reason: `Service ${serviceName} allowed to deliver signals` },
+  );
+}
+
+export function allowServiceToCancelThread(serviceName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(serviceName),
+    matchActionTypeAny("thread.cancel"),
+    { allowed: true, reason: `Service ${serviceName} allowed to cancel threads` },
+  );
+}
+
+export function allowServiceToReadArtifacts(serviceName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(serviceName),
+    matchActionTypeAny("artifact.read"),
+    { allowed: true, reason: `Service ${serviceName} allowed to read artifacts` },
+  );
 }
 
 export function toAuthSummary(context: AuthContext): AuthSummary {

@@ -2,13 +2,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z } from "zod";
 import type { ThreadArtifactStore } from "./artifacts.js";
 import type { WeaveAppDefinition } from "./app-contract.js";
-import type { AuthGateway, AuthSummary } from "./auth-gateway.js";
+import type { AuthContext, AuthGateway, AuthSummary } from "./auth-gateway.js";
 import { authRequestFromIncoming, toAuthSummary } from "./auth-gateway.js";
 import type { ThreadEngine } from "./contracts.js";
 import {
   ActorSchema,
   SessionMetadataSchema,
   SessionSourceSchema,
+  type Actor,
   type ThreadEvent,
 } from "./events.js";
 import type { ThreadService } from "./thread-service.js";
@@ -38,6 +39,56 @@ const ResolveGateBodySchema = z.object({
   resolution: z.enum(["approved", "denied"]),
   comment: z.string().optional(),
 });
+
+const DeliverSignalBodySchema = z.object({
+  signal: z.string().min(1),
+  payload: z.unknown(),
+  waitId: z.string().uuid().optional(),
+  scopeKey: z.string().min(1).optional(),
+  stepKey: z.string().min(1).optional(),
+  actor: ActorSchema.optional(),
+  idempotencyKey: z.string().min(1).optional(),
+});
+
+type AuthenticatedRequest = {
+  context: AuthContext;
+  summary: AuthSummary;
+};
+
+async function authenticateRequest(
+  auth: AuthGateway | undefined,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<AuthenticatedRequest | null> {
+  if (!auth) {
+    return null;
+  }
+  const authRequest = authRequestFromIncoming(request);
+  const authResult = await auth.authenticate(authRequest);
+  if (!authResult.authenticated) {
+    writeJson(response, 401, { error: "Unauthorized", reason: authResult.reason });
+    return null;
+  }
+  return { context: authResult.context, summary: toAuthSummary(authResult.context) };
+}
+
+async function authorizeAction(
+  auth: AuthGateway,
+  context: AuthContext,
+  action: Parameters<AuthGateway["authorize"]>[0]["action"],
+  response: ServerResponse,
+): Promise<boolean> {
+  const decision = await auth.authorize({ context, action });
+  if (!decision.allowed) {
+    writeJson(response, 403, { error: "Forbidden", reason: decision.reason });
+    return false;
+  }
+  return true;
+}
+
+function actorFromAuth(context: AuthContext): Actor {
+  return { type: "user", id: context.principal.id };
+}
 
 export type ApiRouteHandler = (
   request: IncomingMessage,
@@ -136,21 +187,10 @@ async function routeRequest(
 
     let authSummary: AuthSummary | undefined;
     if (auth) {
-      const authRequest = authRequestFromIncoming(request);
-      const authResult = await auth.authenticate(authRequest);
-      if (!authResult.authenticated) {
-        writeJson(response, 401, { error: "Unauthorized", reason: authResult.reason });
-        return;
-      }
-      const decision = await auth.authorize({
-        context: authResult.context,
-        action: { type: "thread.start", agentName: body.agentName },
-      });
-      if (!decision.allowed) {
-        writeJson(response, 403, { error: "Forbidden", reason: decision.reason });
-        return;
-      }
-      authSummary = toAuthSummary(authResult.context);
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "thread.start", agentName: body.agentName }, response))) return;
+      authSummary = authenticated.summary;
     }
 
     const mergedMetadata = authSummary
@@ -179,6 +219,13 @@ async function routeRequest(
   const threadMatch = path.match(/^\/threads\/([^/]+)$/);
   if (method === "GET" && threadMatch) {
     const threadId = decodeURIComponent(requiredMatch(threadMatch, 1));
+
+    if (auth) {
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+    }
+
     const projection = await engine.getProjection(threadId);
     if (!projection) {
       writeJson(response, 404, { error: "Thread not found" });
@@ -201,6 +248,13 @@ async function routeRequest(
     const threadId = decodeURIComponent(requiredMatch(eventsMatch, 1));
     const fromSeq = parseOptionalInt(url.searchParams.get("fromSeq"));
     const limit = parseOptionalInt(url.searchParams.get("limit"));
+
+    if (auth) {
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+    }
+
     const events = await engine.read(threadId, { fromSeq, limit });
     await safeEmitLog(observability, {
       ...span,
@@ -217,6 +271,13 @@ async function routeRequest(
   const summaryMatch = path.match(/^\/threads\/([^/]+)\/summary$/);
   if (method === "GET" && summaryMatch) {
     const threadId = decodeURIComponent(requiredMatch(summaryMatch, 1));
+
+    if (auth) {
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+    }
+
     const projection = await engine.getProjection(threadId);
     if (!projection) {
       writeJson(response, 404, { error: "Thread not found" });
@@ -239,6 +300,13 @@ async function routeRequest(
   const streamMatch = path.match(/^\/threads\/([^/]+)\/stream$/);
   if (method === "GET" && streamMatch) {
     const threadId = decodeURIComponent(requiredMatch(streamMatch, 1));
+
+    if (auth) {
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+    }
+
     const fromSeq = resolveStreamFromSeq(request, url);
     await streamThread(engine, response, threadId, fromSeq);
     return;
@@ -251,6 +319,13 @@ async function routeRequest(
       return;
     }
     const threadId = decodeURIComponent(requiredMatch(artifactsMatch, 1));
+
+    if (auth) {
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "artifact.read", threadId }, response))) return;
+    }
+
     const artifacts = await artifactStore.listArtifacts(threadId);
     writeJson(response, 200, { artifacts });
     return;
@@ -263,6 +338,13 @@ async function routeRequest(
       return;
     }
     const threadId = decodeURIComponent(requiredMatch(inboxDiagnosticsMatch, 1));
+
+    if (auth) {
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+    }
+
     const items = await engine.listInbox(threadId);
     writeJson(response, 200, { items });
     return;
@@ -275,6 +357,13 @@ async function routeRequest(
       return;
     }
     const threadId = decodeURIComponent(requiredMatch(observabilitySpansMatch, 1));
+
+    if (auth) {
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+    }
+
     const spans = await observabilityReader.listSpans(threadId);
     writeJson(response, 200, { spans });
     return;
@@ -287,8 +376,71 @@ async function routeRequest(
       return;
     }
     const threadId = decodeURIComponent(requiredMatch(observabilityLogsMatch, 1));
+
+    if (auth) {
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+    }
+
     const logs = await observabilityReader.listLogs(threadId);
     writeJson(response, 200, { logs });
+    return;
+  }
+
+  const signalsMatch = path.match(/^\/threads\/([^/]+)\/signals$/);
+  if (method === "POST" && signalsMatch) {
+    const threadId = decodeURIComponent(requiredMatch(signalsMatch, 1));
+    const body = DeliverSignalBodySchema.parse(await readJson(request));
+
+    if (auth) {
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "thread.signal", threadId, signalName: body.signal }, response))) return;
+      const resolvedActor = body.actor ?? actorFromAuth(authenticated.context);
+      const result = await service.deliverSignal({
+        threadId,
+        signal: body.signal,
+        payload: body.payload,
+        waitId: body.waitId,
+        scopeKey: body.scopeKey,
+        stepKey: body.stepKey,
+        actor: resolvedActor,
+        idempotencyKey: body.idempotencyKey,
+      });
+      const projection = await engine.getProjection(threadId);
+      await safeEmitLog(observability, {
+        ...span,
+        threadId,
+        timestamp: nowIso(),
+        level: "info",
+        message: "Signal delivered via API",
+        attributes: { signal: body.signal, waitId: result.waitId, delivered: result.delivered },
+      });
+      writeJson(response, 200, { ...result, projection });
+      return;
+    }
+
+    const result = await service.deliverSignal({
+      threadId,
+      signal: body.signal,
+      payload: body.payload,
+      waitId: body.waitId,
+      scopeKey: body.scopeKey,
+      stepKey: body.stepKey,
+      actor: body.actor,
+      idempotencyKey: body.idempotencyKey,
+    });
+    const projection = await engine.getProjection(threadId);
+    await safeEmitLog(observability, {
+      ...span,
+      threadId,
+      timestamp: nowIso(),
+      level: "info",
+      message: "Signal delivered via API",
+      attributes: { signal: body.signal, waitId: result.waitId, delivered: result.delivered },
+    });
+    writeJson(response, 200, { ...result, projection });
     return;
   }
 
@@ -297,6 +449,25 @@ async function routeRequest(
     const threadId = decodeURIComponent(requiredMatch(resolveGateMatch, 1));
     const gateId = decodeURIComponent(requiredMatch(resolveGateMatch, 2));
     const body = ResolveGateBodySchema.parse(await readJson(request));
+
+    if (auth) {
+      const authenticated = await authenticateRequest(auth, request, response);
+      if (!authenticated) return;
+      if (!(await authorizeAction(auth, authenticated.context, { type: "gate.resolve", threadId, gateId, resolution: body.resolution }, response))) return;
+      await service.resolveGate(threadId, gateId, body.resolution, body.comment, actorFromAuth(authenticated.context));
+      const projection = await engine.getProjection(threadId);
+      await safeEmitLog(observability, {
+        ...span,
+        threadId,
+        timestamp: nowIso(),
+        level: "info",
+        message: "Gate resolved via API",
+        attributes: { gateId, resolution: body.resolution, resolvedBy: authenticated.summary.principalId },
+      });
+      writeJson(response, 200, { projection });
+      return;
+    }
+
     await service.resolveGate(threadId, gateId, body.resolution, body.comment);
     const projection = await engine.getProjection(threadId);
     await safeEmitLog(observability, {
