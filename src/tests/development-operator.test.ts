@@ -4,8 +4,12 @@ import {
   formatGateList,
   formatInitiativeList,
   formatInitiativeStatus,
+  formatSourceCheckpointDetail,
+  formatSourceCheckpointDiff,
+  formatSourceCheckpointList,
   OperatorGateSummarySchema,
   OperatorInitiativeStatusSchema,
+  OperatorSourceCheckpointSummarySchema,
 } from "../development-operator.js";
 
 const gate = OperatorGateSummarySchema.parse({
@@ -79,5 +83,29 @@ const renderedStatus = formatInitiativeStatus(status);
 assert.match(renderedStatus, /Current slice: 01-prd-compiler PRD Compiler \(approved\)/);
 assert.match(renderedStatus, /Child Threads/);
 assert.match(renderedStatus, /gate.created/);
+
+const checkpoint = OperatorSourceCheckpointSummarySchema.parse({
+  checkpointId: "11111111-1111-4111-8111-111111111111",
+  initiativeThreadId: "initiative-thread",
+  sliceThreadId: "slice-thread",
+  sliceId: "01-prd-compiler",
+  title: "PRD Compiler",
+  workspacePath: "/tmp/weave/workspace",
+  workingBranch: "prd-automation",
+  baseSha: "abc123",
+  checkpointSha: "def456",
+  changedFiles: ["src/development-orchestrator.ts"],
+  commitMessage: "feat: complete PRD Compiler",
+  eventThreadId: "slice-thread",
+  eventSeq: 42,
+  diffCommand: "git -C '/tmp/weave/workspace' diff abc123..def456 --",
+});
+
+assert.equal(formatSourceCheckpointList([]), "No source checkpoints found.");
+assert.match(formatSourceCheckpointList([checkpoint]), /def456/);
+assert.match(formatSourceCheckpointList([checkpoint]), /checkpoints:show/);
+assert.match(formatSourceCheckpointDetail(checkpoint), /Changed Files/);
+assert.match(formatSourceCheckpointDetail(checkpoint), /src\/development-orchestrator.ts/);
+assert.equal(formatSourceCheckpointDiff(checkpoint), checkpoint.diffCommand);
 
 console.log("Development operator tests passed");

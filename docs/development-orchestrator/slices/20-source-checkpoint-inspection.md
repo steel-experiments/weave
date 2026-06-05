@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-05`
 - Owner: `weave-maintainer`
 
@@ -45,25 +45,31 @@ As a maintainer, I can list source checkpoints for an initiative, inspect the ch
 
 ## Acceptance Criteria
 
-- [ ] Operators can list checkpoints for an initiative.
-- [ ] Operators can show a checkpoint by id or SHA.
-- [ ] Operators can obtain an exact diff command for a checkpoint.
-- [ ] Dashboard shows source checkpoints with slice association and changed files.
-- [ ] No Git mutation is introduced in this slice.
+- [x] Operators can list checkpoints for an initiative.
+- [x] Operators can show a checkpoint by id or SHA.
+- [x] Operators can obtain an exact diff command for a checkpoint.
+- [x] Dashboard shows source checkpoints with slice association and changed files.
+- [x] No Git mutation is introduced in this slice.
 
 ## Progress
 
-- [ ] Add operator projection.
-- [ ] Add CLI commands/scripts.
-- [ ] Add dashboard rendering.
-- [ ] Add tests.
+- [x] Add operator projection.
+- [x] Add CLI commands/scripts.
+- [x] Add dashboard rendering.
+- [x] Add tests.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `OperatorSourceCheckpointSummarySchema` and source checkpoint projection helpers in `src/development-operator.ts`.
+- Added operator commands and npm scripts: `checkpoints:list`, `checkpoints:show`, and `checkpoints:diff`.
+- Checkpoint lookup accepts full checkpoint id, full commit SHA, or commit SHA prefix.
+- `checkpoints:diff` prints the exact `git -C <workspace> diff <baseSha>..<checkpointSha> --` command.
+- Dashboard state now includes `sourceCheckpoints`, and the UI renders slice id, commit SHA, changed file count, commit message, and diff command.
+- Added operator formatting tests and dashboard Postgres state coverage.
+- No restore, reset, merge, push, or PR side effect was added.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `README.md`
+- [x] this slice document
+- [x] `../README.md`
+- [x] `README.md`

@@ -4,11 +4,16 @@ import {
   formatGateList,
   formatInitiativeList,
   formatInitiativeStatus,
+  formatSourceCheckpointDetail,
+  formatSourceCheckpointDiff,
+  formatSourceCheckpointList,
   getGate,
   getInitiativeStatus,
+  getSourceCheckpoint,
   latestPlanForGate,
   listInitiatives,
   listPendingGates,
+  listSourceCheckpoints,
   resolveOperatorGate,
 } from "../development-operator.js";
 import { migrate } from "../migrate.js";
@@ -76,6 +81,29 @@ async function run(command: string, args: string[]): Promise<void> {
       console.log(formatInitiativeStatus(status));
       return;
     }
+    case "checkpoints:list": {
+      const threadId = requiredArg(args, 0, "initiative thread id");
+      console.log(formatSourceCheckpointList(await listSourceCheckpoints(pool, threadId)));
+      return;
+    }
+    case "checkpoints:show": {
+      const checkpointIdOrSha = requiredArg(args, 0, "checkpoint id or sha");
+      const checkpoint = await getSourceCheckpoint(pool, checkpointIdOrSha);
+      if (!checkpoint) {
+        throw new Error(`Source checkpoint not found: ${checkpointIdOrSha}`);
+      }
+      console.log(formatSourceCheckpointDetail(checkpoint));
+      return;
+    }
+    case "checkpoints:diff": {
+      const checkpointIdOrSha = requiredArg(args, 0, "checkpoint id or sha");
+      const checkpoint = await getSourceCheckpoint(pool, checkpointIdOrSha);
+      if (!checkpoint) {
+        throw new Error(`Source checkpoint not found: ${checkpointIdOrSha}`);
+      }
+      console.log(formatSourceCheckpointDiff(checkpoint));
+      return;
+    }
     default:
       usage(1);
   }
@@ -110,6 +138,9 @@ function usage(exitCode: number): never {
     "  npm run gates:reject -- <gate-id> --note \"reason\"",
     "  npm run initiatives:list",
     "  npm run initiative:status -- <thread-id>",
+    "  npm run checkpoints:list -- <initiative-thread-id>",
+    "  npm run checkpoints:show -- <checkpoint-id-or-sha>",
+    "  npm run checkpoints:diff -- <checkpoint-id-or-sha>",
   ].join("\n"));
   process.exit(exitCode);
 }

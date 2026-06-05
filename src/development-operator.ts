@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import { z } from "zod";
-import { DevelopmentCheckpointKeys, InitiativePlanSchema } from "./development-orchestrator.js";
+import { DevelopmentCheckpointKeys, InitiativePlanSchema, SourceCheckpointSchema } from "./development-orchestrator.js";
 import { ThreadEventSchema, type ThreadEvent } from "./events.js";
 import { ThreadService } from "./thread-service.js";
 
@@ -57,6 +57,25 @@ export const OperatorInitiativeStatusSchema = OperatorInitiativeSummarySchema.ex
   ),
 });
 export type OperatorInitiativeStatus = z.infer<typeof OperatorInitiativeStatusSchema>;
+
+export const OperatorSourceCheckpointSummarySchema = z.object({
+  checkpointId: NonEmptyStringSchema,
+  initiativeThreadId: NonEmptyStringSchema,
+  sliceThreadId: NonEmptyStringSchema,
+  sliceId: NonEmptyStringSchema,
+  title: NonEmptyStringSchema.optional(),
+  workspacePath: NonEmptyStringSchema,
+  workingBranch: NonEmptyStringSchema,
+  baseSha: NonEmptyStringSchema,
+  checkpointSha: NonEmptyStringSchema,
+  changedFiles: z.array(NonEmptyStringSchema),
+  commitMessage: NonEmptyStringSchema,
+  createdAt: NonEmptyStringSchema.optional(),
+  eventThreadId: NonEmptyStringSchema,
+  eventSeq: z.number().int().nonnegative().optional(),
+  diffCommand: NonEmptyStringSchema,
+});
+export type OperatorSourceCheckpointSummary = z.infer<typeof OperatorSourceCheckpointSummarySchema>;
 
 export async function listPendingGates(pool: Pool): Promise<OperatorGateSummary[]> {
   const result = await pool.query<GateRow>(
@@ -193,6 +212,45 @@ export async function getInitiativeStatus(pool: Pool, threadId: string): Promise
   });
 }
 
+export async function listSourceCheckpoints(pool: Pool, initiativeThreadId: string): Promise<OperatorSourceCheckpointSummary[]> {
+  const result = await pool.query<SourceCheckpointRow>(
+    `select
+       e.thread_id as event_thread_id,
+       e.seq as event_seq,
+       e.payload_json->'value' as checkpoint_payload
+     from weave.thread_event e
+     join weave.thread t on t.id = e.thread_id
+     where (t.id = $1 or t.root_thread_id = $1)
+       and e.type = 'checkpoint.completed'
+       and e.payload_json->>'stepKey' like $2
+     order by e.occurred_at asc, e.seq asc`,
+    [initiativeThreadId, `${DevelopmentCheckpointKeys.sourceCheckpoint}:%`],
+  );
+  return result.rows.map(sourceCheckpointSummaryFromRow);
+}
+
+export async function getSourceCheckpoint(pool: Pool, checkpointIdOrSha: string): Promise<OperatorSourceCheckpointSummary | undefined> {
+  const result = await pool.query<SourceCheckpointRow>(
+    `select
+       e.thread_id as event_thread_id,
+       e.seq as event_seq,
+       e.payload_json->'value' as checkpoint_payload
+     from weave.thread_event e
+     where e.type = 'checkpoint.completed'
+       and e.payload_json->>'stepKey' like $1
+       and (
+         e.payload_json->'value'->>'checkpointId' = $2
+         or e.payload_json->'value'->>'checkpointSha' = $2
+         or left(e.payload_json->'value'->>'checkpointSha', length($2)) = $2
+       )
+     order by e.occurred_at desc, e.seq desc
+     limit 1`,
+    [`${DevelopmentCheckpointKeys.sourceCheckpoint}:%`, checkpointIdOrSha],
+  );
+  const row = result.rows[0];
+  return row ? sourceCheckpointSummaryFromRow(row) : undefined;
+}
+
 export async function resolveOperatorGate(input: {
   pool: Pool;
   service: ThreadService;
@@ -289,6 +347,42 @@ export function formatInitiativeStatus(status: OperatorInitiativeStatus): string
   return lines.join("\n");
 }
 
+export function formatSourceCheckpointList(checkpoints: readonly OperatorSourceCheckpointSummary[]): string {
+  if (checkpoints.length === 0) {
+    return "No source checkpoints found.";
+  }
+  return [
+    "Source Checkpoints",
+    "",
+    ...checkpoints.map((checkpoint) => `- ${checkpoint.checkpointSha.slice(0, 12)} slice=${checkpoint.sliceId} files=${checkpoint.changedFiles.length} branch=${checkpoint.workingBranch}`),
+    "",
+    "Next: npm run checkpoints:show -- <checkpoint-id-or-sha>",
+  ].join("\n");
+}
+
+export function formatSourceCheckpointDetail(checkpoint: OperatorSourceCheckpointSummary): string {
+  return [
+    `Source Checkpoint ${checkpoint.checkpointSha}`,
+    "",
+    `Checkpoint: ${checkpoint.checkpointId}`,
+    `Slice: ${checkpoint.sliceId} ${checkpoint.title ?? ""}`.trimEnd(),
+    `Branch: ${checkpoint.workingBranch}`,
+    `Workspace: ${checkpoint.workspacePath}`,
+    `Base: ${checkpoint.baseSha}`,
+    `Commit: ${checkpoint.checkpointSha}`,
+    `Message: ${checkpoint.commitMessage}`,
+    "",
+    "Changed Files:",
+    ...(checkpoint.changedFiles.length > 0 ? checkpoint.changedFiles.map((file) => `- ${file}`) : ["- none"]),
+    "",
+    `Diff: ${checkpoint.diffCommand}`,
+  ].join("\n");
+}
+
+export function formatSourceCheckpointDiff(checkpoint: OperatorSourceCheckpointSummary): string {
+  return checkpoint.diffCommand;
+}
+
 export async function latestPlanForGate(pool: Pool, gate: OperatorGateSummary): Promise<unknown | undefined> {
   const result = await pool.query<EventRow>(
     `select jsonb_strip_nulls(jsonb_build_object(
@@ -343,6 +437,12 @@ type InitiativeRow = {
 
 type EventRow = {
   event_json: unknown;
+};
+
+type SourceCheckpointRow = {
+  event_thread_id: string;
+  event_seq: number | null;
+  checkpoint_payload: unknown;
 };
 
 function gateSummaryFromRow(row: GateRow): OperatorGateSummary {
@@ -481,6 +581,31 @@ function currentSliceFromEvents(events: readonly ThreadEvent[]): OperatorInitiat
   }
   const status = relevant.type.replace("dev.slice.", "");
   return { sliceId: relevant.payload.sliceId, title: relevant.payload.title, status };
+}
+
+function sourceCheckpointSummaryFromRow(row: SourceCheckpointRow): OperatorSourceCheckpointSummary {
+  const checkpoint = SourceCheckpointSchema.parse(row.checkpoint_payload);
+  return OperatorSourceCheckpointSummarySchema.parse({
+    checkpointId: checkpoint.checkpointId,
+    initiativeThreadId: checkpoint.initiativeThreadId,
+    sliceThreadId: checkpoint.sliceThreadId,
+    sliceId: checkpoint.sliceId,
+    title: checkpoint.title,
+    workspacePath: checkpoint.workspaceRef.path,
+    workingBranch: checkpoint.workspaceRef.workingBranch,
+    baseSha: checkpoint.baseSha,
+    checkpointSha: checkpoint.checkpointSha,
+    changedFiles: checkpoint.changedFiles,
+    commitMessage: checkpoint.commitMessage,
+    createdAt: checkpoint.createdAt,
+    eventThreadId: row.event_thread_id,
+    eventSeq: row.event_seq ?? undefined,
+    diffCommand: `git -C ${shellQuote(checkpoint.workspaceRef.path)} diff ${checkpoint.baseSha}..${checkpoint.checkpointSha} --`,
+  });
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function toIso(value: Date | string): string {
