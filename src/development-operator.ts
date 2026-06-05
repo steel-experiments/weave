@@ -36,6 +36,7 @@ export const OperatorInitiativeSummarySchema = z.object({
 export type OperatorInitiativeSummary = z.infer<typeof OperatorInitiativeSummarySchema>;
 
 export const OperatorInitiativeStatusSchema = OperatorInitiativeSummarySchema.extend({
+  blockerReason: NonEmptyStringSchema.optional(),
   currentSlice: z
     .object({
       sliceId: NonEmptyStringSchema,
@@ -157,9 +158,10 @@ export async function listInitiatives(pool: Pool, limit = 20): Promise<OperatorI
        t.updated_at,
        count(g.gate_id) filter (where g.status = 'pending')::int as pending_gate_count,
        started.payload_json as started_payload,
-       spec.payload_json as spec_payload
-     from weave.thread t
-     left join weave.thread_gate g on g.thread_id = t.id
+       spec.payload_json as spec_payload,
+       latest_output.payload_json->'output' as latest_output_payload
+      from weave.thread t
+      left join weave.thread_gate g on g.thread_id = t.id
      left join lateral (
        select payload_json
        from weave.thread_event e
@@ -167,17 +169,24 @@ export async function listInitiatives(pool: Pool, limit = 20): Promise<OperatorI
        order by e.seq desc
        limit 1
      ) started on true
-     left join lateral (
-       select payload_json
-       from weave.thread_event e
-       where e.thread_id = t.id and e.type = 'dev.initiative.spec_received'
-       order by e.seq desc
-       limit 1
-     ) spec on true
-     where started.payload_json is not null or spec.payload_json is not null
-     group by t.id, t.status, t.updated_at, started.payload_json, spec.payload_json
-     order by t.updated_at desc
-     limit $1`,
+      left join lateral (
+        select payload_json
+        from weave.thread_event e
+        where e.thread_id = t.id and e.type = 'dev.initiative.spec_received'
+        order by e.seq desc
+        limit 1
+      ) spec on true
+      left join lateral (
+        select payload_json
+        from weave.thread_event e
+        where e.thread_id = t.id and e.type = 'agent.output.completed'
+        order by e.seq desc
+        limit 1
+      ) latest_output on true
+      where started.payload_json is not null or spec.payload_json is not null
+      group by t.id, t.status, t.updated_at, started.payload_json, spec.payload_json, latest_output.payload_json
+      order by t.updated_at desc
+      limit $1`,
     [limit],
   );
   return result.rows.map(initiativeSummaryFromRow);
@@ -191,9 +200,10 @@ export async function getInitiativeStatus(pool: Pool, threadId: string): Promise
        t.updated_at,
        count(g.gate_id) filter (where g.status = 'pending')::int as pending_gate_count,
        started.payload_json as started_payload,
-       spec.payload_json as spec_payload
-     from weave.thread t
-     left join weave.thread_gate g on g.thread_id = t.id
+       spec.payload_json as spec_payload,
+       latest_output.payload_json->'output' as latest_output_payload
+      from weave.thread t
+      left join weave.thread_gate g on g.thread_id = t.id
      left join lateral (
        select payload_json
        from weave.thread_event e
@@ -201,15 +211,22 @@ export async function getInitiativeStatus(pool: Pool, threadId: string): Promise
        order by e.seq desc
        limit 1
      ) started on true
-     left join lateral (
-       select payload_json
-       from weave.thread_event e
-       where e.thread_id = t.id and e.type = 'dev.initiative.spec_received'
-       order by e.seq desc
-       limit 1
-     ) spec on true
-     where t.id = $1
-     group by t.id, t.status, t.updated_at, started.payload_json, spec.payload_json`,
+      left join lateral (
+        select payload_json
+        from weave.thread_event e
+        where e.thread_id = t.id and e.type = 'dev.initiative.spec_received'
+        order by e.seq desc
+        limit 1
+      ) spec on true
+      left join lateral (
+        select payload_json
+        from weave.thread_event e
+        where e.thread_id = t.id and e.type = 'agent.output.completed'
+        order by e.seq desc
+        limit 1
+      ) latest_output on true
+      where t.id = $1
+      group by t.id, t.status, t.updated_at, started.payload_json, spec.payload_json, latest_output.payload_json`,
     [threadId],
   );
   const row = thread.rows[0];
@@ -224,10 +241,12 @@ export async function getInitiativeStatus(pool: Pool, threadId: string): Promise
   ]);
   const events = eventRows.map((eventRow) => ThreadEventSchema.parse(eventRow.event_json));
   const summary = initiativeSummaryFromRow(row);
+  const output = initiativeOutputFromRow(row);
 
   return OperatorInitiativeStatusSchema.parse({
     ...summary,
-    currentSlice: currentSliceFromEvents(events),
+    blockerReason: output.blockerReason,
+    currentSlice: currentSliceFromOutput(output) ?? currentSliceFromEvents(events),
     childThreads,
     pendingGates,
     recentEvents: events.slice(-10).reverse().map((event) => ({
@@ -469,6 +488,9 @@ export function formatInitiativeStatus(status: OperatorInitiativeStatus): string
   if (status.currentSlice) {
     lines.push(`Current slice: ${status.currentSlice.sliceId} ${status.currentSlice.title} (${status.currentSlice.status})`);
   }
+  if (status.blockerReason) {
+    lines.push(`Blocker: ${status.blockerReason}`);
+  }
   lines.push("", "Child Threads:");
   lines.push(...(status.childThreads.length > 0 ? status.childThreads.map((child) => `- ${child.threadId} status=${child.status} agent=${child.agentName ?? "n/a"}`) : ["- none"]));
   lines.push("", "Pending Gates:");
@@ -584,6 +606,7 @@ type InitiativeRow = {
   pending_gate_count: number;
   started_payload: unknown;
   spec_payload: unknown;
+  latest_output_payload?: unknown;
 };
 
 type EventRow = {
@@ -633,15 +656,38 @@ function initiativeSummaryFromRow(row: InitiativeRow): OperatorInitiativeSummary
     })
     .safeParse(row.started_payload);
   const spec = z.object({ title: z.string().min(1) }).safeParse(row.spec_payload);
+  const output = initiativeOutputFromRow(row);
   return OperatorInitiativeSummarySchema.parse({
     threadId: row.thread_id,
-    status: row.status,
+    status: output.status ?? row.status,
     title: spec.success ? spec.data.title : started.success ? started.data.initiative : undefined,
     repo: started.success ? started.data.repo : undefined,
     workingBranch: started.success ? started.data.workingBranch : undefined,
     pendingGateCount: row.pending_gate_count,
     updatedAt: toIso(row.updated_at),
   });
+}
+
+function initiativeOutputFromRow(row: InitiativeRow): { status?: string; blockerReason?: string; blockedSlice?: string; blockedSliceTitle?: string } {
+  const output = z
+    .object({
+      status: z.string().min(1).optional(),
+      blockerReason: z.string().min(1).optional(),
+      blockedSlice: z.string().min(1).optional(),
+      plan: z
+        .object({
+          slices: z.array(z.object({ id: z.string().min(1), title: z.string().min(1) })).default([]),
+        })
+        .optional(),
+    })
+    .safeParse(row.latest_output_payload);
+  if (!output.success) {
+    return {};
+  }
+  const blockedSliceTitle = output.data.blockedSlice
+    ? output.data.plan?.slices.find((slice) => slice.id === output.data.blockedSlice)?.title
+    : undefined;
+  return { ...output.data, blockedSliceTitle };
 }
 
 async function pendingGatesForThread(pool: Pool, threadId: string): Promise<OperatorGateSummary[]> {
@@ -732,6 +778,17 @@ function currentSliceFromEvents(events: readonly ThreadEvent[]): OperatorInitiat
   }
   const status = relevant.type.replace("dev.slice.", "");
   return { sliceId: relevant.payload.sliceId, title: relevant.payload.title, status };
+}
+
+function currentSliceFromOutput(output: ReturnType<typeof initiativeOutputFromRow>): OperatorInitiativeStatus["currentSlice"] {
+  if (!output.blockedSlice || !output.status || output.status === "completed") {
+    return undefined;
+  }
+  return {
+    sliceId: output.blockedSlice,
+    title: output.blockedSliceTitle ?? output.blockedSlice,
+    status: output.status,
+  };
 }
 
 function sourceCheckpointSummaryFromRow(row: SourceCheckpointRow): OperatorSourceCheckpointSummary {

@@ -8,11 +8,13 @@ import {
   formatSourceCheckpointDiff,
   formatSourceCheckpointList,
   formatSourceCheckpointRestoreResult,
+  getInitiativeStatus,
   OperatorGateSummarySchema,
   OperatorInitiativeStatusSchema,
   OperatorSourceCheckpointRestoreResultSchema,
   OperatorSourceCheckpointSummarySchema,
 } from "../development-operator.js";
+import { newEventId, nowIso } from "../events.js";
 
 const gate = OperatorGateSummarySchema.parse({
   gateId: "11111111-1111-4111-8111-111111111111",
@@ -85,6 +87,53 @@ const renderedStatus = formatInitiativeStatus(status);
 assert.match(renderedStatus, /Current slice: 01-prd-compiler PRD Compiler \(approved\)/);
 assert.match(renderedStatus, /Child Threads/);
 assert.match(renderedStatus, /gate.created/);
+
+const projectedStatus = await getInitiativeStatus({
+  query(sql: string) {
+    if (sql.includes("from weave.thread t") && sql.includes("where t.id = $1")) {
+      return Promise.resolve({ rows: [{
+        thread_id: "initiative-thread",
+        status: "completed",
+        updated_at: "2026-06-04T00:00:00.000Z",
+        pending_gate_count: 0,
+        started_payload: { initiative: "Auth Gateway Remaining Epic", repo: "weave", workingBranch: "auth-gateway-remaining" },
+        spec_payload: { title: "Auth Gateway Remaining Epic" },
+        latest_output_payload: {
+          status: "blocked",
+          blockedSlice: "02-authenticated-integration-ingress",
+          blockerReason: "Implementation child failed: duplicate key value violates unique constraint.",
+          plan: { slices: [{ id: "02-authenticated-integration-ingress", title: "Authenticated Integration Ingress" }] },
+        },
+      }] });
+    }
+    if (sql.includes("from weave.thread_gate")) {
+      return Promise.resolve({ rows: [] });
+    }
+    if (sql.includes("from weave.thread t") && sql.includes("root_thread_id")) {
+      return Promise.resolve({ rows: [{ thread_id: "slice-thread", status: "failed", parent_thread_id: "initiative-thread", agent_name: "weave.sliceRunner" }] });
+    }
+    if (sql.includes("from weave.thread_event")) {
+      return Promise.resolve({ rows: [{ event_json: {
+        eventId: newEventId(),
+        threadId: "initiative-thread",
+        seq: 10,
+        type: "dev.slice.approved",
+        occurredAt: nowIso(),
+        actor: { type: "agent", id: "weave.maintainer" },
+        payload: { sliceId: "02-authenticated-integration-ingress", title: "Authenticated Integration Ingress", approvedBy: "maintainer" },
+      } }] });
+    }
+    throw new Error(`Unexpected query: ${sql}`);
+  },
+} as never, "initiative-thread");
+assert(projectedStatus);
+assert.equal(projectedStatus.status, "blocked");
+assert.deepEqual(projectedStatus.currentSlice, {
+  sliceId: "02-authenticated-integration-ingress",
+  title: "Authenticated Integration Ingress",
+  status: "blocked",
+});
+assert.match(formatInitiativeStatus(projectedStatus), /Blocker: Implementation child failed/);
 
 const checkpoint = OperatorSourceCheckpointSummarySchema.parse({
   checkpointId: "11111111-1111-4111-8111-111111111111",
