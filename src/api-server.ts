@@ -108,7 +108,7 @@ export function createApiServer(engine: ThreadEngine, service: ThreadService, op
   const observability = options.observability ?? new NoopObservabilitySink();
   const beforeRoutes = [
     ...(options.beforeRoutes ?? []),
-    ...createIntegrationRoutes(options.app?.integrations, { engine, service }),
+    ...createIntegrationRoutes(options.app?.integrations, { engine, service, auth: options.auth }),
   ];
   return createServer(async (request, response) => {
     const span = apiSpanContext(request);

@@ -36,7 +36,8 @@ export type WeaveAction =
   | { type: "thread.signal"; threadId?: string; signalName?: string }
   | { type: "gate.resolve"; threadId?: string; gateId?: string; resolution?: "approved" | "denied" }
   | { type: "thread.cancel"; threadId?: string }
-  | { type: "artifact.read"; threadId?: string };
+  | { type: "artifact.read"; threadId?: string }
+  | { type: "integration.trigger"; integrationName: string; triggerName?: string };
 
 export type AuthorizationRequest = {
   context: AuthContext;
@@ -400,6 +401,56 @@ export function allowServiceToReadArtifacts(serviceName: string): AccessRule {
     matchPrincipalId(serviceName),
     matchActionTypeAny("artifact.read"),
     { allowed: true, reason: `Service ${serviceName} allowed to read artifacts` },
+  );
+}
+
+function matchIntegrationName(integrationName: string): RuleActionMatcher {
+  return (action: WeaveAction) => {
+    if (action.type !== "integration.trigger") {
+      return false;
+    }
+    return action.integrationName === integrationName;
+  };
+}
+
+function matchIntegrationNameAndTrigger(integrationName: string, triggerName: string): RuleActionMatcher {
+  return (action: WeaveAction) => {
+    if (action.type !== "integration.trigger") {
+      return false;
+    }
+    return action.integrationName === integrationName && action.triggerName === triggerName;
+  };
+}
+
+export function allowIntegrationToTrigger(integrationName: string): AccessRule {
+  return buildRule(
+    matchAll(),
+    matchIntegrationName(integrationName),
+    { allowed: true, reason: `Integration ${integrationName} allowed to trigger` },
+  );
+}
+
+export function allowUserToTriggerIntegration(userId: string, integrationName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchIntegrationName(integrationName),
+    { allowed: true, reason: `User ${userId} allowed to trigger integration ${integrationName}` },
+  );
+}
+
+export function allowGroupToTriggerIntegration(group: string, integrationName: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchIntegrationName(integrationName),
+    { allowed: true, reason: `Group ${group} allowed to trigger integration ${integrationName}` },
+  );
+}
+
+export function allowUserToTriggerIntegrationAction(userId: string, integrationName: string, triggerName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchIntegrationNameAndTrigger(integrationName, triggerName),
+    { allowed: true, reason: `User ${userId} allowed to trigger ${triggerName} on integration ${integrationName}` },
   );
 }
 
