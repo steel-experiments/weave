@@ -15,6 +15,7 @@ import {
   SliceRunnerInputSchema,
   SourceCheckpointFailedSchema,
   SourceCheckpointProposedSchema,
+  SourceCheckpointRestoredSchema,
   SourceCheckpointSchema,
   ImplementationSummarySchema,
   OpenCodeImplementerInputSchema,
@@ -346,6 +347,22 @@ assert.equal(
   }).changedFiles.length,
   0,
 );
+const restoredCheckpoint = SourceCheckpointRestoredSchema.parse({
+  checkpointId: sourceCheckpoint.checkpointId,
+  initiativeThreadId: sourceCheckpoint.initiativeThreadId,
+  sliceThreadId: sourceCheckpoint.sliceThreadId,
+  sliceId: sourceCheckpoint.sliceId,
+  title: sourceCheckpoint.title,
+  workspaceRef,
+  restoredBy: "operator",
+  fromSha: "fedcba",
+  checkpointSha: sourceCheckpoint.checkpointSha,
+  restoredSha: sourceCheckpoint.checkpointSha,
+  dirtyBefore: false,
+  forced: false,
+  restoredAt: nowIso(),
+});
+assert.equal(restoredCheckpoint.restoredSha, sourceCheckpoint.checkpointSha);
 
 const review = ReviewResultSchema.parse({
   reviewer: "architecture-reviewer",
@@ -522,6 +539,19 @@ const parsedCheckpointEvent = ThreadEventSchema.parse({
 
 assert.equal(parsedCheckpointEvent.type, "dev.source_checkpoint.created");
 assert.equal(parsedCheckpointEvent.payload.checkpointSha, "def456");
+
+const sourceCheckpointRestored = developmentEvents.sourceCheckpointRestored(restoredCheckpoint);
+assert.equal(sourceCheckpointRestored.type, "dev.source_checkpoint.restored");
+const parsedRestoredEvent = ThreadEventSchema.parse({
+  eventId: eventKey("dev-thread", "dev.source_checkpoint.restored", "source-checkpoint-restored"),
+  threadId: "dev-thread",
+  type: "dev.source_checkpoint.restored",
+  occurredAt: nowIso(),
+  actor: { type: "human", id: "operator" },
+  payload: sourceCheckpointRestored.payload,
+});
+assert.equal(parsedRestoredEvent.type, "dev.source_checkpoint.restored");
+assert.equal(parsedRestoredEvent.payload.restoredBy, "operator");
 
 const actualRepoContext = await readDevelopmentRepoContext({
   repo: "weave",

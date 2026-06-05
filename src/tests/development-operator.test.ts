@@ -7,8 +7,10 @@ import {
   formatSourceCheckpointDetail,
   formatSourceCheckpointDiff,
   formatSourceCheckpointList,
+  formatSourceCheckpointRestoreResult,
   OperatorGateSummarySchema,
   OperatorInitiativeStatusSchema,
+  OperatorSourceCheckpointRestoreResultSchema,
   OperatorSourceCheckpointSummarySchema,
 } from "../development-operator.js";
 
@@ -90,6 +92,15 @@ const checkpoint = OperatorSourceCheckpointSummarySchema.parse({
   sliceThreadId: "slice-thread",
   sliceId: "01-prd-compiler",
   title: "PRD Compiler",
+  workspaceRef: {
+    provider: "git-worktree",
+    workspaceId: "workspace",
+    path: "/tmp/weave/workspace",
+    repo: "weave",
+    baseBranch: "main",
+    workingBranch: "prd-automation",
+    baseCommit: "abc123",
+  },
   workspacePath: "/tmp/weave/workspace",
   workingBranch: "prd-automation",
   baseSha: "abc123",
@@ -107,5 +118,23 @@ assert.match(formatSourceCheckpointList([checkpoint]), /checkpoints:show/);
 assert.match(formatSourceCheckpointDetail(checkpoint), /Changed Files/);
 assert.match(formatSourceCheckpointDetail(checkpoint), /src\/development-orchestrator.ts/);
 assert.equal(formatSourceCheckpointDiff(checkpoint), checkpoint.diffCommand);
+
+const blockedRestore = OperatorSourceCheckpointRestoreResultSchema.parse({
+  status: "blocked",
+  checkpoint,
+  reason: "Restore requires explicit --confirm.",
+});
+assert.match(formatSourceCheckpointRestoreResult(blockedRestore), /blocked/);
+const restored = OperatorSourceCheckpointRestoreResultSchema.parse({
+  status: "restored",
+  checkpoint,
+  fromSha: "fedcba",
+  restoredSha: "def456",
+  dirtyBefore: false,
+  forced: false,
+  auditThreadId: "slice-thread",
+});
+assert.match(formatSourceCheckpointRestoreResult(restored), /Source checkpoint restored/);
+assert.match(formatSourceCheckpointRestoreResult(restored), /Audit thread/);
 
 console.log("Development operator tests passed");

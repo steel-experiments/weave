@@ -374,6 +374,22 @@ export const DevSourceCheckpointFailedPayloadSchema = z.object({
   failedAt: z.string().datetime().optional(),
 });
 
+export const DevSourceCheckpointRestoredPayloadSchema = z.object({
+  checkpointId: z.string().uuid(),
+  initiativeThreadId: z.string().min(1),
+  sliceThreadId: z.string().min(1),
+  sliceId: z.string().min(1),
+  title: z.string().min(1).optional(),
+  workspaceRef: DevSourceCheckpointWorkspaceRefSchema,
+  restoredBy: z.string().min(1),
+  fromSha: z.string().min(1),
+  checkpointSha: z.string().min(1),
+  restoredSha: z.string().min(1),
+  dirtyBefore: z.boolean(),
+  forced: z.boolean().default(false),
+  restoredAt: z.string().datetime().optional(),
+});
+
 export const DevInitiativeStartedPayloadSchema = z.object({
   initiative: z.string().min(1),
   repo: z.string().min(1),
@@ -788,6 +804,11 @@ const DevSourceCheckpointFailedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: DevSourceCheckpointFailedPayloadSchema,
 });
 
+const DevSourceCheckpointRestoredEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.source_checkpoint.restored"),
+  payload: DevSourceCheckpointRestoredPayloadSchema,
+});
+
 export const ThreadEventSchema = z.discriminatedUnion("type", [
   SessionStartedEventSchema,
   PromptReceivedEventSchema,
@@ -842,6 +863,7 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   DevSourceCheckpointProposedEventSchema,
   DevSourceCheckpointCreatedEventSchema,
   DevSourceCheckpointFailedEventSchema,
+  DevSourceCheckpointRestoredEventSchema,
 ]);
 
 export type ThreadEvent = z.infer<typeof ThreadEventSchema>;

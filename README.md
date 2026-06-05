@@ -52,6 +52,7 @@ Inspect Weave Maintainer source checkpoints:
 npm run checkpoints:list -- <initiative-thread-id>
 npm run checkpoints:show -- <checkpoint-id-or-sha>
 npm run checkpoints:diff -- <checkpoint-id-or-sha>
+npm run checkpoints:restore -- <checkpoint-id-or-sha> --confirm [--force]
 ```
 
 Run the mock SRE north-star demo:

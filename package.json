@@ -46,6 +46,7 @@
     "checkpoints:list": "tsx src/scripts/development-operator.ts checkpoints:list",
     "checkpoints:show": "tsx src/scripts/development-operator.ts checkpoints:show",
     "checkpoints:diff": "tsx src/scripts/development-operator.ts checkpoints:diff",
+    "checkpoints:restore": "tsx src/scripts/development-operator.ts checkpoints:restore",
     "initiative:run": "tsx src/scripts/initiative-run.ts",
     "dashboard": "tsx src/scripts/dashboard.ts",
     "sre:demo": "tsx examples/sre-demo/src/index.ts",

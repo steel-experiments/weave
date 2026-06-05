@@ -7,6 +7,7 @@ import {
   formatSourceCheckpointDetail,
   formatSourceCheckpointDiff,
   formatSourceCheckpointList,
+  formatSourceCheckpointRestoreResult,
   getGate,
   getInitiativeStatus,
   getSourceCheckpoint,
@@ -15,6 +16,7 @@ import {
   listPendingGates,
   listSourceCheckpoints,
   resolveOperatorGate,
+  restoreSourceCheckpoint,
 } from "../development-operator.js";
 import { migrate } from "../migrate.js";
 import { PostgresThreadEngine } from "../postgres-engine.js";
@@ -104,6 +106,17 @@ async function run(command: string, args: string[]): Promise<void> {
       console.log(formatSourceCheckpointDiff(checkpoint));
       return;
     }
+    case "checkpoints:restore": {
+      const checkpointIdOrSha = requiredArg(args, 0, "checkpoint id or sha");
+      console.log(formatSourceCheckpointRestoreResult(await restoreSourceCheckpoint({
+        pool,
+        checkpointIdOrSha,
+        confirmed: hasFlag(args, "--confirm"),
+        force: hasFlag(args, "--force"),
+        actorId: optionValue(args, "--actor") ?? "operator",
+      })));
+      return;
+    }
     default:
       usage(1);
   }
@@ -129,6 +142,10 @@ function optionValue(args: readonly string[], name: string): string | undefined 
   return value;
 }
 
+function hasFlag(args: readonly string[], name: string): boolean {
+  return args.includes(name);
+}
+
 function usage(exitCode: number): never {
   console.error([
     "Usage:",
@@ -141,6 +158,7 @@ function usage(exitCode: number): never {
     "  npm run checkpoints:list -- <initiative-thread-id>",
     "  npm run checkpoints:show -- <checkpoint-id-or-sha>",
     "  npm run checkpoints:diff -- <checkpoint-id-or-sha>",
+    "  npm run checkpoints:restore -- <checkpoint-id-or-sha> --confirm [--force]",
   ].join("\n"));
   process.exit(exitCode);
 }

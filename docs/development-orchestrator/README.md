@@ -177,7 +177,7 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 18. Source Checkpoint Contracts | Shipped | `slices/18-source-checkpoint-contracts.md` | Durable schemas and events describe source-code checkpoints without mutating Git. |
 | 19. Per-Slice Git Commit Checkpoints | Shipped | `slices/19-per-slice-git-commit-checkpoints.md` | Passing slices create Git commits and store their SHAs as source checkpoints. |
 | 20. Source Checkpoint Inspection | Shipped | `slices/20-source-checkpoint-inspection.md` | Operator CLI and dashboard expose per-slice checkpoint metadata and diff commands. |
-| 21. Guarded Source Checkpoint Restore | Proposed | `slices/21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |
+| 21. Guarded Source Checkpoint Restore | Shipped | `slices/21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |
 | 22. Finalization Git Side Effects | Proposed | `slices/22-finalization-git-side-effects.md` | Explicit finalization modes can merge or open PRs only after final approval. |
 | 23. Auth Gateway Epic PRD | Proposed | `slices/23-auth-gateway-epic-prd.md` | A multi-slice auth PRD lets Maintainer execute remaining auth slices as one epic after checkpointing. |
 
@@ -245,6 +245,7 @@ Commands:
 - `npm run checkpoints:list -- <initiative-thread-id>`
 - `npm run checkpoints:show -- <checkpoint-id-or-sha>`
 - `npm run checkpoints:diff -- <checkpoint-id-or-sha>`
+- `npm run checkpoints:restore -- <checkpoint-id-or-sha> --confirm [--force]`
 
 Typical approval flow:
 
@@ -309,6 +310,8 @@ The checkpoint payload records the initiative thread, slice thread, slice id, wo
 Slice 19 adds per-slice Git commit creation. After implementation, verification, and review pass, the slice runner stages all workspace changes, commits them on the working branch, stores `source-checkpoint:<sliceId>`, and then marks the slice completed. Empty diffs, branch mismatches, or Git commit failures stop at a `source-checkpoint-stop` human gate. Later slices can inspect, restore, and finalize from these checkpoint SHAs.
 
 Slice 20 adds checkpoint inspection. Operators can list checkpoints for an initiative, inspect a checkpoint by id or SHA, or print a ready-to-run diff command. The local dashboard shows source checkpoints next to the selected initiative without adding dashboard-owned state.
+
+Slice 21 adds guarded restore. `checkpoints:restore` moves the initiative worktree back to a checkpoint SHA only when `--confirm` is supplied. Dirty worktrees are blocked by default and require `--force` to discard local changes. Successful restores emit `dev.source_checkpoint.restored` for audit.
 
 ## Local Dashboard
 

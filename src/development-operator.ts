@@ -1,10 +1,14 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { Pool } from "pg";
 import { z } from "zod";
-import { DevelopmentCheckpointKeys, InitiativePlanSchema, SourceCheckpointSchema } from "./development-orchestrator.js";
-import { ThreadEventSchema, type ThreadEvent } from "./events.js";
+import { DevelopmentCheckpointKeys, InitiativePlanSchema, SourceCheckpointRestoredSchema, SourceCheckpointSchema, developmentEvents } from "./development-orchestrator.js";
+import { ThreadEventSchema, newEventId, nowIso, type ThreadEvent } from "./events.js";
+import { PostgresThreadEngine } from "./postgres-engine.js";
 import { ThreadService } from "./thread-service.js";
 
 const NonEmptyStringSchema = z.string().min(1);
+const execFileAsync = promisify(execFile);
 
 export const OperatorGateSummarySchema = z.object({
   gateId: NonEmptyStringSchema,
@@ -64,6 +68,7 @@ export const OperatorSourceCheckpointSummarySchema = z.object({
   sliceThreadId: NonEmptyStringSchema,
   sliceId: NonEmptyStringSchema,
   title: NonEmptyStringSchema.optional(),
+  workspaceRef: SourceCheckpointSchema.shape.workspaceRef,
   workspacePath: NonEmptyStringSchema,
   workingBranch: NonEmptyStringSchema,
   baseSha: NonEmptyStringSchema,
@@ -76,6 +81,27 @@ export const OperatorSourceCheckpointSummarySchema = z.object({
   diffCommand: NonEmptyStringSchema,
 });
 export type OperatorSourceCheckpointSummary = z.infer<typeof OperatorSourceCheckpointSummarySchema>;
+
+export const OperatorSourceCheckpointRestoreResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("restored"),
+    checkpoint: OperatorSourceCheckpointSummarySchema,
+    fromSha: NonEmptyStringSchema,
+    restoredSha: NonEmptyStringSchema,
+    dirtyBefore: z.boolean(),
+    forced: z.boolean(),
+    auditThreadId: NonEmptyStringSchema.optional(),
+  }),
+  z.object({
+    status: z.literal("blocked"),
+    checkpoint: OperatorSourceCheckpointSummarySchema.optional(),
+    reason: NonEmptyStringSchema,
+    currentSha: NonEmptyStringSchema.optional(),
+    dirty: z.boolean().optional(),
+    changedFiles: z.array(NonEmptyStringSchema).default([]),
+  }),
+]);
+export type OperatorSourceCheckpointRestoreResult = z.infer<typeof OperatorSourceCheckpointRestoreResultSchema>;
 
 export async function listPendingGates(pool: Pool): Promise<OperatorGateSummary[]> {
   const result = await pool.query<GateRow>(
@@ -251,6 +277,111 @@ export async function getSourceCheckpoint(pool: Pool, checkpointIdOrSha: string)
   return row ? sourceCheckpointSummaryFromRow(row) : undefined;
 }
 
+export async function restoreSourceCheckpoint(input: {
+  pool: Pool;
+  checkpointIdOrSha: string;
+  confirmed: boolean;
+  force?: boolean;
+  actorId?: string;
+}): Promise<OperatorSourceCheckpointRestoreResult> {
+  const checkpoint = await getSourceCheckpoint(input.pool, input.checkpointIdOrSha);
+  if (!checkpoint) {
+    throw new Error(`Source checkpoint not found: ${input.checkpointIdOrSha}`);
+  }
+
+  const restore = await restoreSourceCheckpointWorktree(checkpoint, { confirmed: input.confirmed, force: input.force ?? false });
+  if (restore.status !== "restored") {
+    return restore;
+  }
+
+  const payload = SourceCheckpointRestoredSchema.parse({
+    checkpointId: checkpoint.checkpointId,
+    initiativeThreadId: checkpoint.initiativeThreadId,
+    sliceThreadId: checkpoint.sliceThreadId,
+    sliceId: checkpoint.sliceId,
+    title: checkpoint.title,
+    workspaceRef: checkpoint.workspaceRef,
+    restoredBy: input.actorId ?? "operator",
+    fromSha: restore.fromSha,
+    checkpointSha: checkpoint.checkpointSha,
+    restoredSha: restore.restoredSha,
+    dirtyBefore: restore.dirtyBefore,
+    forced: restore.forced,
+    restoredAt: nowIso(),
+  });
+  const event = developmentEvents.sourceCheckpointRestored(payload);
+  const engine = new PostgresThreadEngine(input.pool);
+  await engine.append([
+    ThreadEventSchema.parse({
+      eventId: newEventId(),
+      threadId: checkpoint.sliceThreadId,
+      type: event.type,
+      occurredAt: nowIso(),
+      actor: { type: "human", id: input.actorId ?? "operator" },
+      payload: event.payload,
+    }),
+  ]);
+
+  return OperatorSourceCheckpointRestoreResultSchema.parse({ ...restore, auditThreadId: checkpoint.sliceThreadId });
+}
+
+export async function restoreSourceCheckpointWorktree(
+  checkpoint: OperatorSourceCheckpointSummary,
+  options: { confirmed: boolean; force?: boolean },
+): Promise<OperatorSourceCheckpointRestoreResult> {
+  if (!options.confirmed) {
+    return OperatorSourceCheckpointRestoreResultSchema.parse({
+      status: "blocked",
+      checkpoint,
+      reason: "Restore requires explicit --confirm.",
+    });
+  }
+  if (checkpoint.workingBranch === "main") {
+    return OperatorSourceCheckpointRestoreResultSchema.parse({
+      status: "blocked",
+      checkpoint,
+      reason: "Refusing to restore main through the development checkpoint operator.",
+    });
+  }
+
+  const currentBranch = (await git(checkpoint.workspacePath, ["branch", "--show-current"])).trim();
+  if (currentBranch !== checkpoint.workingBranch) {
+    return OperatorSourceCheckpointRestoreResultSchema.parse({
+      status: "blocked",
+      checkpoint,
+      reason: `Workspace branch ${currentBranch || "DETACHED_HEAD"} does not match checkpoint branch ${checkpoint.workingBranch}.`,
+    });
+  }
+
+  const currentSha = (await git(checkpoint.workspacePath, ["rev-parse", "HEAD"])).trim();
+  const changedFiles = parseGitStatusChangedFiles(await git(checkpoint.workspacePath, ["status", "--porcelain", "--untracked-files=all"]));
+  const dirty = changedFiles.length > 0;
+  if (dirty && !options.force) {
+    return OperatorSourceCheckpointRestoreResultSchema.parse({
+      status: "blocked",
+      checkpoint,
+      reason: "Workspace has uncommitted changes. Re-run with --force to discard them.",
+      currentSha,
+      dirty,
+      changedFiles,
+    });
+  }
+
+  await git(checkpoint.workspacePath, ["reset", "--hard", checkpoint.checkpointSha]);
+  if (dirty && options.force) {
+    await git(checkpoint.workspacePath, ["clean", "-fd"]);
+  }
+  const restoredSha = (await git(checkpoint.workspacePath, ["rev-parse", "HEAD"])).trim();
+  return OperatorSourceCheckpointRestoreResultSchema.parse({
+    status: "restored",
+    checkpoint,
+    fromSha: currentSha,
+    restoredSha,
+    dirtyBefore: dirty,
+    forced: options.force ?? false,
+  });
+}
+
 export async function resolveOperatorGate(input: {
   pool: Pool;
   service: ThreadService;
@@ -381,6 +512,26 @@ export function formatSourceCheckpointDetail(checkpoint: OperatorSourceCheckpoin
 
 export function formatSourceCheckpointDiff(checkpoint: OperatorSourceCheckpointSummary): string {
   return checkpoint.diffCommand;
+}
+
+export function formatSourceCheckpointRestoreResult(result: OperatorSourceCheckpointRestoreResult): string {
+  if (result.status === "blocked") {
+    return [
+      "Source checkpoint restore blocked.",
+      `Reason: ${result.reason}`,
+      ...(result.checkpoint ? [`Checkpoint: ${result.checkpoint.checkpointSha}`] : []),
+      ...(result.changedFiles.length > 0 ? ["Changed files:", ...result.changedFiles.map((file) => `- ${file}`)] : []),
+    ].join("\n");
+  }
+  return [
+    "Source checkpoint restored.",
+    `Checkpoint: ${result.checkpoint.checkpointSha}`,
+    `Workspace: ${result.checkpoint.workspacePath}`,
+    `From: ${result.fromSha}`,
+    `To: ${result.restoredSha}`,
+    `Forced: ${result.forced}`,
+    ...(result.auditThreadId ? [`Audit thread: ${result.auditThreadId}`] : []),
+  ].join("\n");
 }
 
 export async function latestPlanForGate(pool: Pool, gate: OperatorGateSummary): Promise<unknown | undefined> {
@@ -591,6 +742,7 @@ function sourceCheckpointSummaryFromRow(row: SourceCheckpointRow): OperatorSourc
     sliceThreadId: checkpoint.sliceThreadId,
     sliceId: checkpoint.sliceId,
     title: checkpoint.title,
+    workspaceRef: checkpoint.workspaceRef,
     workspacePath: checkpoint.workspaceRef.path,
     workingBranch: checkpoint.workspaceRef.workingBranch,
     baseSha: checkpoint.baseSha,
@@ -606,6 +758,15 @@ function sourceCheckpointSummaryFromRow(row: SourceCheckpointRow): OperatorSourc
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+async function git(cwd: string, args: readonly string[]): Promise<string> {
+  const { stdout } = await execFileAsync("git", [...args], { cwd });
+  return String(stdout);
+}
+
+function parseGitStatusChangedFiles(output: string): string[] {
+  return [...new Set(output.split("\n").map((line) => line.trimEnd()).filter(Boolean).map((line) => line.slice(3).trim()).filter(Boolean))];
 }
 
 function toIso(value: Date | string): string {

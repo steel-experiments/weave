@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-05`
 - Owner: `weave-maintainer`
 
@@ -47,25 +47,33 @@ As a maintainer, I can move an initiative worktree back to a known slice checkpo
 
 ## Acceptance Criteria
 
-- [ ] Restore can target a known source checkpoint.
-- [ ] Dirty worktrees are protected by default.
-- [ ] Restore emits a durable audit event.
-- [ ] Restore requires explicit human confirmation.
-- [ ] Restore does not affect `main` unless explicitly configured outside this slice.
+- [x] Restore can target a known source checkpoint.
+- [x] Dirty worktrees are protected by default.
+- [x] Restore emits a durable audit event.
+- [x] Restore requires explicit human confirmation.
+- [x] Restore does not affect `main` unless explicitly configured outside this slice.
 
 ## Progress
 
-- [ ] Add restore contracts.
-- [ ] Add guarded operator command.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Add restore contracts.
+- [x] Add guarded operator command.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `SourceCheckpointRestoredSchema` and `dev.source_checkpoint.restored` for restore audit facts.
+- Added guarded operator restore support through `restoreSourceCheckpoint(...)` and `restoreSourceCheckpointWorktree(...)`.
+- Added `npm run checkpoints:restore -- <checkpoint-id-or-sha> --confirm [--force]`.
+- Restore refuses to run without `--confirm`.
+- Restore refuses dirty worktrees unless `--force` is supplied.
+- Restore refuses to operate on `main` through this development checkpoint operator.
+- Successful restores append `dev.source_checkpoint.restored` to the slice thread.
+- Added contract, operator formatting, and temporary Git worktree restore tests.
+- No automatic rollback, merge, push, or PR side effect was added.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] operator runbook docs
+- [x] this slice document
+- [x] `../README.md`
+- [x] operator runbook docs

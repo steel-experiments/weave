@@ -31,6 +31,7 @@ import {
   DevSourceCheckpointFailedPayloadSchema,
   DevSourceCheckpointProposedPayloadSchema,
   DevSourceCheckpointReviewSummarySchema,
+  DevSourceCheckpointRestoredPayloadSchema,
   DevSourceCheckpointVerificationSummarySchema,
   DevVerificationCompletedPayloadSchema,
   DevCommandResultSchema,
@@ -329,6 +330,11 @@ export const SourceCheckpointFailedSchema = DevSourceCheckpointFailedPayloadSche
   workspaceRef: WorkspaceRefSchema.optional(),
 });
 export type SourceCheckpointFailed = z.infer<typeof SourceCheckpointFailedSchema>;
+
+export const SourceCheckpointRestoredSchema = DevSourceCheckpointRestoredPayloadSchema.extend({
+  workspaceRef: WorkspaceRefSchema,
+});
+export type SourceCheckpointRestored = z.infer<typeof SourceCheckpointRestoredSchema>;
 
 export const SourceCheckpointCreateInputSchema = z.object({
   initiativeThreadId: NonEmptyStringSchema,
@@ -1307,6 +1313,13 @@ export const developmentEvents = {
     visibility: "internal",
     version: 1,
     description: "A source checkpoint could not be created for a development slice.",
+  }),
+  sourceCheckpointRestored: event({
+    type: "dev.source_checkpoint.restored",
+    payload: DevSourceCheckpointRestoredPayloadSchema,
+    visibility: "internal",
+    version: 1,
+    description: "An operator restored an initiative workspace to a source checkpoint.",
   }),
 } as const;
 

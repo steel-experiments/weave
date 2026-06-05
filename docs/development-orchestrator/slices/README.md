@@ -28,7 +28,7 @@ These slices are intentionally separate from `../../slices/51-auth-gateway-threa
 | 18. Source Checkpoint Contracts | Shipped | `18-source-checkpoint-contracts.md` | Durable schemas and events describe source-code checkpoints without mutating Git. |
 | 19. Per-Slice Git Commit Checkpoints | Shipped | `19-per-slice-git-commit-checkpoints.md` | Passing slices create Git commits and store their SHAs as source checkpoints. |
 | 20. Source Checkpoint Inspection | Shipped | `20-source-checkpoint-inspection.md` | Operator CLI and dashboard expose per-slice checkpoint metadata and diff commands. |
-| 21. Guarded Source Checkpoint Restore | Proposed | `21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |
+| 21. Guarded Source Checkpoint Restore | Shipped | `21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |
 | 22. Finalization Git Side Effects | Proposed | `22-finalization-git-side-effects.md` | Explicit finalization modes can merge or open PRs only after final approval. |
 | 23. Auth Gateway Epic PRD | Proposed | `23-auth-gateway-epic-prd.md` | A multi-slice auth PRD lets Maintainer execute remaining auth slices as one epic after checkpointing. |
 

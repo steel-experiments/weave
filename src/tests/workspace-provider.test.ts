@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import { createGitSourceCheckpoint } from "../development-orchestrator.js";
+import { restoreSourceCheckpointWorktree } from "../development-operator.js";
 import {
   GitWorktreeWorkspaceProvider,
   WorkspaceAllocateInputSchema,
@@ -99,6 +100,36 @@ try {
   assert.equal(sourceCheckpoint.status, "created");
   assert.equal(sourceCheckpoint.changedFiles.includes("README.md"), true);
   assert.notEqual(sourceCheckpoint.checkpointSha, baseCommit);
+
+  if (sourceCheckpoint.status !== "created") {
+    throw new Error("Expected source checkpoint creation to succeed.");
+  }
+  const checkpointSummary = {
+    checkpointId: sourceCheckpoint.checkpointId,
+    initiativeThreadId: sourceCheckpoint.initiativeThreadId,
+    sliceThreadId: sourceCheckpoint.sliceThreadId,
+    sliceId: sourceCheckpoint.sliceId,
+    title: sourceCheckpoint.title,
+    workspaceRef: sourceCheckpoint.workspaceRef,
+    workspacePath: sourceCheckpoint.workspaceRef.path,
+    workingBranch: sourceCheckpoint.workspaceRef.workingBranch,
+    baseSha: sourceCheckpoint.baseSha,
+    checkpointSha: sourceCheckpoint.checkpointSha,
+    changedFiles: sourceCheckpoint.changedFiles,
+    commitMessage: sourceCheckpoint.commitMessage,
+    createdAt: sourceCheckpoint.createdAt,
+    eventThreadId: sourceCheckpoint.sliceThreadId,
+    eventSeq: 1,
+    diffCommand: `git -C '${sourceCheckpoint.workspaceRef.path}' diff ${sourceCheckpoint.baseSha}..${sourceCheckpoint.checkpointSha} --`,
+  };
+  await writeFile(path.join(ref.path, "LATER.md"), "later\n", "utf8");
+  assert.equal((await restoreSourceCheckpointWorktree(checkpointSummary, { confirmed: false })).status, "blocked");
+  const dirtyRestore = await restoreSourceCheckpointWorktree(checkpointSummary, { confirmed: true });
+  assert.equal(dirtyRestore.status, "blocked");
+  assert.match(dirtyRestore.status === "blocked" ? dirtyRestore.reason : "", /uncommitted/);
+  const forcedRestore = await restoreSourceCheckpointWorktree(checkpointSummary, { confirmed: true, force: true });
+  assert.equal(forcedRestore.status, "restored");
+  assert.equal(forcedRestore.status === "restored" ? forcedRestore.restoredSha : "", sourceCheckpoint.checkpointSha);
 
   await writeFile(path.join(ref.path, "UNCOMMITTED.md"), "pending\n", "utf8");
 
