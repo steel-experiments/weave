@@ -18,6 +18,45 @@ export const InitiativeRunOptionsSchema = z.object({
 });
 export type InitiativeRunOptions = z.infer<typeof InitiativeRunOptionsSchema>;
 
+export function formatInitiativeRunResumeCommand(input: {
+  from: string;
+  idempotencyKey: string;
+  baseBranch: string;
+  workingBranch: string;
+  workspaceRoot?: string;
+  timeoutMs?: number;
+  openCodeCommand?: string;
+  openCodeArgs?: readonly string[];
+}): string {
+  const args = [
+    "npm",
+    "run",
+    "initiative:run",
+    "--",
+    "--from",
+    input.from,
+    "--base-branch",
+    input.baseBranch,
+    "--working-branch",
+    input.workingBranch,
+    "--idempotency-key",
+    input.idempotencyKey,
+  ];
+  if (input.workspaceRoot) {
+    args.push("--workspace-root", input.workspaceRoot);
+  }
+  if (input.timeoutMs) {
+    args.push("--timeout-ms", String(input.timeoutMs));
+  }
+  if (input.openCodeCommand) {
+    args.push("--opencode-command", input.openCodeCommand);
+  }
+  if (input.openCodeArgs && input.openCodeArgs.length > 0) {
+    args.push("--opencode-args", input.openCodeArgs.join(" "));
+  }
+  return args.map(shellArg).join(" ");
+}
+
 export function parseInitiativeRunOptions(args: readonly string[]): InitiativeRunOptions {
   const parsed: Record<string, unknown> = {};
   for (let index = 0; index < args.length; index += 1) {
@@ -143,4 +182,8 @@ function requiredValue(args: readonly string[], index: number, flag: string): st
     throw new Error(`${flag} requires a value.`);
   }
   return value;
+}
+
+function shellArg(value: string): string {
+  return /^[A-Za-z0-9_./:=@+-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 }

@@ -18,7 +18,7 @@ import {
   type VerificationAgentInput,
   type VerificationResult,
 } from "../development-orchestrator.js";
-import { buildInitiativeRunInput, parseInitiativeRunOptions } from "../development-initiative-runner.js";
+import { buildInitiativeRunInput, formatInitiativeRunResumeCommand, parseInitiativeRunOptions } from "../development-initiative-runner.js";
 import { formatInitiativeStatus, getInitiativeStatus } from "../development-operator.js";
 import type { DevCommandResult, DevReviewFinding, ThreadEvent, ThreadProjection } from "../events.js";
 import { migrate } from "../migrate.js";
@@ -106,7 +106,16 @@ try {
       }
       console.log("");
       console.log(`Next: npm run gates:show -- ${stop.gates[0]?.gateId}`);
-      console.log(`Then: npm run initiative:run -- --from ${options.from} --idempotency-key ${idempotencyKey}`);
+      console.log(`Then: ${formatInitiativeRunResumeCommand({
+        from: options.from,
+        idempotencyKey,
+        baseBranch: initiativeInput.baseBranch,
+        workingBranch: initiativeInput.workingBranch,
+        workspaceRoot: options.workspaceRoot,
+        ...(options.timeoutMs !== 900_000 ? { timeoutMs: options.timeoutMs } : {}),
+        ...(options.openCodeCommand ? { openCodeCommand: options.openCodeCommand } : {}),
+        ...(options.openCodeArgs ? { openCodeArgs: options.openCodeArgs } : {}),
+      })}`);
     } else {
       const root = stop.tree.find((thread) => thread.threadId === session.threadId);
       console.log("");

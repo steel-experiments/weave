@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   buildInitiativeRunInput,
+  formatInitiativeRunResumeCommand,
   parseInitiativeRunOptions,
   slugify,
   titleFromMarkdown,
@@ -32,6 +33,22 @@ assert.equal(parsed.baseBranch, "main");
 assert.equal(parsed.workingBranch, "prd-automation");
 assert.equal(parsed.timeoutMs, 12345);
 assert.deepEqual(parsed.openCodeArgs, ["run", "--format", "json"]);
+assert.equal(
+  formatInitiativeRunResumeCommand({
+    from: "docs/prds/auth-gateway-epic.md",
+    baseBranch: "main",
+    workingBranch: "auth-gateway-remaining",
+    idempotencyKey: "initiative-run:v1:f13b53d0f365:main:auth-gateway-remaining",
+  }),
+  "npm run initiative:run -- --from docs/prds/auth-gateway-epic.md --base-branch main --working-branch auth-gateway-remaining --idempotency-key initiative-run:v1:f13b53d0f365:main:auth-gateway-remaining",
+);
+assert.match(formatInitiativeRunResumeCommand({
+  from: "docs/prds/auth gateway.md",
+  baseBranch: "main",
+  workingBranch: "auth-gateway-remaining",
+  idempotencyKey: "key",
+  openCodeArgs: ["run", "--format", "json"],
+}), /'docs\/prds\/auth gateway\.md'/);
 assert.throws(() => parseInitiativeRunOptions(["--from"]), /requires a value/);
 assert.throws(() => parseInitiativeRunOptions(["--unknown"]), /Unknown option/);
 
