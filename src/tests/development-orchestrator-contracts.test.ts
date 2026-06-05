@@ -13,6 +13,9 @@ import {
   InitiativeExecutionStateSchema,
   SliceExecutionStateSchema,
   SliceRunnerInputSchema,
+  SourceCheckpointFailedSchema,
+  SourceCheckpointProposedSchema,
+  SourceCheckpointSchema,
   ImplementationSummarySchema,
   OpenCodeImplementerInputSchema,
   PrDraftInputSchema,
@@ -161,6 +164,7 @@ assert.equal(DevelopmentCheckpointKeys.approvedInitiativePlan, "approved-initiat
 assert.equal(DevelopmentCheckpointKeys.latestPlanDecision, "latest-plan-decision");
 assert.equal(DevelopmentCheckpointKeys.approvedSlicePlan, "approved-slice-plan");
 assert.equal(DevelopmentCheckpointKeys.workspaceRef, "workspace-ref");
+assert.equal(DevelopmentCheckpointKeys.sourceCheckpoint, "source-checkpoint");
 assert.equal(buildDevelopmentSlicePlan(initiative).summary, "Plan 1 development slice for Build Weave Maintainer.");
 
 const compiledPlan = compileMarkdownInitiativePlan({
@@ -304,6 +308,44 @@ const verification = VerificationResultSchema.parse({
 });
 
 assert.equal(verification.commands[0]?.status, "passed");
+
+const sourceCheckpoint = SourceCheckpointSchema.parse({
+  checkpointId: deterministicUuid("source-checkpoint", validSlice.id),
+  initiativeThreadId: "initiative-thread-01",
+  sliceThreadId: "slice-thread-01",
+  sliceId: validSlice.id,
+  title: validSlice.title,
+  workspaceRef,
+  baseSha: "abc123",
+  checkpointSha: "def456",
+  changedFiles: ["src/development-orchestrator.ts", "src/events.ts"],
+  commitMessage: "feat(dev-orchestrator): add source checkpoint contracts",
+  verificationSummary: {
+    status: "passed",
+    commands: verification.commands,
+  },
+  reviewSummary: [
+    {
+      reviewer: "architecture-reviewer",
+      verdict: "pass",
+      findingCount: 0,
+    },
+  ],
+});
+
+assert.equal(sourceCheckpoint.workspaceRef.workingBranch, initiative.workingBranch);
+assert.equal(sourceCheckpoint.verificationSummary.commands[0]?.command, "npm test");
+assert.equal(SourceCheckpointSchema.safeParse({ ...sourceCheckpoint, changedFiles: [] }).success, false);
+assert.equal(SourceCheckpointProposedSchema.parse({ ...sourceCheckpoint, checkpointSha: undefined }).baseSha, "abc123");
+assert.equal(
+  SourceCheckpointFailedSchema.parse({
+    initiativeThreadId: sourceCheckpoint.initiativeThreadId,
+    sliceThreadId: sourceCheckpoint.sliceThreadId,
+    sliceId: sourceCheckpoint.sliceId,
+    reason: "No source changes to checkpoint.",
+  }).changedFiles.length,
+  0,
+);
 
 const review = ReviewResultSchema.parse({
   reviewer: "architecture-reviewer",
@@ -449,6 +491,37 @@ const reviewCompleted = developmentEvents.reviewCompleted({
 
 assert.equal(reviewCompleted.type, "dev.review.completed");
 assert.equal(developmentEvents.prReadyForReview.type, "dev.pr.ready_for_review");
+
+const sourceCheckpointCreated = developmentEvents.sourceCheckpointCreated(sourceCheckpoint);
+assert.equal(sourceCheckpointCreated.type, "dev.source_checkpoint.created");
+const { checkpointSha: _checkpointSha, createdAt: _createdAt, ...sourceCheckpointProposal } = sourceCheckpoint;
+assert.equal(developmentEvents.sourceCheckpointProposed(sourceCheckpointProposal).type, "dev.source_checkpoint.proposed");
+assert.equal(
+  developmentEvents.sourceCheckpointFailed({
+    initiativeThreadId: sourceCheckpoint.initiativeThreadId,
+    sliceThreadId: sourceCheckpoint.sliceThreadId,
+    sliceId: sourceCheckpoint.sliceId,
+    workspaceRef,
+    baseSha: sourceCheckpoint.baseSha,
+    changedFiles: sourceCheckpoint.changedFiles,
+    commitMessage: sourceCheckpoint.commitMessage,
+    reason: "git commit failed",
+    errorCode: "git-commit-failed",
+  }).type,
+  "dev.source_checkpoint.failed",
+);
+
+const parsedCheckpointEvent = ThreadEventSchema.parse({
+  eventId: eventKey("dev-thread", "dev.source_checkpoint.created", "source-checkpoint-created"),
+  threadId: "dev-thread",
+  type: "dev.source_checkpoint.created",
+  occurredAt: nowIso(),
+  actor: { type: "agent", id: "weave.sliceRunner" },
+  payload: sourceCheckpointCreated.payload,
+});
+
+assert.equal(parsedCheckpointEvent.type, "dev.source_checkpoint.created");
+assert.equal(parsedCheckpointEvent.payload.checkpointSha, "def456");
 
 const actualRepoContext = await readDevelopmentRepoContext({
   repo: "weave",

@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-05`
 - Owner: `weave-maintainer`
 
@@ -46,25 +46,31 @@ As a maintainer, I can see the durable schema Weave will use to represent a sour
 
 ## Acceptance Criteria
 
-- [ ] `source-checkpoint` is a first-class checkpoint name.
-- [ ] A source checkpoint payload can represent one slice commit with `baseSha` and `checkpointSha`.
-- [ ] Source checkpoint event payloads are schema validated.
-- [ ] Contracts include changed files, workspace reference, verification summary, and reviewer summary.
-- [ ] No Git mutation is introduced in this slice.
+- [x] `source-checkpoint` is a first-class checkpoint name.
+- [x] A source checkpoint payload can represent one slice commit with `baseSha` and `checkpointSha`.
+- [x] Source checkpoint event payloads are schema validated.
+- [x] Contracts include changed files, workspace reference, verification summary, and reviewer summary.
+- [x] No Git mutation is introduced in this slice.
 
 ## Progress
 
-- [ ] Add checkpoint constants and schemas.
-- [ ] Add event payload schemas.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Add checkpoint constants and schemas.
+- [x] Add event payload schemas.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `DevelopmentCheckpointKeys.sourceCheckpoint` with value `source-checkpoint`.
+- Added `SourceCheckpointSchema`, `SourceCheckpointProposedSchema`, and `SourceCheckpointFailedSchema` in `src/development-orchestrator.ts`.
+- Added source checkpoint verification/review summary contracts.
+- Added source checkpoint lifecycle events: `dev.source_checkpoint.proposed`, `dev.source_checkpoint.created`, and `dev.source_checkpoint.failed`.
+- Source checkpoint events are valid `ThreadEvent` records and are audit-only for inbox routing.
+- Added contract and public export smoke coverage.
+- No Git mutation, commit creation, rollback, merge, or PR side effect was added.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `docs/event-taxonomy.md` if the new events become part of the public event taxonomy
+- [x] this slice document
+- [x] `../README.md`
+- [x] `docs/event-taxonomy.md` if the new events become part of the public event taxonomy

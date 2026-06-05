@@ -143,10 +143,15 @@ The PoC uses this event set.
 - `dev.pr.opened`
 - `dev.pr.updated`
 - `dev.pr.ready_for_review`
+- `dev.source_checkpoint.proposed`
+- `dev.source_checkpoint.created`
+- `dev.source_checkpoint.failed`
 
 Development workflow events are internal audit facts for Weave-managed implementation initiatives. They are valid `ThreadEvent` records, but they do not wake runners or tool workers by default.
 
 The PRD/SOW planning events record compact lifecycle facts only. Full `InitiativeSpec` and `InitiativePlan` data belongs in checkpoints such as `initiative-spec`, `proposed-initiative-plan`, `approved-initiative-plan`, and `latest-plan-decision`.
+
+Source checkpoint events record the audit lifecycle for per-slice Git checkpoints. The full source checkpoint payload belongs in the `source-checkpoint` checkpoint and includes slice identity, workspace ref, `baseSha`, `checkpointSha`, changed files, commit message, verification summary, and review summary. Contract events are audit-only and do not wake runners or tool workers by default.
 
 ## Typed Payload Schemas
 

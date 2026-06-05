@@ -25,7 +25,7 @@ These slices are intentionally separate from `../../slices/51-auth-gateway-threa
 | 15. Resumable Initiative Runner Command | Shipped | `15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
 | 16. PR Draft Handoff Automation | Shipped | `16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
 | 17. Local Workflow Dashboard | Shipped | `17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
-| 18. Source Checkpoint Contracts | Proposed | `18-source-checkpoint-contracts.md` | Durable schemas and events describe source-code checkpoints without mutating Git. |
+| 18. Source Checkpoint Contracts | Shipped | `18-source-checkpoint-contracts.md` | Durable schemas and events describe source-code checkpoints without mutating Git. |
 | 19. Per-Slice Git Commit Checkpoints | Proposed | `19-per-slice-git-commit-checkpoints.md` | Passing slices create Git commits and store their SHAs as source checkpoints. |
 | 20. Source Checkpoint Inspection | Proposed | `20-source-checkpoint-inspection.md` | Operator CLI and dashboard expose per-slice checkpoint metadata and diff commands. |
 | 21. Guarded Source Checkpoint Restore | Proposed | `21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |

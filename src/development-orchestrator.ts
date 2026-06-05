@@ -27,6 +27,11 @@ import {
   DevSliceFailedPayloadSchema,
   DevSliceProposedPayloadSchema,
   DevSliceStartedPayloadSchema,
+  DevSourceCheckpointCreatedPayloadSchema,
+  DevSourceCheckpointFailedPayloadSchema,
+  DevSourceCheckpointProposedPayloadSchema,
+  DevSourceCheckpointReviewSummarySchema,
+  DevSourceCheckpointVerificationSummarySchema,
   DevVerificationCompletedPayloadSchema,
   DevCommandResultSchema,
   type DevReviewFinding,
@@ -67,6 +72,7 @@ export const DevelopmentCheckpointKeys = {
   prHandoff: "pr-handoff",
   prRemoteHandoff: "pr-remote-handoff",
   prUrl: "pr-url",
+  sourceCheckpoint: "source-checkpoint",
 } as const;
 export type DevelopmentCheckpointKey = (typeof DevelopmentCheckpointKeys)[keyof typeof DevelopmentCheckpointKeys];
 
@@ -300,6 +306,27 @@ export const DevelopmentBranchStateSchema = z.object({
   isDetachedHead: z.boolean(),
 });
 export type DevelopmentBranchState = z.infer<typeof DevelopmentBranchStateSchema>;
+
+export const SourceCheckpointVerificationSummarySchema = DevSourceCheckpointVerificationSummarySchema;
+export type SourceCheckpointVerificationSummary = z.infer<typeof SourceCheckpointVerificationSummarySchema>;
+
+export const SourceCheckpointReviewSummarySchema = DevSourceCheckpointReviewSummarySchema;
+export type SourceCheckpointReviewSummary = z.infer<typeof SourceCheckpointReviewSummarySchema>;
+
+export const SourceCheckpointSchema = DevSourceCheckpointCreatedPayloadSchema.extend({
+  workspaceRef: WorkspaceRefSchema,
+});
+export type SourceCheckpoint = z.infer<typeof SourceCheckpointSchema>;
+
+export const SourceCheckpointProposedSchema = DevSourceCheckpointProposedPayloadSchema.extend({
+  workspaceRef: WorkspaceRefSchema,
+});
+export type SourceCheckpointProposed = z.infer<typeof SourceCheckpointProposedSchema>;
+
+export const SourceCheckpointFailedSchema = DevSourceCheckpointFailedPayloadSchema.extend({
+  workspaceRef: WorkspaceRefSchema.optional(),
+});
+export type SourceCheckpointFailed = z.infer<typeof SourceCheckpointFailedSchema>;
 
 export const SliceRunnerOutputSchema = z.discriminatedUnion("status", [
   z.object({
@@ -1119,6 +1146,27 @@ export const developmentEvents = {
     visibility: "internal",
     version: 1,
     description: "A development initiative PR draft is ready for human review.",
+  }),
+  sourceCheckpointProposed: event({
+    type: "dev.source_checkpoint.proposed",
+    payload: DevSourceCheckpointProposedPayloadSchema,
+    visibility: "internal",
+    version: 1,
+    description: "A source checkpoint is ready to be created for a completed development slice.",
+  }),
+  sourceCheckpointCreated: event({
+    type: "dev.source_checkpoint.created",
+    payload: DevSourceCheckpointCreatedPayloadSchema,
+    visibility: "internal",
+    version: 1,
+    description: "A source checkpoint was created for a completed development slice.",
+  }),
+  sourceCheckpointFailed: event({
+    type: "dev.source_checkpoint.failed",
+    payload: DevSourceCheckpointFailedPayloadSchema,
+    visibility: "internal",
+    version: 1,
+    description: "A source checkpoint could not be created for a development slice.",
   }),
 } as const;
 

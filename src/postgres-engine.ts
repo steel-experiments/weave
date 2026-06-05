@@ -644,6 +644,9 @@ function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
     case "dev.pr.opened":
     case "dev.pr.updated":
     case "dev.pr.ready_for_review":
+    case "dev.source_checkpoint.proposed":
+    case "dev.source_checkpoint.created":
+    case "dev.source_checkpoint.failed":
       return [];
   }
 }

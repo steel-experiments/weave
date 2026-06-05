@@ -20,6 +20,7 @@ import {
   definePolicy,
   DevelopmentInitiativeInputSchema,
   DevelopmentWorkspacePolicySchema,
+  SourceCheckpointSchema,
   developmentBranchStateReadTool,
   developmentRepoContextReadTool,
   developmentEvents,
@@ -180,7 +181,9 @@ assert.equal(denyNothingPolicy.name, "public-api.deny-nothing");
 assert.equal(echoApp.policies?.[0], allowEchoPolicy);
 assert.equal(typeof DevelopmentInitiativeInputSchema.parse, "function");
 assert.equal(DevelopmentWorkspacePolicySchema.parse({}).mode, "initiative");
+assert.equal(typeof SourceCheckpointSchema.parse, "function");
 assert.equal(developmentEvents.sliceCompleted.type, "dev.slice.completed");
+assert.equal(developmentEvents.sourceCheckpointCreated.type, "dev.source_checkpoint.created");
 assert.equal(weaveMaintainer.name, "weave.maintainer");
 assert.equal(developmentRepoContextReadTool.name, "dev.repoContext.read");
 assert.equal(developmentBranchStateReadTool.name, "dev.branchState.read");

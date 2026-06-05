@@ -174,7 +174,7 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 15. Resumable Initiative Runner Command | Shipped | `slices/15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
 | 16. PR Draft Handoff Automation | Shipped | `slices/16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
 | 17. Local Workflow Dashboard | Shipped | `slices/17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
-| 18. Source Checkpoint Contracts | Proposed | `slices/18-source-checkpoint-contracts.md` | Durable schemas and events describe source-code checkpoints without mutating Git. |
+| 18. Source Checkpoint Contracts | Shipped | `slices/18-source-checkpoint-contracts.md` | Durable schemas and events describe source-code checkpoints without mutating Git. |
 | 19. Per-Slice Git Commit Checkpoints | Proposed | `slices/19-per-slice-git-commit-checkpoints.md` | Passing slices create Git commits and store their SHAs as source checkpoints. |
 | 20. Source Checkpoint Inspection | Proposed | `slices/20-source-checkpoint-inspection.md` | Operator CLI and dashboard expose per-slice checkpoint metadata and diff commands. |
 | 21. Guarded Source Checkpoint Restore | Proposed | `slices/21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |
@@ -292,6 +292,16 @@ Remote PR creation or update is behind the final `pr-review-approval` gate:
 - If the final gate is denied, the workflow returns without remote side effects.
 - If approved and GitHub mode is enabled, the PR agent calls the configured GitHub runner and records `pr-url` plus `pr-remote-handoff`.
 - If GitHub mode is disabled, the local handoff remains the terminal review artifact.
+
+## Source Checkpoints
+
+Source checkpoint contracts define how a completed development slice will be tied to a concrete Git state. The shipped contract adds the `source-checkpoint` checkpoint key plus source checkpoint lifecycle events:
+
+- `dev.source_checkpoint.proposed`
+- `dev.source_checkpoint.created`
+- `dev.source_checkpoint.failed`
+
+The checkpoint payload records the initiative thread, slice thread, slice id, workspace ref, `baseSha`, `checkpointSha`, changed files, commit message, verification summary, and review summary. Slice 18 is contract-only; per-slice Git commit creation starts in slice 19.
 
 ## Local Dashboard
 
