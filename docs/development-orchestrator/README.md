@@ -174,10 +174,16 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 15. Resumable Initiative Runner Command | Shipped | `slices/15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
 | 16. PR Draft Handoff Automation | Shipped | `slices/16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
 | 17. Local Workflow Dashboard | Shipped | `slices/17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
+| 18. Source Checkpoint Contracts | Proposed | `slices/18-source-checkpoint-contracts.md` | Durable schemas and events describe source-code checkpoints without mutating Git. |
+| 19. Per-Slice Git Commit Checkpoints | Proposed | `slices/19-per-slice-git-commit-checkpoints.md` | Passing slices create Git commits and store their SHAs as source checkpoints. |
+| 20. Source Checkpoint Inspection | Proposed | `slices/20-source-checkpoint-inspection.md` | Operator CLI and dashboard expose per-slice checkpoint metadata and diff commands. |
+| 21. Guarded Source Checkpoint Restore | Proposed | `slices/21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |
+| 22. Finalization Git Side Effects | Proposed | `slices/22-finalization-git-side-effects.md` | Explicit finalization modes can merge or open PRs only after final approval. |
+| 23. Auth Gateway Epic PRD | Proposed | `slices/23-auth-gateway-epic-prd.md` | A multi-slice auth PRD lets Maintainer execute remaining auth slices as one epic after checkpointing. |
 
 ## Auth Execution Readiness Path
 
-The orchestrator foundation needed before auth work is shipped. Next, dry-run only `../../slices/51-auth-gateway-thread-start.md` first. Do not run auth slices `51` through `56` unattended until one low-risk auth slice has completed implementation, verification, review, repair handling if needed, and a human gate.
+The orchestrator foundation needed before auth work is shipped. Slices `51` and `52` have been dogfooded individually. Do not run the remaining auth slices as one unattended epic until source checkpoints are shipped, because each accepted slice needs an inspectable Git commit boundary before the next slice starts.
 
 ## Auth Slice 51 Dry Run
 
