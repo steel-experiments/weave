@@ -201,7 +201,7 @@ export const CredentialFailedPayloadSchema = z.object({
 export const GateCreatedPayloadSchema = z.object({
   gateId: z.string().uuid(),
   gateType: z.literal("manual-approval"),
-  reason: z.enum(["tool-result-requires-approval", "risky-remediation", "slice-plan-approval", "repair-stop", "source-checkpoint-stop", "pr-review-approval"]),
+  reason: z.enum(["tool-result-requires-approval", "risky-remediation", "slice-plan-approval", "repair-stop", "source-checkpoint-stop", "pr-review-approval", "finalization-stop"]),
   relatedToolCallId: z.string().uuid().optional(),
   proposedAction: z.string().optional(),
 });

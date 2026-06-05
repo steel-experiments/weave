@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
-import { createGitSourceCheckpoint } from "../development-orchestrator.js";
+import { createGitLocalMergeFinalizationRunner, createGitSourceCheckpoint } from "../development-orchestrator.js";
 import { restoreSourceCheckpointWorktree } from "../development-operator.js";
 import {
   GitWorktreeWorkspaceProvider,
@@ -100,6 +100,36 @@ try {
   assert.equal(sourceCheckpoint.status, "created");
   assert.equal(sourceCheckpoint.changedFiles.includes("README.md"), true);
   assert.notEqual(sourceCheckpoint.checkpointSha, baseCommit);
+
+  const localMergeRunner = createGitLocalMergeFinalizationRunner();
+  const mergeResult = await localMergeRunner.run({
+    repo: "weave",
+    repoRoot: sourceRepoPath,
+    baseBranch: "main",
+    branch: "slice-57",
+    strategy: "merge-commit",
+  });
+  assert.equal(mergeResult.status, "merged");
+  assert.equal(mergeResult.status === "merged" ? mergeResult.beforeSha : "", baseCommit);
+
+  await git(sourceRepoPath, ["checkout", "-b", "conflict-branch", baseCommit]);
+  await writeFile(path.join(sourceRepoPath, "README.md"), "branch conflict\n", "utf8");
+  await git(sourceRepoPath, ["add", "README.md"]);
+  await git(sourceRepoPath, ["commit", "-m", "branch conflict"]);
+  await git(sourceRepoPath, ["checkout", "main"]);
+  await writeFile(path.join(sourceRepoPath, "README.md"), "main conflict\n", "utf8");
+  await git(sourceRepoPath, ["add", "README.md"]);
+  await git(sourceRepoPath, ["commit", "-m", "main conflict"]);
+  const conflictResult = await localMergeRunner.run({
+    repo: "weave",
+    repoRoot: sourceRepoPath,
+    baseBranch: "main",
+    branch: "conflict-branch",
+    strategy: "merge-commit",
+  });
+  assert.equal(conflictResult.status, "blocked");
+  assert.equal(conflictResult.status === "blocked" ? conflictResult.conflictFiles.includes("README.md") : false, true);
+  await git(sourceRepoPath, ["merge", "--abort"]);
 
   if (sourceCheckpoint.status !== "created") {
     throw new Error("Expected source checkpoint creation to succeed.");

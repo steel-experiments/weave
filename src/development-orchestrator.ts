@@ -75,6 +75,7 @@ export const DevelopmentCheckpointKeys = {
   prRemoteHandoff: "pr-remote-handoff",
   prUrl: "pr-url",
   sourceCheckpoint: "source-checkpoint",
+  finalizationResult: "finalization-result",
 } as const;
 export type DevelopmentCheckpointKey = (typeof DevelopmentCheckpointKeys)[keyof typeof DevelopmentCheckpointKeys];
 
@@ -640,6 +641,64 @@ export const CompletedDevelopmentSliceSummarySchema = z.object({
 });
 export type CompletedDevelopmentSliceSummary = z.infer<typeof CompletedDevelopmentSliceSummarySchema>;
 
+export const FinalizationModeSchema = z.enum(["none", "local-merge"]);
+export type FinalizationMode = z.infer<typeof FinalizationModeSchema>;
+
+export const FinalizationConfigSchema = z
+  .object({
+    mode: FinalizationModeSchema.default("none"),
+    repoRoot: NonEmptyStringSchema.optional(),
+    strategy: z.enum(["merge-commit", "ff-only"]).default("merge-commit"),
+  })
+  .default({ mode: "none", strategy: "merge-commit" });
+export type FinalizationConfig = z.infer<typeof FinalizationConfigSchema>;
+
+export const LocalMergeFinalizationInputSchema = z.object({
+  repo: NonEmptyStringSchema,
+  repoRoot: NonEmptyStringSchema,
+  baseBranch: NonEmptyStringSchema,
+  branch: NonEmptyStringSchema,
+  strategy: z.enum(["merge-commit", "ff-only"]).default("merge-commit"),
+});
+export type LocalMergeFinalizationInput = z.input<typeof LocalMergeFinalizationInputSchema>;
+
+export const FinalizationResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("not-requested"),
+    mode: z.literal("none"),
+    summary: NonEmptyStringSchema,
+  }),
+  z.object({
+    status: z.literal("merged"),
+    mode: z.literal("local-merge"),
+    repoRoot: NonEmptyStringSchema,
+    baseBranch: NonEmptyStringSchema,
+    branch: NonEmptyStringSchema,
+    strategy: z.enum(["merge-commit", "ff-only"]),
+    beforeSha: NonEmptyStringSchema,
+    afterSha: NonEmptyStringSchema,
+    summary: NonEmptyStringSchema,
+  }),
+  z.object({
+    status: z.literal("blocked"),
+    mode: z.literal("local-merge"),
+    repoRoot: NonEmptyStringSchema.optional(),
+    baseBranch: NonEmptyStringSchema,
+    branch: NonEmptyStringSchema,
+    strategy: z.enum(["merge-commit", "ff-only"]).default("merge-commit"),
+    reason: NonEmptyStringSchema,
+    beforeSha: NonEmptyStringSchema.optional(),
+    currentBranch: NonEmptyStringSchema.optional(),
+    conflictFiles: z.array(NonEmptyStringSchema).default([]),
+    summary: NonEmptyStringSchema,
+  }),
+]);
+export type FinalizationResult = z.infer<typeof FinalizationResultSchema>;
+
+export type LocalMergeFinalizationRunner = {
+  run(input: z.infer<typeof LocalMergeFinalizationInputSchema>): Promise<FinalizationResult> | FinalizationResult;
+};
+
 export const PrDraftInputSchema = z.object({
   initiative: NonEmptyStringSchema,
   repo: NonEmptyStringSchema,
@@ -655,6 +714,7 @@ export const PrDraftInputSchema = z.object({
       draft: z.boolean().default(true),
     })
     .default({ mode: "none", draft: true }),
+  finalization: FinalizationConfigSchema,
 });
 export type PrDraftInput = z.input<typeof PrDraftInputSchema>;
 
@@ -676,6 +736,7 @@ export const PrDraftResultSchema = z.object({
   mergeRequiresHumanApproval: z.literal(true).default(true),
   humanApproval: z.enum(["approved", "denied"]).optional(),
   handoffArtifact: z.unknown().optional(),
+  finalization: FinalizationResultSchema.optional(),
 });
 export type PrDraftResult = z.infer<typeof PrDraftResultSchema>;
 
@@ -717,6 +778,11 @@ export const PrHandoffArtifactSchema = z.object({
     status: z.enum(["not-requested", "pending-approval", "created", "updated", "skipped", "blocked"]).default("pending-approval"),
     prUrl: z.string().url().optional(),
     summary: NonEmptyStringSchema.optional(),
+  }),
+  finalization: FinalizationResultSchema.default({
+    status: "not-requested",
+    mode: "none",
+    summary: "Local handoff only; no final Git side effect requested.",
   }),
 });
 export type PrHandoffArtifact = z.infer<typeof PrHandoffArtifactSchema>;
@@ -761,6 +827,7 @@ export type InitiativeRunnerAgentOptions = {
   prAgent?: AgentContract<string, any, PrDraftResult>;
   workspaceProvider?: WorkspaceProvider;
   github?: z.input<typeof PrDraftInputSchema>["github"];
+  finalization?: z.input<typeof FinalizationConfigSchema>;
 };
 
 export const GithubPrUpsertInputSchema = z.object({
@@ -846,6 +913,25 @@ export const githubPrCreateCapability = capability({
       resource: `${params.repo}:${params.branch}`,
       permissions: ["pull_request:write"],
       reason: "Create or update a development initiative pull request draft.",
+    };
+  },
+});
+
+export const localGitMergeCapability = capability({
+  name: "git.localMerge",
+  description: "Merge a completed development working branch into its base branch locally.",
+  params: z.object({
+    repo: NonEmptyStringSchema,
+    repoRoot: NonEmptyStringSchema,
+    baseBranch: NonEmptyStringSchema,
+    branch: NonEmptyStringSchema,
+  }),
+  scope(params) {
+    return {
+      provider: "git",
+      resource: `${params.repo}:${params.baseBranch}`,
+      permissions: ["branch:checkout", "branch:merge"],
+      reason: `Merge ${params.branch} into ${params.baseBranch} locally after final approval.`,
     };
   },
 });
@@ -1150,6 +1236,120 @@ export function createGithubPrUpsertTool(runner: GithubPrRunner) {
       return GithubPrUpsertResultSchema.parse(result);
     },
   });
+}
+
+export function createLocalMergeFinalizationTool(runner: LocalMergeFinalizationRunner) {
+  return tool({
+    name: "dev.git.localMerge",
+    description: "Merge a completed initiative branch into its base branch in the local repository.",
+    input: LocalMergeFinalizationInputSchema,
+    output: FinalizationResultSchema,
+    capabilities(context) {
+      return localGitMergeCapability.request({
+        repo: context.input.repo,
+        repoRoot: context.input.repoRoot,
+        baseBranch: context.input.baseBranch,
+        branch: context.input.branch,
+      });
+    },
+    summarize(output) {
+      return output.summary;
+    },
+    async run(ctx) {
+      const result = await runner.run(LocalMergeFinalizationInputSchema.parse(ctx.input));
+      return FinalizationResultSchema.parse(result);
+    },
+  });
+}
+
+export function createGitLocalMergeFinalizationRunner(): LocalMergeFinalizationRunner {
+  return {
+    async run(rawInput) {
+      const input = LocalMergeFinalizationInputSchema.parse(rawInput);
+      if (input.baseBranch === input.branch) {
+        return FinalizationResultSchema.parse({
+          status: "blocked",
+          mode: "local-merge",
+          repoRoot: input.repoRoot,
+          baseBranch: input.baseBranch,
+          branch: input.branch,
+          strategy: input.strategy,
+          reason: "Base branch and working branch are the same.",
+          summary: "Local merge blocked because base and working branch match.",
+        });
+      }
+
+      const dirtyFiles = parseGitStatusChangedFiles(await git(input.repoRoot, ["status", "--porcelain", "--untracked-files=all"]));
+      const currentBranch = (await git(input.repoRoot, ["branch", "--show-current"])).trim() || "DETACHED_HEAD";
+      const beforeSha = (await git(input.repoRoot, ["rev-parse", input.baseBranch])).trim();
+      if (dirtyFiles.length > 0) {
+        return FinalizationResultSchema.parse({
+          status: "blocked",
+          mode: "local-merge",
+          repoRoot: input.repoRoot,
+          baseBranch: input.baseBranch,
+          branch: input.branch,
+          strategy: input.strategy,
+          reason: `Repository has uncommitted changes: ${dirtyFiles.join(", ")}.`,
+          beforeSha,
+          currentBranch,
+          summary: "Local merge blocked because the repository is dirty.",
+        });
+      }
+
+      try {
+        await git(input.repoRoot, ["checkout", input.baseBranch]);
+      } catch (error) {
+        return FinalizationResultSchema.parse({
+          status: "blocked",
+          mode: "local-merge",
+          repoRoot: input.repoRoot,
+          baseBranch: input.baseBranch,
+          branch: input.branch,
+          strategy: input.strategy,
+          reason: `Could not checkout ${input.baseBranch}: ${errorToMessage(error)}.`,
+          beforeSha,
+          currentBranch,
+          summary: "Local merge blocked before changing the base branch.",
+        });
+      }
+
+      try {
+        const mergeArgs = input.strategy === "ff-only"
+          ? ["merge", "--ff-only", input.branch]
+          : ["merge", "--no-ff", input.branch, "-m", `Merge ${input.branch} into ${input.baseBranch}`];
+        await git(input.repoRoot, mergeArgs);
+      } catch (error) {
+        const conflictFiles = parseGitStatusChangedFiles(await git(input.repoRoot, ["status", "--porcelain", "--untracked-files=all"]));
+        return FinalizationResultSchema.parse({
+          status: "blocked",
+          mode: "local-merge",
+          repoRoot: input.repoRoot,
+          baseBranch: input.baseBranch,
+          branch: input.branch,
+          strategy: input.strategy,
+          reason: `Local merge failed: ${errorToMessage(error)}.`,
+          beforeSha,
+          currentBranch: input.baseBranch,
+          conflictFiles,
+          summary: conflictFiles.length > 0 ? "Local merge blocked with conflicts." : "Local merge blocked by Git.",
+        });
+      }
+
+      const afterSha = (await git(input.repoRoot, ["rev-parse", "HEAD"])).trim();
+      return FinalizationResultSchema.parse({
+        status: "merged",
+        mode: "local-merge",
+        repoRoot: input.repoRoot,
+        baseBranch: input.baseBranch,
+        branch: input.branch,
+        strategy: input.strategy,
+        beforeSha,
+        afterSha,
+        summary: `Merged ${input.branch} into ${input.baseBranch} locally.`,
+      });
+    },
+  };
 }
 
 export const developmentEvents = {
@@ -1906,6 +2106,7 @@ export function buildPrHandoffArtifact(input: {
   draft: PrDraftResult;
   remoteApproved?: boolean;
   remoteResult?: GithubPrUpsertResult;
+  finalizationResult?: FinalizationResult;
 }): PrHandoffArtifact {
   const prInput = PrDraftInputSchema.parse(input.prInput);
   const draft = PrDraftResultSchema.parse(input.draft);
@@ -1950,6 +2151,7 @@ export function buildPrHandoffArtifact(input: {
       prUrl: remoteResult?.url ?? draft.prUrl,
       summary: remoteResult?.summary ?? (remoteApproved && prInput.github.mode !== "none" ? "Remote PR mode was approved, but no GitHub PR runner result was recorded." : undefined),
     },
+    finalization: input.finalizationResult,
   });
 }
 
@@ -2045,9 +2247,11 @@ export function createPrAgent(options: {
   name?: string;
   description?: string;
   githubRunner?: GithubPrRunner;
+  localMergeRunner?: LocalMergeFinalizationRunner;
 } = {}) {
   const githubTool = options.githubRunner ? createGithubPrUpsertTool(options.githubRunner) : undefined;
-  const tools = githubTool ? [githubTool] : [];
+  const localMergeTool = createLocalMergeFinalizationTool(options.localMergeRunner ?? createGitLocalMergeFinalizationRunner());
+  const tools = githubTool ? [localMergeTool, githubTool] : [localMergeTool];
 
   return agent({
     name: options.name ?? "weave.prAgent",
@@ -2076,13 +2280,63 @@ export function createPrAgent(options: {
 
       const gate = await ctx.gate("pr-review-approval", {
         reason: "pr-review-approval",
-        proposedAction: input.github.mode === "none"
+        proposedAction: input.finalization.mode === "local-merge"
+          ? `Approve local merge of ${input.branch} into ${input.baseBranch} after reviewing the handoff.`
+          : input.github.mode === "none"
           ? "Review the local PR handoff before merge. This agent cannot merge the PR."
           : `Approve remote ${input.github.mode === "create" ? "draft PR creation" : "PR update"} for ${input.branch}.`,
       });
 
       if (gate.resolution !== "approved") {
         return PrDraftResultSchema.parse({ ...localDraft, humanApproval: gate.resolution });
+      }
+
+      let finalizationResult = FinalizationResultSchema.parse({
+        status: "not-requested",
+        mode: "none",
+        summary: "Local handoff only; no final Git side effect requested.",
+      });
+      if (input.finalization.mode === "local-merge") {
+        const missingCheckpoints = input.shippedSlices.filter((slice) => !slice.sourceCheckpoint).map((slice) => slice.sliceId);
+        if (missingCheckpoints.length > 0 || !input.finalization.repoRoot) {
+          const blockedReason = missingCheckpoints.length > 0
+            ? `Missing source checkpoints for slices: ${missingCheckpoints.join(", ")}.`
+            : "Local merge finalization requires finalization.repoRoot.";
+          const blockedFinalizationResult = FinalizationResultSchema.parse({
+            status: "blocked",
+            mode: "local-merge",
+            repoRoot: input.finalization.repoRoot,
+            baseBranch: input.baseBranch,
+            branch: input.branch,
+            strategy: input.finalization.strategy,
+            reason: blockedReason,
+            summary: "Local merge finalization blocked before Git side effects.",
+          });
+          finalizationResult = await ctx.checkpoint(DevelopmentCheckpointKeys.finalizationResult, () =>
+            blockedFinalizationResult,
+          );
+          await ctx.gate("finalization-stop", {
+            reason: "finalization-stop",
+            proposedAction: blockedReason,
+          });
+          return PrDraftResultSchema.parse({ ...localDraft, humanApproval: gate.resolution, finalization: finalizationResult });
+        }
+
+        const mergeResult = await ctx.tool("local-merge-finalization", localMergeTool, {
+          repo: input.repo,
+          repoRoot: input.finalization.repoRoot,
+          baseBranch: input.baseBranch,
+          branch: input.branch,
+          strategy: input.finalization.strategy,
+        });
+        finalizationResult = await ctx.checkpoint(DevelopmentCheckpointKeys.finalizationResult, () => mergeResult);
+        if (finalizationResult.status === "blocked") {
+          await ctx.gate("finalization-stop", {
+            reason: "finalization-stop",
+            proposedAction: finalizationResult.reason,
+          });
+          return PrDraftResultSchema.parse({ ...localDraft, humanApproval: gate.resolution, finalization: finalizationResult });
+        }
       }
 
       let remoteResult: GithubPrUpsertResult | undefined;
@@ -2123,11 +2377,12 @@ export function createPrAgent(options: {
           prInput: input,
           draft: PrDraftResultSchema.parse({ ...draft, prUrl }),
           remoteApproved: true,
+          finalizationResult,
           remoteResult: remoteResult ?? (input.github.mode === "none" ? { status: "skipped", summary: "Remote PR creation not requested." } : undefined),
         }),
       );
 
-      return PrDraftResultSchema.parse({ ...draft, prUrl, humanApproval: gate.resolution, handoffArtifact: remoteHandoff });
+      return PrDraftResultSchema.parse({ ...draft, prUrl, humanApproval: gate.resolution, handoffArtifact: remoteHandoff, finalization: finalizationResult });
     },
   });
 }
@@ -2422,6 +2677,10 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
   return String(stdout);
 }
 
+function errorToMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions = {}) {
   const workspaceAllocateTool = options.workspaceProvider ? createWorkspaceAllocateTool(options.workspaceProvider) : undefined;
   const workspaceRemoveTool = options.workspaceProvider ? createWorkspaceRemoveTool(options.workspaceProvider) : undefined;
@@ -2701,6 +2960,7 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
 
       let prDraft: PrDraftResult | undefined;
       if (options.prAgent) {
+        const finalization = FinalizationConfigSchema.parse(options.finalization ?? { mode: "none" });
         const prInput = PrDraftInputSchema.parse({
           initiative: approvedPlan.initiative,
           repo: approvedPlan.repo,
@@ -2708,6 +2968,9 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
           branch: approvedPlan.workingBranch,
           shippedSlices: completedSlices,
           github: options.github ?? { mode: "none", draft: true },
+          finalization: finalization.mode === "local-merge" && !finalization.repoRoot && workspacePolicy.sourceRepoPath
+            ? { ...finalization, repoRoot: workspacePolicy.sourceRepoPath }
+            : finalization,
         });
         const prThread = await ctx.spawn("pr-draft", options.prAgent, prInput, {
           source: "system",

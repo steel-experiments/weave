@@ -5,6 +5,8 @@ import {
   DevelopmentBlockedRunnerError,
   DevelopmentSlicePlanSchema,
   DevelopmentWorkspacePolicySchema,
+  FinalizationConfigSchema,
+  FinalizationResultSchema,
   InitiativePlanSchema,
   InitiativeSpecSchema,
   compileInitiativePlan,
@@ -30,6 +32,7 @@ import {
   buildPrHandoffArtifact,
   buildWorkspaceAllocateInput,
   createGithubPrUpsertTool,
+  createLocalMergeFinalizationTool,
   buildDevelopmentSlicePlan,
   createOpenCodeImplementationTool,
   createOpenCodeImplementerAgent,
@@ -166,6 +169,7 @@ assert.equal(DevelopmentCheckpointKeys.latestPlanDecision, "latest-plan-decision
 assert.equal(DevelopmentCheckpointKeys.approvedSlicePlan, "approved-slice-plan");
 assert.equal(DevelopmentCheckpointKeys.workspaceRef, "workspace-ref");
 assert.equal(DevelopmentCheckpointKeys.sourceCheckpoint, "source-checkpoint");
+assert.equal(DevelopmentCheckpointKeys.finalizationResult, "finalization-result");
 assert.equal(buildDevelopmentSlicePlan(initiative).summary, "Plan 1 development slice for Build Weave Maintainer.");
 
 const compiledPlan = compileMarkdownInitiativePlan({
@@ -1750,6 +1754,19 @@ assert.equal(builtPrDraft.repairAttempts, 1);
 assert.equal(builtPrDraft.mergeRequiresHumanApproval, true);
 assert.equal(builtPrDraft.body.includes("## Human Approval Checklist"), true);
 assert.equal(builtPrDraft.body.includes("Wire parent slice runner composition."), true);
+assert.equal(PrDraftInputSchema.parse({
+  initiative: initiative.initiative,
+  repo: initiative.repo,
+  baseBranch: initiative.baseBranch,
+  branch: initiative.workingBranch,
+  shippedSlices: [completedSliceSummary],
+}).finalization.mode, "none");
+assert.equal(FinalizationConfigSchema.parse({ mode: "local-merge", repoRoot: "/tmp/weave" }).strategy, "merge-commit");
+assert.equal(FinalizationResultSchema.parse({
+  status: "not-requested",
+  mode: "none",
+  summary: "Local handoff only.",
+}).status, "not-requested");
 const builtHandoff = buildPrHandoffArtifact({
   prInput: {
     initiative: initiative.initiative,
@@ -1762,6 +1779,7 @@ const builtHandoff = buildPrHandoffArtifact({
   draft: builtPrDraft,
 });
 assert.equal(builtHandoff.remote.status, "pending-approval");
+assert.equal(builtHandoff.finalization.status, "not-requested");
 assert.equal(builtHandoff.validation.status, "passed");
 assert.equal(builtHandoff.shippedSlices[0]?.status, "completed");
 assert.throws(
@@ -1810,6 +1828,38 @@ const githubCapabilityName = Array.isArray(githubCapabilities)
   ? githubCapabilities[0]?.name
   : (githubCapabilities as { name?: string } | undefined)?.name;
 assert.equal(githubCapabilityName, "github.pr.create");
+const localMergeTool = createLocalMergeFinalizationTool({
+  run(input) {
+    return {
+      status: "merged",
+      mode: "local-merge",
+      repoRoot: input.repoRoot,
+      baseBranch: input.baseBranch,
+      branch: input.branch,
+      strategy: input.strategy,
+      beforeSha: "abc123",
+      afterSha: "def456",
+      summary: "Merged locally.",
+    };
+  },
+});
+assert.equal(localMergeTool.name, "dev.git.localMerge");
+const localMergeCapabilities =
+  typeof localMergeTool.capabilities === "function"
+    ? localMergeTool.capabilities({
+        input: {
+          repo: initiative.repo,
+          repoRoot: "/tmp/weave",
+          baseBranch: initiative.baseBranch,
+          branch: initiative.workingBranch,
+          strategy: "merge-commit",
+        },
+      })
+    : undefined;
+const localMergeCapabilityName = Array.isArray(localMergeCapabilities)
+  ? localMergeCapabilities[0]?.name
+  : (localMergeCapabilities as { name?: string } | undefined)?.name;
+assert.equal(localMergeCapabilityName, "git.localMerge");
 
 const prAgent = createPrAgent({
   githubRunner: {
@@ -1915,6 +1965,48 @@ assert(prOutput);
 assert.equal((prOutput.payload.output as { humanApproval: string }).humanApproval, "approved");
 assert.equal((prOutput.payload.output as { prUrl: string }).prUrl, "https://github.com/acme/weave/pull/123");
 assert.equal((prOutput.payload.output as { handoffArtifact: { remote: { status: string } } }).handoffArtifact.remote.status, "created");
+
+const localMergePrAgent = createPrAgent();
+const localMergePrInput = {
+  initiative: initiative.initiative,
+  repo: initiative.repo,
+  baseBranch: initiative.baseBranch,
+  branch: initiative.workingBranch,
+  shippedSlices: [completedSliceSummary],
+  github: { mode: "none" as const, draft: true },
+  finalization: { mode: "local-merge" as const, repoRoot: "/tmp/weave" },
+};
+const localMergeThreadId = "pr-agent-local-merge-missing-checkpoints";
+const localMergeHistory = createInitialHistory(localMergeThreadId, localMergePrInput, localMergePrAgent.name);
+const localMergePlanner = createAgentPlanner(localMergePrAgent);
+const localMergeFirstPlan = await localMergePlanner.plan(localMergeThreadId, localMergeHistory);
+assert(localMergeFirstPlan);
+const localMergePrGate = localMergeFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
+  candidate.type === "gate.created" && candidate.payload.reason === "pr-review-approval",
+);
+assert(localMergePrGate);
+assert.match(localMergePrGate.payload.proposedAction ?? "", /Approve local merge/);
+const localMergeGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  eventId: eventKey(localMergeThreadId, "gate.resolved", "pr-review-approval"),
+  threadId: localMergeThreadId,
+  type: "gate.resolved",
+  occurredAt: nowIso(),
+  correlationId: localMergePrGate.correlationId,
+  causationId: localMergePrGate.eventId,
+  scopeKey: localMergePrGate.scopeKey,
+  stepKey: localMergePrGate.stepKey,
+  actor: { type: "human", id: "maintainer" },
+  payload: {
+    gateId: localMergePrGate.payload.gateId,
+    resolution: "approved",
+    comment: "merge locally",
+  },
+};
+const localMergeApprovedPlan = await localMergePlanner.plan(localMergeThreadId, [...localMergeHistory, ...localMergeFirstPlan.events, localMergeGateResolved]);
+assert(localMergeApprovedPlan);
+assert.equal(localMergeApprovedPlan.events.some((candidate) => candidate.type === "tool.requested"), false);
+assert.equal(localMergeApprovedPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "finalization-result"), true);
+assert.equal(localMergeApprovedPlan.events.some((candidate) => candidate.type === "gate.created" && candidate.payload.reason === "finalization-stop"), true);
 
 const initialSliceState = createInitialSliceExecutionState({ ...sliceRunnerInput, workspaceRef, maxRepairAttempts: 1 });
 assert.equal(initialSliceState.phase, "workspace-ready");

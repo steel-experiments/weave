@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-05`
 - Owner: `weave-maintainer`
 
@@ -26,7 +26,7 @@ As a maintainer, I can choose a safe finalization mode for an initiative: local 
 
 - Extends PR/finalization options with explicit modes.
 - Adds local merge execution after `pr-review-approval` when enabled.
-- Records merge or PR side-effect results in checkpoints/events.
+- Records merge or PR side-effect results in checkpoints.
 - Converts conflicts or side-effect failures into human gates.
 
 ## Implementation Plan
@@ -47,25 +47,30 @@ As a maintainer, I can choose a safe finalization mode for an initiative: local 
 
 ## Acceptance Criteria
 
-- [ ] Default finalization remains local handoff only.
-- [ ] `local-merge` only runs after final approval.
-- [ ] Successful local merge is checkpointed/audited.
-- [ ] Merge conflicts stop for human intervention.
-- [ ] Finalization refuses to run if required source checkpoints are missing.
+- [x] Default finalization remains local handoff only.
+- [x] `local-merge` only runs after final approval.
+- [x] Successful local merge is checkpointed/audited.
+- [x] Merge conflicts stop for human intervention.
+- [x] Finalization refuses to run if required source checkpoints are missing.
 
 ## Progress
 
-- [ ] Add finalization mode contracts.
-- [ ] Add local merge runner.
-- [ ] Wire final approval to local merge mode.
-- [ ] Add tests.
+- [x] Add finalization mode contracts.
+- [x] Add local merge runner.
+- [x] Wire final approval to local merge mode.
+- [x] Add tests.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `FinalizationConfigSchema`, `FinalizationResultSchema`, and `finalization-result` checkpoints.
+- Kept finalization mode `none` as the default local handoff behavior.
+- Added `local-merge` finalization behind the existing `pr-review-approval` gate.
+- Added a local Git merge runner/tool that records base branch, working branch, before SHA, after SHA, strategy, and summary.
+- Added `finalization-stop` gates for missing source checkpoints, missing repo root, dirty repositories, merge conflicts, and unexpected Git failures.
+- Confirmed merge conflicts are reported for human intervention and are not auto-resolved by the runner.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] local development runbook docs
+- [x] this slice document
+- [x] `../README.md`
+- [x] local development runbook docs

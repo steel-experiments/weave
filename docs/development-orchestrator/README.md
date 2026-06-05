@@ -178,7 +178,7 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 19. Per-Slice Git Commit Checkpoints | Shipped | `slices/19-per-slice-git-commit-checkpoints.md` | Passing slices create Git commits and store their SHAs as source checkpoints. |
 | 20. Source Checkpoint Inspection | Shipped | `slices/20-source-checkpoint-inspection.md` | Operator CLI and dashboard expose per-slice checkpoint metadata and diff commands. |
 | 21. Guarded Source Checkpoint Restore | Shipped | `slices/21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |
-| 22. Finalization Git Side Effects | Proposed | `slices/22-finalization-git-side-effects.md` | Explicit finalization modes can merge or open PRs only after final approval. |
+| 22. Finalization Git Side Effects | Shipped | `slices/22-finalization-git-side-effects.md` | Explicit finalization modes can merge locally only after final approval. |
 | 23. Auth Gateway Epic PRD | Proposed | `slices/23-auth-gateway-epic-prd.md` | A multi-slice auth PRD lets Maintainer execute remaining auth slices as one epic after checkpointing. |
 
 ## Auth Execution Readiness Path
@@ -297,6 +297,8 @@ Remote PR creation or update is behind the final `pr-review-approval` gate:
 - If approved and GitHub mode is enabled, the PR agent calls the configured GitHub runner and records `pr-url` plus `pr-remote-handoff`.
 - If GitHub mode is disabled, the local handoff remains the terminal review artifact.
 
+Finalization Git side effects are opt-in. The default `finalization.mode` is `none`, which keeps the reviewed local handoff as the terminal artifact. `local-merge` runs only after `pr-review-approval`, requires every shipped slice to have a source checkpoint, records `finalization-result`, and stops at `finalization-stop` for missing checkpoints, dirty repositories, merge conflicts, or Git failures.
+
 ## Source Checkpoints
 
 Source checkpoint contracts define how a completed development slice will be tied to a concrete Git state. The shipped contract adds the `source-checkpoint` checkpoint key plus source checkpoint lifecycle events:
@@ -312,6 +314,8 @@ Slice 19 adds per-slice Git commit creation. After implementation, verification,
 Slice 20 adds checkpoint inspection. Operators can list checkpoints for an initiative, inspect a checkpoint by id or SHA, or print a ready-to-run diff command. The local dashboard shows source checkpoints next to the selected initiative without adding dashboard-owned state.
 
 Slice 21 adds guarded restore. `checkpoints:restore` moves the initiative worktree back to a checkpoint SHA only when `--confirm` is supplied. Dirty worktrees are blocked by default and require `--force` to discard local changes. Successful restores emit `dev.source_checkpoint.restored` for audit.
+
+Slice 22 adds explicit finalization modes. `none` remains the default. `local-merge` can merge the working branch into the base branch locally after the final PR review gate, but only when required source checkpoints exist. Merge results are stored in `finalization-result`; conflicts and failures create a `finalization-stop` gate for human intervention.
 
 ## Local Dashboard
 
