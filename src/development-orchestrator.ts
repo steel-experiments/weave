@@ -34,6 +34,7 @@ import {
   DevSourceCheckpointVerificationSummarySchema,
   DevVerificationCompletedPayloadSchema,
   DevCommandResultSchema,
+  deterministicUuid,
   type DevReviewFinding,
 } from "./events.js";
 import { tool, type ToolProgressUpdate } from "./tool-contract.js";
@@ -281,6 +282,7 @@ export const InitiativePlannerOutputSchema = z.object({
 export type InitiativePlannerOutput = z.infer<typeof InitiativePlannerOutputSchema>;
 
 export const SliceRunnerInputSchema = z.object({
+  initiativeThreadId: NonEmptyStringSchema.optional(),
   initiative: NonEmptyStringSchema,
   repo: NonEmptyStringSchema.default("weave"),
   branch: NonEmptyStringSchema,
@@ -328,6 +330,28 @@ export const SourceCheckpointFailedSchema = DevSourceCheckpointFailedPayloadSche
 });
 export type SourceCheckpointFailed = z.infer<typeof SourceCheckpointFailedSchema>;
 
+export const SourceCheckpointCreateInputSchema = z.object({
+  initiativeThreadId: NonEmptyStringSchema,
+  sliceThreadId: NonEmptyStringSchema,
+  sliceId: NonEmptyStringSchema,
+  title: NonEmptyStringSchema.optional(),
+  workspaceRef: WorkspaceRefSchema,
+  commitMessage: NonEmptyStringSchema,
+  verificationSummary: SourceCheckpointVerificationSummarySchema,
+  reviewSummary: z.array(SourceCheckpointReviewSummarySchema).default([]),
+});
+export type SourceCheckpointCreateInput = z.infer<typeof SourceCheckpointCreateInputSchema>;
+
+export const SourceCheckpointCreateResultSchema = z.discriminatedUnion("status", [
+  SourceCheckpointSchema.extend({ status: z.literal("created") }),
+  SourceCheckpointFailedSchema.extend({ status: z.literal("failed") }),
+]);
+export type SourceCheckpointCreateResult = z.infer<typeof SourceCheckpointCreateResultSchema>;
+
+export type SourceCheckpointRunner = {
+  run(input: SourceCheckpointCreateInput): Promise<SourceCheckpointCreateResult> | SourceCheckpointCreateResult;
+};
+
 export const SliceRunnerOutputSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("ready"),
@@ -351,6 +375,7 @@ export const SliceRunnerOutputSchema = z.discriminatedUnion("status", [
     implementationSummary: z.unknown(),
     verificationResult: z.unknown(),
     reviewResults: z.array(z.unknown()),
+    sourceCheckpoint: SourceCheckpointSchema.optional(),
     repairs: z.array(z.unknown()).default([]),
     summary: NonEmptyStringSchema,
   }),
@@ -545,6 +570,7 @@ export const SliceExecutionPhaseSchema = z.enum([
   "verification-completed",
   "review-running",
   "review-completed",
+  "source-checkpoint-running",
   "repair-running",
   "repair-completed",
   "blocked",
@@ -564,6 +590,7 @@ export const SliceExecutionStateSchema = z.object({
   verification: VerificationResultSchema.optional(),
   reviews: z.array(ReviewResultSchema).default([]),
   repairs: z.array(RepairResultSchema).default([]),
+  sourceCheckpoint: SourceCheckpointSchema.optional(),
   repairAttempts: z.number().int().nonnegative().default(0),
   maxRepairAttempts: z.number().int().nonnegative().default(0),
   blockers: z.array(DevReviewFindingSchema).default([]),
@@ -576,6 +603,7 @@ export const SliceActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("run-implementation") }),
   z.object({ type: z.literal("run-verification"), attempt: z.number().int().nonnegative() }),
   z.object({ type: z.literal("run-reviewers"), reviewers: z.array(DevelopmentReviewerRoleSchema).min(1), attempt: z.number().int().nonnegative() }),
+  z.object({ type: z.literal("create-source-checkpoint") }),
   z.object({ type: z.literal("run-repair"), attempt: z.number().int().nonnegative(), findings: z.array(DevReviewFindingSchema).min(1) }),
   z.object({ type: z.literal("require-human-stop"), reason: NonEmptyStringSchema, findings: z.array(DevReviewFindingSchema).default([]) }),
   z.object({ type: z.literal("complete-slice"), summary: NonEmptyStringSchema }),
@@ -588,6 +616,7 @@ export type SliceRunnerAgentOptions = {
   verificationAgent?: AgentContract<string, any, VerificationResult>;
   reviewerAgents?: Partial<Record<DevelopmentReviewerRole, AgentContract<string, any, ReviewResult>>>;
   repairAgent?: AgentContract<string, any, RepairResult>;
+  sourceCheckpointRunner?: SourceCheckpointRunner;
 };
 
 export const CompletedDevelopmentSliceSummarySchema = z.object({
@@ -597,6 +626,7 @@ export const CompletedDevelopmentSliceSummarySchema = z.object({
   implementationSummary: ImplementationSummarySchema.optional(),
   verificationResult: VerificationResultSchema,
   reviewResults: z.array(ReviewResultSchema),
+  sourceCheckpoint: SourceCheckpointSchema.optional(),
   repairs: z.array(RepairResultSchema).default([]),
   docsChanged: z.array(NonEmptyStringSchema).default([]),
   knownLimitations: z.array(NonEmptyStringSchema).default([]),
@@ -845,6 +875,116 @@ export const developmentBranchStateReadTool = tool({
     return readDevelopmentBranchState(ctx.input);
   },
 });
+
+export function createSourceCheckpointTool(runner: SourceCheckpointRunner = createGitSourceCheckpointRunner()) {
+  return tool({
+    name: "dev.sourceCheckpoint.create",
+    description: "Create a Git commit checkpoint for one completed development slice workspace.",
+    input: SourceCheckpointCreateInputSchema,
+    output: SourceCheckpointCreateResultSchema,
+    capabilities(context) {
+      return [
+        repoReadCapability.request({ repo: context.input.workspaceRef.repo, paths: [context.input.workspaceRef.path] }),
+        repoWriteBranchCapability.request({
+          repo: context.input.workspaceRef.repo,
+          branch: context.input.workspaceRef.workingBranch,
+          workspaceId: context.input.workspaceRef.workspaceId,
+        }),
+        boundedShellCapability.request({ workspaceId: context.input.workspaceRef.workspaceId, purpose: "source checkpoint commit" }),
+      ];
+    },
+    summarize(output) {
+      return output.status === "created" ? `Created source checkpoint ${output.checkpointSha.slice(0, 12)}.` : output.reason;
+    },
+    async run(ctx) {
+      return SourceCheckpointCreateResultSchema.parse(await runner.run(ctx.input));
+    },
+  });
+}
+
+export function createGitSourceCheckpointRunner(): SourceCheckpointRunner {
+  return {
+    run: createGitSourceCheckpoint,
+  };
+}
+
+export async function createGitSourceCheckpoint(rawInput: SourceCheckpointCreateInput): Promise<SourceCheckpointCreateResult> {
+  const input = SourceCheckpointCreateInputSchema.parse(rawInput);
+  let baseSha: string | undefined;
+  let changedFiles: string[] = [];
+
+  try {
+    const currentBranch = (await git(input.workspaceRef.path, ["branch", "--show-current"])).trim();
+    if (currentBranch !== input.workspaceRef.workingBranch) {
+      return SourceCheckpointCreateResultSchema.parse({
+        status: "failed",
+        initiativeThreadId: input.initiativeThreadId,
+        sliceThreadId: input.sliceThreadId,
+        sliceId: input.sliceId,
+        title: input.title,
+        workspaceRef: input.workspaceRef,
+        reason: `Workspace branch ${currentBranch || "DETACHED_HEAD"} does not match ${input.workspaceRef.workingBranch}.`,
+        errorCode: "branch-mismatch",
+        failedAt: new Date().toISOString(),
+      });
+    }
+
+    baseSha = (await git(input.workspaceRef.path, ["rev-parse", "HEAD"])).trim();
+    changedFiles = parseGitStatusChangedFiles(await git(input.workspaceRef.path, ["status", "--porcelain", "--untracked-files=all"]));
+    if (changedFiles.length === 0) {
+      return SourceCheckpointCreateResultSchema.parse({
+        status: "failed",
+        initiativeThreadId: input.initiativeThreadId,
+        sliceThreadId: input.sliceThreadId,
+        sliceId: input.sliceId,
+        title: input.title,
+        workspaceRef: input.workspaceRef,
+        baseSha,
+        changedFiles,
+        commitMessage: input.commitMessage,
+        reason: "No source changes to checkpoint.",
+        errorCode: "empty-diff",
+        failedAt: new Date().toISOString(),
+      });
+    }
+
+    await git(input.workspaceRef.path, ["add", "--all", "--", "."]);
+    await git(input.workspaceRef.path, ["commit", "-m", input.commitMessage]);
+    const checkpointSha = (await git(input.workspaceRef.path, ["rev-parse", "HEAD"])).trim();
+
+    return SourceCheckpointCreateResultSchema.parse({
+      status: "created",
+      checkpointId: deterministicUuid("source-checkpoint", input.initiativeThreadId, input.sliceThreadId, input.sliceId, checkpointSha),
+      initiativeThreadId: input.initiativeThreadId,
+      sliceThreadId: input.sliceThreadId,
+      sliceId: input.sliceId,
+      title: input.title,
+      workspaceRef: input.workspaceRef,
+      baseSha,
+      checkpointSha,
+      changedFiles,
+      commitMessage: input.commitMessage,
+      verificationSummary: input.verificationSummary,
+      reviewSummary: input.reviewSummary,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    return SourceCheckpointCreateResultSchema.parse({
+      status: "failed",
+      initiativeThreadId: input.initiativeThreadId,
+      sliceThreadId: input.sliceThreadId,
+      sliceId: input.sliceId,
+      title: input.title,
+      workspaceRef: input.workspaceRef,
+      baseSha,
+      changedFiles,
+      commitMessage: input.commitMessage,
+      reason: error instanceof Error ? error.message : String(error),
+      errorCode: "git-checkpoint-failed",
+      failedAt: new Date().toISOString(),
+    });
+  }
+}
 
 export function createOpenCodeImplementationTool(runner: OpenCodeImplementationRunner) {
   return tool({
@@ -1514,6 +1654,9 @@ export function decideNextSliceAction(rawState: SliceExecutionState): SliceActio
   });
 
   if (decision.status === "completed") {
+    if (!state.sourceCheckpoint) {
+      return SliceActionSchema.parse({ type: "create-source-checkpoint" });
+    }
     return SliceActionSchema.parse({ type: "complete-slice", summary: decision.summary });
   }
 
@@ -1773,7 +1916,9 @@ export function buildPrHandoffArtifact(input: {
       summary: slice.summary,
       status: "completed",
     })),
-    commits: [],
+    commits: prInput.shippedSlices.flatMap((slice) =>
+      slice.sourceCheckpoint ? [{ sha: slice.sourceCheckpoint.checkpointSha, title: slice.title }] : [],
+    ),
     changedFiles: draft.filesChanged,
     docsChanged: draft.docsChanged,
     validation: {
@@ -2220,6 +2365,23 @@ function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values.filter((value) => value.length > 0))];
 }
 
+export function buildSourceCheckpointCommitMessage(slice: DevelopmentSliceInput): string {
+  const title = slice.title.trim().replace(/\s+/g, " ");
+  return `feat: complete ${title}`;
+}
+
+function parseGitStatusChangedFiles(output: string): string[] {
+  return uniqueStrings(
+    output
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+      .map((line) => line.slice(3).trim())
+      .map((file) => file.split(" -> ").at(-1)?.trim() ?? file)
+      .filter(Boolean),
+  );
+}
+
 function pathMatchesAllowedFile(changedFile: string, allowedFile: string): boolean {
   const normalizedChanged = changedFile.replace(/^\.\//, "");
   const normalizedAllowed = allowedFile.replace(/^\.\//, "");
@@ -2234,6 +2396,7 @@ function completedSliceSummaryFromOutput(slice: DevelopmentSliceInput, output: E
     implementationSummary: output.implementationSummary,
     verificationResult: output.verificationResult,
     reviewResults: output.reviewResults,
+    sourceCheckpoint: output.sourceCheckpoint,
     repairs: output.repairs,
     docsChanged: [],
     knownLimitations: [],
@@ -2464,6 +2627,7 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
           options.sliceRunnerAgent,
           {
             initiative: approvedPlan.initiative,
+            initiativeThreadId: ctx.threadId,
             repo: approvedPlan.repo,
             branch: approvedPlan.workingBranch,
             slice,
@@ -2585,12 +2749,14 @@ export function createWeaveMaintainerAgent(options: InitiativeRunnerAgentOptions
 export const weaveMaintainer = createWeaveMaintainerAgent();
 
 export function createSliceRunnerAgent(options: SliceRunnerAgentOptions = {}) {
+  const sourceCheckpointTool = createSourceCheckpointTool(options.sourceCheckpointRunner ?? createGitSourceCheckpointRunner());
+
   return agent({
     name: "weave.sliceRunner",
     description: "Coordinates one approved development slice through implementation, verification, review, and bounded repair.",
     input: SliceRunnerInputSchema,
     output: SliceRunnerOutputSchema,
-    tools: [developmentBranchStateReadTool],
+    tools: [developmentBranchStateReadTool, sourceCheckpointTool],
     async run(ctx, rawInput) {
       const input = SliceRunnerInputSchema.parse(rawInput);
       const workingBranch = await ctx.checkpoint(DevelopmentCheckpointKeys.workingBranch, () => input.branch);
@@ -2668,6 +2834,54 @@ export function createSliceRunnerAgent(options: SliceRunnerAgentOptions = {}) {
 
         if (action.type === "require-human-stop") {
           return await stopSliceForHuman(ctx, input, workingBranch, action.reason, action.findings, state.workspaceRef);
+        }
+
+        if (action.type === "create-source-checkpoint") {
+          if (!state.workspaceRef || !state.verification) {
+            return await failSlice(ctx, input, workingBranch, "Source checkpoint state is incomplete.", state.blockers, state.workspaceRef);
+          }
+
+          const checkpointInput = SourceCheckpointCreateInputSchema.parse({
+            initiativeThreadId: input.initiativeThreadId ?? ctx.threadId,
+            sliceThreadId: ctx.threadId,
+            sliceId: input.slice.id,
+            title: input.slice.title,
+            workspaceRef: state.workspaceRef,
+            commitMessage: buildSourceCheckpointCommitMessage(input.slice),
+            verificationSummary: {
+              status: state.verification.status,
+              commands: state.verification.commands,
+            },
+            reviewSummary: state.reviews.map((review) => ({
+              reviewer: review.reviewer,
+              verdict: review.verdict,
+              findingCount: review.findings.length,
+            })),
+          });
+
+          const checkpointResult = await ctx.tool(`create-source-checkpoint:${input.slice.id}`, sourceCheckpointTool, checkpointInput);
+          if (checkpointResult.status === "failed") {
+            await ctx.emit(`source-checkpoint-failed:${input.slice.id}`, developmentEvents.sourceCheckpointFailed(checkpointResult));
+            await ctx.gate("source-checkpoint-stop", {
+              reason: "source-checkpoint-stop",
+              proposedAction: `Source checkpoint failed for ${input.slice.id}: ${checkpointResult.reason}`,
+            });
+            return SliceRunnerOutputSchema.parse({
+              status: "blocked",
+              sliceId: input.slice.id,
+              branch: workingBranch,
+              reason: checkpointResult.reason,
+              workspaceRef: state.workspaceRef,
+              findings: [],
+            });
+          }
+
+          const checkpoint = await ctx.checkpoint(`${DevelopmentCheckpointKeys.sourceCheckpoint}:${input.slice.id}`, () =>
+            SourceCheckpointSchema.parse(checkpointResult),
+          );
+          await ctx.emit(`source-checkpoint-created:${input.slice.id}`, developmentEvents.sourceCheckpointCreated(checkpoint));
+          state = SliceExecutionStateSchema.parse({ ...state, phase: "source-checkpoint-running", sourceCheckpoint: checkpoint });
+          continue;
         }
 
         if (action.type === "run-verification") {
@@ -2791,7 +3005,7 @@ async function completeSlice(
   summary: string,
   state: SliceExecutionState,
 ): Promise<SliceRunnerOutput> {
-  if (!state.workspaceRef || !state.implementation || state.implementation.status !== "completed" || !state.verification) {
+  if (!state.workspaceRef || !state.implementation || state.implementation.status !== "completed" || !state.verification || !state.sourceCheckpoint) {
     return failSlice(ctx, input, branch, "Slice completion state is incomplete.", state.blockers, state.workspaceRef);
   }
 
@@ -2815,6 +3029,7 @@ async function completeSlice(
     implementationSummary: state.implementation.summary,
     verificationResult: state.verification,
     reviewResults: state.reviews,
+    sourceCheckpoint: state.sourceCheckpoint,
     repairs: state.repairs,
     summary,
   });

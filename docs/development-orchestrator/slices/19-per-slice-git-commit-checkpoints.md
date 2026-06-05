@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-05`
 - Owner: `weave-maintainer`
 
@@ -48,25 +48,33 @@ As a maintainer, each completed slice leaves behind a commit SHA I can inspect, 
 
 ## Acceptance Criteria
 
-- [ ] A passing slice creates one Git commit on the working branch.
-- [ ] The `source-checkpoint` checkpoint stores the created commit SHA.
-- [ ] Untracked implementation files are included in the checkpoint commit.
-- [ ] The next slice starts from the previous slice checkpoint commit.
-- [ ] Commit failures are durable and require human intervention.
+- [x] A passing slice creates one Git commit on the working branch.
+- [x] The `source-checkpoint` checkpoint stores the created commit SHA.
+- [x] Untracked implementation files are included in the checkpoint commit.
+- [x] The next slice starts from the previous slice checkpoint commit.
+- [x] Commit failures are durable and require human intervention.
 
 ## Progress
 
-- [ ] Add Git source checkpoint helper.
-- [ ] Wire source checkpoint creation into slice runner completion.
-- [ ] Add tests.
-- [ ] Update docs.
+- [x] Add Git source checkpoint helper.
+- [x] Wire source checkpoint creation into slice runner completion.
+- [x] Add tests.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `SourceCheckpointCreateInputSchema`, `SourceCheckpointCreateResultSchema`, and `SourceCheckpointRunner`.
+- Added `createGitSourceCheckpointRunner(...)`, `createGitSourceCheckpoint(...)`, and `createSourceCheckpointTool(...)`.
+- Added deterministic commit message helper `buildSourceCheckpointCommitMessage(...)`.
+- Slice runner now inserts a `create-source-checkpoint` action after verification and review pass, before `complete-slice`.
+- Source checkpoint creation stages all worktree changes with `git add --all -- .`, including untracked files, then commits on the configured working branch.
+- The result is stored under `source-checkpoint:<sliceId>` and emitted as `dev.source_checkpoint.created`.
+- Commit failures, empty diffs, or branch mismatches emit `dev.source_checkpoint.failed` and stop at a `source-checkpoint-stop` human gate.
+- Completed slice summaries and PR handoff artifacts now carry checkpoint commit metadata.
+- No merge, push, rollback, or remote PR side effect was added.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] local development runbook docs
+- [x] this slice document
+- [x] `../README.md`
+- [x] local development runbook docs

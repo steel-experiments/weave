@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
+import { createGitSourceCheckpoint } from "../development-orchestrator.js";
 import {
   GitWorktreeWorkspaceProvider,
   WorkspaceAllocateInputSchema,
@@ -81,6 +82,25 @@ try {
   assert.equal(diff.changedFiles.includes("README.md"), true);
   assert.match(diff.diff, /changed/);
   assert.equal(diff.truncated, false);
+
+  const sourceCheckpoint = await createGitSourceCheckpoint({
+    initiativeThreadId: "initiative-thread",
+    sliceThreadId: "slice-thread",
+    sliceId: "57",
+    title: "Workspace Provider Boundary",
+    workspaceRef: ref,
+    commitMessage: "feat: complete Workspace Provider Boundary",
+    verificationSummary: {
+      status: "passed",
+      commands: [{ command: "npm test", exitCode: 0, status: "passed", summary: "Tests passed." }],
+    },
+    reviewSummary: [{ reviewer: "architecture-reviewer", verdict: "pass", findingCount: 0 }],
+  });
+  assert.equal(sourceCheckpoint.status, "created");
+  assert.equal(sourceCheckpoint.changedFiles.includes("README.md"), true);
+  assert.notEqual(sourceCheckpoint.checkpointSha, baseCommit);
+
+  await writeFile(path.join(ref.path, "UNCOMMITTED.md"), "pending\n", "utf8");
 
   const blockedDirtyRemoval = await provider.remove({ ref, workspaceRoot, requireClean: true });
   assert.equal(blockedDirtyRemoval.status, "blocked");

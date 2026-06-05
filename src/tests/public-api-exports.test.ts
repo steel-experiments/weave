@@ -19,8 +19,12 @@ import {
   weave,
   definePolicy,
   DevelopmentInitiativeInputSchema,
+  DevelopmentSliceInputSchema,
   DevelopmentWorkspacePolicySchema,
   SourceCheckpointSchema,
+  buildSourceCheckpointCommitMessage,
+  createGitSourceCheckpointRunner,
+  createSourceCheckpointTool,
   developmentBranchStateReadTool,
   developmentRepoContextReadTool,
   developmentEvents,
@@ -182,6 +186,12 @@ assert.equal(echoApp.policies?.[0], allowEchoPolicy);
 assert.equal(typeof DevelopmentInitiativeInputSchema.parse, "function");
 assert.equal(DevelopmentWorkspacePolicySchema.parse({}).mode, "initiative");
 assert.equal(typeof SourceCheckpointSchema.parse, "function");
+assert.equal(typeof createSourceCheckpointTool, "function");
+assert.equal(typeof createGitSourceCheckpointRunner, "function");
+assert.equal(
+  buildSourceCheckpointCommitMessage(DevelopmentSliceInputSchema.parse({ id: "01-test", title: "Test Slice", objective: "Test", acceptanceCriteria: ["Pass"] })),
+  "feat: complete Test Slice",
+);
 assert.equal(developmentEvents.sliceCompleted.type, "dev.slice.completed");
 assert.equal(developmentEvents.sourceCheckpointCreated.type, "dev.source_checkpoint.created");
 assert.equal(weaveMaintainer.name, "weave.maintainer");

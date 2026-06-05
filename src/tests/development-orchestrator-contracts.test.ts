@@ -769,6 +769,7 @@ assert.equal(
 const sequenceMaintainer = createWeaveMaintainerAgent({ sliceRunnerAgent: weaveSliceRunner, prAgent: createPrAgent() });
 const sequenceThreadId = "initiative-sequencing-complete";
 const firstSliceRunnerInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: sequenceThreadId,
   initiative: sequencePlan.initiative,
   repo: sequencePlan.repo,
   branch: sequencePlan.workingBranch,
@@ -777,6 +778,7 @@ const firstSliceRunnerInput = SliceRunnerInputSchema.parse({
   maxRepairAttempts: 1,
 });
 const secondSliceRunnerInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: sequenceThreadId,
   initiative: sequencePlan.initiative,
   repo: sequencePlan.repo,
   branch: sequencePlan.workingBranch,
@@ -856,9 +858,10 @@ assert.equal((sequenceOutput.payload.output as { prDraft?: unknown }).prDraft !=
 
 const blockedMaintainer = createWeaveMaintainerAgent({ sliceRunnerAgent: weaveSliceRunner });
 const blockedSequenceThreadId = "initiative-sequencing-blocked";
+const blockedFirstSliceRunnerInput = SliceRunnerInputSchema.parse({ ...firstSliceRunnerInput, initiativeThreadId: blockedSequenceThreadId });
 const blockedSequenceHistory = [
   ...createInitialHistory(blockedSequenceThreadId, sequenceInitiative, blockedMaintainer.name),
-  childSpawnedEvent(blockedSequenceThreadId, `slice:${sequencePlan.slices[0]!.id}`, weaveSliceRunner.name, "blocked-child-slice-1", firstSliceRunnerInput, `Run development slice ${sequencePlan.slices[0]!.id}: ${sequencePlan.slices[0]!.title}`, blockedMaintainer.name),
+  childSpawnedEvent(blockedSequenceThreadId, `slice:${sequencePlan.slices[0]!.id}`, weaveSliceRunner.name, "blocked-child-slice-1", blockedFirstSliceRunnerInput, `Run development slice ${sequencePlan.slices[0]!.id}: ${sequencePlan.slices[0]!.title}`, blockedMaintainer.name),
 ];
 const blockedPlanner = createAgentPlanner(blockedMaintainer);
 const blockedFirstPlan = await blockedPlanner.plan(blockedSequenceThreadId, blockedSequenceHistory);
@@ -959,6 +962,7 @@ const lifecycleInitiative = DevelopmentInitiativeInputSchema.parse({
 });
 const lifecyclePlan = buildDevelopmentSlicePlan(lifecycleInitiative);
 const lifecycleFirstSliceInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: "initiative-workspace-lifecycle",
   initiative: lifecyclePlan.initiative,
   repo: lifecyclePlan.repo,
   branch: lifecyclePlan.workingBranch,
@@ -968,6 +972,7 @@ const lifecycleFirstSliceInput = SliceRunnerInputSchema.parse({
   maxRepairAttempts: 1,
 });
 const lifecycleSecondSliceInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: "initiative-workspace-lifecycle",
   initiative: lifecyclePlan.initiative,
   repo: lifecyclePlan.repo,
   branch: lifecyclePlan.workingBranch,
@@ -1099,6 +1104,7 @@ const sliceModeRefTwo = { ...lifecycleWorkspaceRef, workspaceId: "slice-workspac
 const sliceModeInitiative = DevelopmentInitiativeInputSchema.parse({ ...sequenceInitiative, workspacePolicy: sliceModePolicy });
 const sliceModePlan = buildDevelopmentSlicePlan(sliceModeInitiative);
 const sliceModeFirstInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: "initiative-workspace-slice-mode",
   initiative: sliceModePlan.initiative,
   repo: sliceModePlan.repo,
   branch: sliceModePlan.workingBranch,
@@ -1108,6 +1114,7 @@ const sliceModeFirstInput = SliceRunnerInputSchema.parse({
   maxRepairAttempts: 1,
 });
 const sliceModeSecondInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: "initiative-workspace-slice-mode",
   initiative: sliceModePlan.initiative,
   repo: sliceModePlan.repo,
   branch: sliceModePlan.workingBranch,
@@ -1972,7 +1979,7 @@ const composedAfterVerification = await composedPlanner.plan(composedThreadId, [
   childCompletedEvent(composedThreadId, "wait-verify:0", "child-verify-0", verifier.name, verificationResult),
 ]);
 assert.equal(composedAfterVerification, null);
-const composedFinished = await composedPlanner.plan(composedThreadId, [
+const composedAfterReview = await composedPlanner.plan(composedThreadId, [
   ...composedHistory,
   ...composedFirstPlan.events,
   composedBranchCompleted,
@@ -1981,7 +1988,50 @@ const composedFinished = await composedPlanner.plan(composedThreadId, [
   childCompletedEvent(composedThreadId, "wait-verify:0", "child-verify-0", verifier.name, verificationResult),
   childCompletedEvent(composedThreadId, "wait-review:architecture-reviewer:0", "child-review-architecture-0", reviewerAgent.name, passingReview),
 ]);
+assert(composedAfterReview);
+const sourceCheckpointRequest = composedAfterReview.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested" && candidate.payload.toolName === "dev.sourceCheckpoint.create",
+);
+assert(sourceCheckpointRequest);
+const composedSourceCheckpoint = SourceCheckpointSchema.parse({
+  ...sourceCheckpoint,
+  checkpointId: deterministicUuid("source-checkpoint", composedThreadId),
+  initiativeThreadId: composedThreadId,
+  sliceThreadId: composedThreadId,
+  workspaceRef,
+  baseSha: workspaceRef.baseCommit,
+  checkpointSha: "checkpoint-composed",
+  changedFiles: ["src/development-orchestrator.ts"],
+  commitMessage: "feat: complete Workflow Contracts And Events",
+});
+const sourceCheckpointCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(composedThreadId, "tool.completed", "create-source-checkpoint:01-contracts"),
+  threadId: composedThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: sourceCheckpointRequest.correlationId,
+  causationId: sourceCheckpointRequest.eventId,
+  scopeKey: sourceCheckpointRequest.scopeKey,
+  stepKey: sourceCheckpointRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: sourceCheckpointRequest.payload.toolCallId,
+    output: { ...composedSourceCheckpoint, status: "created" },
+  },
+};
+const composedFinished = await composedPlanner.plan(composedThreadId, [
+  ...composedHistory,
+  ...composedFirstPlan.events,
+  composedBranchCompleted,
+  ...composedAfterBranch.events,
+  childCompletedEvent(composedThreadId, "wait-implement", "child-implement", openCodeImplementer.name, implementationChildOutput),
+  childCompletedEvent(composedThreadId, "wait-verify:0", "child-verify-0", verifier.name, verificationResult),
+  childCompletedEvent(composedThreadId, "wait-review:architecture-reviewer:0", "child-review-architecture-0", reviewerAgent.name, passingReview),
+  ...composedAfterReview.events,
+  sourceCheckpointCompleted,
+]);
 assert(composedFinished);
+assert.equal(composedFinished.events.some((candidate) => candidate.type === "dev.source_checkpoint.created"), true);
 assert.equal(composedFinished.events.some((candidate) => candidate.type === "dev.slice.completed"), true);
 assert.equal(composedFinished.events.filter((candidate) => candidate.type === "dev.slice.completed").length, 1);
 const composedOutput = composedFinished.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
@@ -1989,6 +2039,7 @@ const composedOutput = composedFinished.events.find((candidate): candidate is Ex
 );
 assert(composedOutput);
 assert.equal((composedOutput.payload.output as { status: string }).status, "completed");
+assert.equal((composedOutput.payload.output as { sourceCheckpoint: { checkpointSha: string } }).sourceCheckpoint.checkpointSha, "checkpoint-composed");
 
 const failedVerificationResult = {
   status: "failed" as const,
@@ -2081,6 +2132,58 @@ const repairComposedBranchRequest = repairComposedFirstPlan.events.find((candida
   candidate.type === "tool.requested",
 );
 assert(repairComposedBranchRequest);
+const repairComposedAfterReview = await repairComposedPlanner.plan(repairComposedThreadId, [
+  ...repairComposedHistory,
+  ...repairComposedFirstPlan.events,
+  {
+    eventId: eventKey(repairComposedThreadId, "tool.completed", "read-branch-state"),
+    threadId: repairComposedThreadId,
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: repairComposedBranchRequest.correlationId,
+    causationId: repairComposedBranchRequest.eventId,
+    scopeKey: repairComposedBranchRequest.scopeKey,
+    stepKey: repairComposedBranchRequest.stepKey,
+    actor: { type: "worker", id: "test-worker" },
+    payload: {
+      toolCallId: repairComposedBranchRequest.payload.toolCallId,
+      output: branchState,
+    },
+  } satisfies Extract<ThreadEvent, { type: "tool.completed" }>,
+  childCompletedEvent(repairComposedThreadId, "wait-implement", "repair-child-implement", openCodeImplementer.name, implementationChildOutput),
+  childCompletedEvent(repairComposedThreadId, "wait-verify:0", "repair-child-verify-0", verifier.name, failedVerificationResult),
+  childCompletedEvent(repairComposedThreadId, "wait-review:architecture-reviewer:0", "repair-child-review-0", reviewerAgent.name, passingReview),
+  childCompletedEvent(repairComposedThreadId, "wait-repair:0", "repair-child-repair-0", repairAgent.name, repairResult),
+  childCompletedEvent(repairComposedThreadId, "wait-verify:1", "repair-child-verify-1", verifier.name, verificationResult),
+  childCompletedEvent(repairComposedThreadId, "wait-review:architecture-reviewer:1", "repair-child-review-1", reviewerAgent.name, passingReview),
+]);
+assert(repairComposedAfterReview);
+const repairSourceCheckpointRequest = repairComposedAfterReview.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested" && candidate.payload.toolName === "dev.sourceCheckpoint.create",
+);
+assert(repairSourceCheckpointRequest);
+const repairSourceCheckpointCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(repairComposedThreadId, "tool.completed", "create-source-checkpoint:01-contracts"),
+  threadId: repairComposedThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: repairSourceCheckpointRequest.correlationId,
+  causationId: repairSourceCheckpointRequest.eventId,
+  scopeKey: repairSourceCheckpointRequest.scopeKey,
+  stepKey: repairSourceCheckpointRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: repairSourceCheckpointRequest.payload.toolCallId,
+    output: {
+      ...composedSourceCheckpoint,
+      checkpointId: deterministicUuid("source-checkpoint", repairComposedThreadId),
+      initiativeThreadId: repairComposedThreadId,
+      sliceThreadId: repairComposedThreadId,
+      checkpointSha: "checkpoint-repair-composed",
+      status: "created",
+    },
+  },
+};
 const repairComposedFinished = await repairComposedPlanner.plan(repairComposedThreadId, [
   ...repairComposedHistory,
   ...repairComposedFirstPlan.events,
@@ -2105,6 +2208,8 @@ const repairComposedFinished = await repairComposedPlanner.plan(repairComposedTh
   childCompletedEvent(repairComposedThreadId, "wait-repair:0", "repair-child-repair-0", repairAgent.name, repairResult),
   childCompletedEvent(repairComposedThreadId, "wait-verify:1", "repair-child-verify-1", verifier.name, verificationResult),
   childCompletedEvent(repairComposedThreadId, "wait-review:architecture-reviewer:1", "repair-child-review-1", reviewerAgent.name, passingReview),
+  ...repairComposedAfterReview.events,
+  repairSourceCheckpointCompleted,
 ]);
 assert(repairComposedFinished);
 assert.equal(repairComposedFinished.events.some((candidate) => candidate.type === "dev.slice.completed"), true);

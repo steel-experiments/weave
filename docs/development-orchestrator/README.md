@@ -175,7 +175,7 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 16. PR Draft Handoff Automation | Shipped | `slices/16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
 | 17. Local Workflow Dashboard | Shipped | `slices/17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
 | 18. Source Checkpoint Contracts | Shipped | `slices/18-source-checkpoint-contracts.md` | Durable schemas and events describe source-code checkpoints without mutating Git. |
-| 19. Per-Slice Git Commit Checkpoints | Proposed | `slices/19-per-slice-git-commit-checkpoints.md` | Passing slices create Git commits and store their SHAs as source checkpoints. |
+| 19. Per-Slice Git Commit Checkpoints | Shipped | `slices/19-per-slice-git-commit-checkpoints.md` | Passing slices create Git commits and store their SHAs as source checkpoints. |
 | 20. Source Checkpoint Inspection | Proposed | `slices/20-source-checkpoint-inspection.md` | Operator CLI and dashboard expose per-slice checkpoint metadata and diff commands. |
 | 21. Guarded Source Checkpoint Restore | Proposed | `slices/21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |
 | 22. Finalization Git Side Effects | Proposed | `slices/22-finalization-git-side-effects.md` | Explicit finalization modes can merge or open PRs only after final approval. |
@@ -301,7 +301,9 @@ Source checkpoint contracts define how a completed development slice will be tie
 - `dev.source_checkpoint.created`
 - `dev.source_checkpoint.failed`
 
-The checkpoint payload records the initiative thread, slice thread, slice id, workspace ref, `baseSha`, `checkpointSha`, changed files, commit message, verification summary, and review summary. Slice 18 is contract-only; per-slice Git commit creation starts in slice 19.
+The checkpoint payload records the initiative thread, slice thread, slice id, workspace ref, `baseSha`, `checkpointSha`, changed files, commit message, verification summary, and review summary.
+
+Slice 19 adds per-slice Git commit creation. After implementation, verification, and review pass, the slice runner stages all workspace changes, commits them on the working branch, stores `source-checkpoint:<sliceId>`, and then marks the slice completed. Empty diffs, branch mismatches, or Git commit failures stop at a `source-checkpoint-stop` human gate. Later slices can inspect, restore, and finalize from these checkpoint SHAs.
 
 ## Local Dashboard
 
