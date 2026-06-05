@@ -179,7 +179,7 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 20. Source Checkpoint Inspection | Shipped | `slices/20-source-checkpoint-inspection.md` | Operator CLI and dashboard expose per-slice checkpoint metadata and diff commands. |
 | 21. Guarded Source Checkpoint Restore | Shipped | `slices/21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |
 | 22. Finalization Git Side Effects | Shipped | `slices/22-finalization-git-side-effects.md` | Explicit finalization modes can merge locally only after final approval. |
-| 23. Auth Gateway Epic PRD | Proposed | `slices/23-auth-gateway-epic-prd.md` | A multi-slice auth PRD lets Maintainer execute remaining auth slices as one epic after checkpointing. |
+| 23. Auth Gateway Epic PRD | Shipped | `slices/23-auth-gateway-epic-prd.md` | A multi-slice auth PRD lets Maintainer execute remaining auth work as one epic after checkpointing. |
 
 ## Auth Execution Readiness Path
 
@@ -285,6 +285,14 @@ Useful options:
 - `--opencode-args "run --format json"`
 
 The command is local/Postgres-backed. It does not push, merge, or create a remote PR.
+
+Auth gateway remaining-work epic:
+
+```txt
+npm run initiative:run -- --from docs/prds/auth-gateway-epic.md --working-branch auth-gateway-remaining
+```
+
+The auth epic PRD compiles into the ordered remaining auth sections: authenticated thread actions, authenticated integration ingress, auth decision audit trail, and auth provider adapter boundary. Run it only with source checkpoint support enabled so each accepted section has an inspectable Git commit boundary.
 
 ## PR Handoff
 

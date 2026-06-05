@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -8,6 +8,7 @@ import {
   slugify,
   titleFromMarkdown,
 } from "../development-initiative-runner.js";
+import { compileMarkdownInitiativePlan } from "../development-orchestrator.js";
 
 assert.equal(titleFromMarkdown("# Build The Thing\n\nBody"), "Build The Thing");
 assert.equal(titleFromMarkdown("Body only"), undefined);
@@ -56,5 +57,26 @@ try {
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }
+
+const authEpicPrd = await readFile(path.resolve("docs/prds/auth-gateway-epic.md"), "utf8");
+const authEpicPlan = compileMarkdownInitiativePlan({
+  repo: "weave",
+  baseBranch: "main",
+  workingBranch: "auth-gateway-remaining",
+  spec: {
+    title: titleFromMarkdown(authEpicPrd) ?? "Auth Gateway Remaining Epic",
+    statementOfWork: authEpicPrd,
+    source: "prd",
+    contextFiles: ["docs/prds/auth-gateway-epic.md", "docs/development-orchestrator/README.md"],
+  },
+});
+assert.deepEqual(authEpicPlan.slices.map((slice) => slice.title), [
+  "Authenticated Thread Actions",
+  "Authenticated Integration Ingress",
+  "Auth Decision Audit Trail",
+  "Auth Provider Adapter Boundary",
+]);
+assert.equal(authEpicPlan.slices.length, 4);
+assert.equal(authEpicPlan.slices.every((slice) => slice.acceptanceCriteria.length >= 6), true);
 
 console.log("Development initiative runner tests passed");

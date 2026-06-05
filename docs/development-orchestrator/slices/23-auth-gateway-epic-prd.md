@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `development-orchestrator`
-- Status: `Proposed`
+- Status: `Shipped`
 - Last updated: `2026-06-05`
 - Owner: `weave-maintainer`
 
@@ -43,24 +43,28 @@ As a maintainer, I can start one auth gateway initiative and let Weave Maintaine
 
 ## Acceptance Criteria
 
-- [ ] Auth epic PRD exists and is executable by Weave Maintainer.
-- [ ] PRD compiles into ordered slices 53-56.
-- [ ] PRD references shipped context from slices 51 and 52.
-- [ ] PRD warns not to run without source checkpoint support.
-- [ ] Recommended runner command is documented.
+- [x] Auth epic PRD exists and is executable by Weave Maintainer.
+- [x] PRD compiles into ordered slices 53-56.
+- [x] PRD references shipped context from slices 51 and 52.
+- [x] PRD warns not to run without source checkpoint support.
+- [x] Recommended runner command is documented.
 
 ## Progress
 
-- [ ] Create auth epic PRD.
-- [ ] Validate compiler output.
-- [ ] Update docs.
+- [x] Create auth epic PRD.
+- [x] Validate compiler output.
+- [x] Update docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Added `docs/prds/auth-gateway-epic.md` as the executable Weave Maintainer PRD for remaining auth work.
+- The PRD includes shipped context from auth slices 51 and 52.
+- The executable sections are ordered for slices 53, 54, 55, and 56.
+- The PRD documents source-checkpoint expectations and the recommended `npm run initiative:run` command.
+- Added a compiler regression test that reads the PRD and verifies it produces the four expected sections in order.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `../README.md`
-- [ ] `docs/prds/auth-gateway-epic.md`
+- [x] this slice document
+- [x] `../README.md`
+- [x] `docs/prds/auth-gateway-epic.md`
