@@ -1,0 +1,28 @@
+# Dependencies and local state
+node_modules/
+.env
+.env.*
+*.log
+
+# Repository-only metadata
+.git/
+.github/
+agent.md
+DESIGN.md
+package-lock.json
+
+# Internal planning and research docs. Public docs linked from README are re-included below.
+docs/**
+!docs/
+!docs/what-is-weave.md
+!docs/declarative-api.md
+!docs/architecture.md
+!docs/glossary.md
+!docs/migration/
+!docs/migration/api-refactor.md
+!docs/release-readiness.md
+
+# Local examples and test assets are useful in the repo, not in the current package tarball.
+examples/
+src/tests/
+src/scripts/

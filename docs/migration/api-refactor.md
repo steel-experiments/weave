@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This guide explains how to move from the planner-first Weave API to the V1 run-first authoring model introduced on the `api-refactor` branch.
+This guide explains how to move from the planner-first Weave API to the V1 run-first authoring model introduced during the API refactor.
 
 The new preferred style is ordinary async TypeScript backed by replay-safe durable effects. Existing planner-style agents remain supported as a compatibility path.
 
@@ -14,7 +14,7 @@ The new preferred style is ordinary async TypeScript backed by replay-safe durab
 - `ToolCompletionOutput` envelopes remain supported for compatibility, but are no longer the preferred output shape.
 - Runtime binding is explicit through `createWeaveRuntime` and package subpaths.
 - Root and child sessions can dispatch to a target agent through `agentName`.
-- Tools may declare capability metadata with `capability(...)`; this is not runtime enforcement yet.
+- Tools may declare capability metadata with `capability(...)`; runtime request policies can inspect that metadata before supported durable requests are recorded.
 
 ## Agent Authoring
 
@@ -234,7 +234,7 @@ const findingId = ctx.id("finding:auth-docs");
 
 ## Capability Declarations
 
-Tools can declare capability metadata for future policy enforcement.
+Tools can declare capability metadata for request policy inspection.
 
 ```ts
 const githubRead = capability({
@@ -258,7 +258,7 @@ const inspectIssue = tool({
 });
 ```
 
-This is declaration-only metadata. It does not replace credential providers, authorize requests, or block execution in V1.
+Capability declarations do not replace credential providers. They describe access intent and can be inspected by runtime request policies, which may allow, deny, or require approval before supported durable requests are recorded.
 
 ## Replay Safety
 

@@ -12,6 +12,7 @@ Weave is the durable control layer. Blade is the production operator we expect t
 
 - `what-is-weave.md`: one-page product narrative for Weave
 - `overview.md`: Weave thesis, goals, and principles
+- `release-readiness.md`: current open-source release checklist and blockers
 - `blade/overview.md`: Blade product overview and north-star spec
 - `docs-operating-model.md`: how docs, slice plans, tests, and architecture updates should stay in sync
 - `blade/domain-model.md`: Blade vocabulary mapped to Weave primitives
@@ -57,6 +58,7 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 - `event-taxonomy.md`: strongly typed PoC event set using Zod-style schemas
 - `runnable-inbox.md`: explicit inbox routing and claim model for daemon work
 - `migration/api-refactor.md`: upgrade guide from planner-first and legacy tool-output patterns to V1 authoring
+- `release-readiness.md`: open-source release state, blockers, and publish checklist
 
 ## Existing Vertical And Demo Docs
 
