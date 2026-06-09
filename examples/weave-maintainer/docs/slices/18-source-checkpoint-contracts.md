@@ -62,7 +62,7 @@ As a maintainer, I can see the durable schema Weave will use to represent a sour
 ## Completion Notes
 
 - Added `DevelopmentCheckpointKeys.sourceCheckpoint` with value `source-checkpoint`.
-- Added `SourceCheckpointSchema`, `SourceCheckpointProposedSchema`, and `SourceCheckpointFailedSchema` in `src/development-orchestrator.ts`.
+- Added `SourceCheckpointSchema`, `SourceCheckpointProposedSchema`, and `SourceCheckpointFailedSchema` in `examples/weave-maintainer/src/development-orchestrator.ts`.
 - Added source checkpoint verification/review summary contracts.
 - Added source checkpoint lifecycle events: `dev.source_checkpoint.proposed`, `dev.source_checkpoint.created`, and `dev.source_checkpoint.failed`.
 - Source checkpoint events are valid `ThreadEvent` records and are audit-only for inbox routing.

@@ -117,7 +117,7 @@ export async function buildInitiativeRunInput(input: {
     title: titleFromMarkdown(markdown) ?? titleFromPath(prdPath),
     statementOfWork: markdown,
     source: "prd",
-    contextFiles: uniqueStrings([path.relative(input.repoRoot, prdPath), "docs/development-orchestrator/README.md"]),
+    contextFiles: uniqueStrings([path.relative(input.repoRoot, prdPath), "examples/weave-maintainer/docs/README.md"]),
   });
   const workingBranch = input.options.workingBranch ?? `initiative-${slugify(spec.title)}`;
   const workspaceRoot = input.options.workspaceRoot ?? path.join("/tmp", "weave-development-workspaces");

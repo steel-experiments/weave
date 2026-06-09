@@ -18,53 +18,9 @@ import {
   tool,
   weave,
   definePolicy,
-  DevelopmentInitiativeInputSchema,
-  DevelopmentSliceInputSchema,
-  DevelopmentWorkspacePolicySchema,
-  SourceCheckpointSchema,
-  buildSourceCheckpointCommitMessage,
-  createGitSourceCheckpointRunner,
-  createSourceCheckpointTool,
-  developmentBranchStateReadTool,
-  developmentRepoContextReadTool,
-  developmentEvents,
-  weaveMaintainer,
-  weaveSliceRunner,
-  buildPrDraft,
-  buildPrHandoffArtifact,
-  buildWorkspaceAllocateInput,
-  createWeaveMaintainerAgent,
-  createGithubPrUpsertTool,
-  createSliceRunnerAgent,
-  createOpenCodeImplementerAgent,
-  createOpenCodeImplementationTool,
-  createPrAgent,
-  createRepairAgent,
-  createRepairTool,
-  createReviewerAgent,
-  createVerificationAgent,
-  createInitialInitiativeExecutionState,
-  decideNextSliceAction,
-  decideNextInitiativeAction,
-  decideRepairLoop,
-  shouldCleanupWorkspace,
-  OpenCodeCliRunnerConfigSchema,
-  OpenCodeRunnerError,
-  buildOpenCodeImplementationPrompt,
-  buildOpenCodeRepairPrompt,
-  createOpenCodeCliImplementationRunner,
-  createOpenCodeCliRepairRunner,
-  InitiativeActionSchema,
-  InitiativeExecutionStateSchema,
-  SliceActionSchema,
-  SliceExecutionStateSchema,
   GitWorktreeWorkspaceProvider,
   WorkspaceRefSchema,
   createWorkspaceAllocateTool,
-  repairAttemptKey,
-  parseInitiativeRunOptions,
-  titleFromMarkdown,
-  createLocalDashboardServer,
 } from "weave";
 import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
@@ -175,10 +131,6 @@ const echoApp = weave({
 
 assert.equal(defineTool(echoTool), echoTool);
 assert.equal(defineAgent(echoAgent), echoAgent);
-assert.equal(titleFromMarkdown("# Public API"), "Public API");
-assert.equal(parseInitiativeRunOptions(["--from", "docs/prd.md"]).from, "docs/prd.md");
-assert.equal(typeof buildPrHandoffArtifact, "function");
-assert.equal(typeof createLocalDashboardServer, "function");
 assert.equal(defineIntegration(echoIntegration), echoIntegration);
 assert.equal(defineWeaveApp(echoApp), echoApp);
 assert.equal(githubRead.name, "github.read");
@@ -191,49 +143,6 @@ assert.equal(echoTool.capabilities?.[0], githubRead);
 assert.equal(allowEchoPolicy.name, "public-api.allow-echo");
 assert.equal(denyNothingPolicy.name, "public-api.deny-nothing");
 assert.equal(echoApp.policies?.[0], allowEchoPolicy);
-assert.equal(typeof DevelopmentInitiativeInputSchema.parse, "function");
-assert.equal(DevelopmentWorkspacePolicySchema.parse({}).mode, "initiative");
-assert.equal(typeof SourceCheckpointSchema.parse, "function");
-assert.equal(typeof createSourceCheckpointTool, "function");
-assert.equal(typeof createGitSourceCheckpointRunner, "function");
-assert.equal(
-  buildSourceCheckpointCommitMessage(DevelopmentSliceInputSchema.parse({ id: "01-test", title: "Test Slice", objective: "Test", acceptanceCriteria: ["Pass"] })),
-  "feat: complete Test Slice",
-);
-assert.equal(developmentEvents.sliceCompleted.type, "dev.slice.completed");
-assert.equal(developmentEvents.sourceCheckpointCreated.type, "dev.source_checkpoint.created");
-assert.equal(weaveMaintainer.name, "weave.maintainer");
-assert.equal(developmentRepoContextReadTool.name, "dev.repoContext.read");
-assert.equal(developmentBranchStateReadTool.name, "dev.branchState.read");
-assert.equal(weaveSliceRunner.name, "weave.sliceRunner");
-assert.equal(typeof createWeaveMaintainerAgent, "function");
-assert.equal(typeof createOpenCodeImplementerAgent, "function");
-assert.equal(typeof createOpenCodeImplementationTool, "function");
-assert.equal(typeof createVerificationAgent, "function");
-assert.equal(typeof createReviewerAgent, "function");
-assert.equal(typeof createRepairAgent, "function");
-assert.equal(typeof createRepairTool, "function");
-assert.equal(typeof buildPrDraft, "function");
-assert.equal(typeof createPrAgent, "function");
-assert.equal(typeof createGithubPrUpsertTool, "function");
-assert.equal(typeof createSliceRunnerAgent, "function");
-assert.equal(typeof createInitialInitiativeExecutionState, "function");
-assert.equal(typeof buildWorkspaceAllocateInput, "function");
-assert.equal(typeof shouldCleanupWorkspace, "function");
-assert.equal(OpenCodeCliRunnerConfigSchema.parse({}).command, "opencode");
-assert.equal(typeof OpenCodeRunnerError, "function");
-assert.equal(typeof buildOpenCodeImplementationPrompt, "function");
-assert.equal(typeof buildOpenCodeRepairPrompt, "function");
-assert.equal(typeof createOpenCodeCliImplementationRunner, "function");
-assert.equal(typeof createOpenCodeCliRepairRunner, "function");
-assert.equal(typeof decideNextSliceAction, "function");
-assert.equal(typeof decideNextInitiativeAction, "function");
-assert.equal(typeof InitiativeExecutionStateSchema.parse, "function");
-assert.equal(typeof InitiativeActionSchema.parse, "function");
-assert.equal(typeof SliceExecutionStateSchema.parse, "function");
-assert.equal(typeof SliceActionSchema.parse, "function");
-assert.equal(repairAttemptKey(1), "repair:1");
-assert.equal(decideRepairLoop({ currentAttempt: 0, maxAttempts: 1, findings: [{ severity: "low", issue: "test" }] }).status, "attempt-repair");
 assert.equal(typeof GitWorktreeWorkspaceProvider, "function");
 assert.equal(typeof WorkspaceRefSchema.parse, "function");
 assert.equal(createWorkspaceAllocateTool(new GitWorktreeWorkspaceProvider()).name, "workspace.allocate");

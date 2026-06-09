@@ -137,7 +137,7 @@ The dashboard should mirror the shipped operator CLI vocabulary from slice 14: g
 
 ## Completion Notes
 
-- Added `src/development-dashboard.ts` with a localhost dashboard HTTP server, `buildDashboardState(...)`, `/api/state`, and `/api/gates/:gateId/resolve`.
+- Added `examples/weave-maintainer/src/development-dashboard.ts` with a localhost dashboard HTTP server, `buildDashboardState(...)`, `/api/state`, and `/api/gates/:gateId/resolve`.
 - Added `src/scripts/dashboard.ts` and `npm run dashboard`.
 - The dashboard reuses durable Postgres state and the existing operator read model; it does not introduce dashboard-only workflow state.
 - The UI is a vanilla HTML/CSS/JS shell with no framework dependency and follows `DESIGN.md`: deep slate surfaces, compact panels, Geist/JetBrains Mono font stack, cyan live execution accents, indigo durable-logic accents, status-colored execution nodes, and mobile stacking.

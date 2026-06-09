@@ -1,0 +1,27 @@
+{
+  "name": "weave-maintainer",
+  "version": "0.0.0",
+  "description": "Dogfooded Weave maintainer app built on Weave as a framework.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "auth:dry-run": "tsx src/scripts/auth-gateway-slice-51-dry-run.ts",
+    "gates:list": "tsx src/scripts/development-operator.ts gates:list",
+    "gates:show": "tsx src/scripts/development-operator.ts gates:show",
+    "gates:approve": "tsx src/scripts/development-operator.ts gates:approve",
+    "gates:reject": "tsx src/scripts/development-operator.ts gates:reject",
+    "initiatives:list": "tsx src/scripts/development-operator.ts initiatives:list",
+    "initiative:status": "tsx src/scripts/development-operator.ts initiative:status",
+    "checkpoints:list": "tsx src/scripts/development-operator.ts checkpoints:list",
+    "checkpoints:show": "tsx src/scripts/development-operator.ts checkpoints:show",
+    "checkpoints:diff": "tsx src/scripts/development-operator.ts checkpoints:diff",
+    "checkpoints:restore": "tsx src/scripts/development-operator.ts checkpoints:restore",
+    "initiative:run": "tsx src/scripts/initiative-run.ts",
+    "dashboard": "tsx src/scripts/dashboard.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx src/tests/development-orchestrator-contracts.test.ts && tsx src/tests/development-operator.test.ts && tsx src/tests/development-initiative-runner.test.ts && tsx src/tests/development-dashboard.test.ts && tsx src/tests/opencode-runner.test.ts && tsx src/tests/source-checkpoint-workspace.test.ts"
+  },
+  "dependencies": {
+    "weave": "file:../.."
+  }
+}

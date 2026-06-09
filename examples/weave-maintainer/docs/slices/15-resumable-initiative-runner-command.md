@@ -95,7 +95,7 @@ Expected behavior:
 
 ## Completion Notes
 
-- Added `npm run initiative:run -- --from <prd.md>` backed by `src/scripts/initiative-run.ts`.
+- Added `npm run initiative:run -- --from <prd.md>` backed by `examples/weave-maintainer/src/scripts/initiative-run.ts`.
 - Added `src/development-initiative-runner.ts` with option parsing, PRD markdown title extraction, slug generation, and `DevelopmentInitiativeInput` construction.
 - The command starts an idempotent `weave.maintainer` session with `initiativeSpec`, `createMarkdownInitiativePlanCompiler(...)`, workspace allocation, OpenCode implementation/repair runners, deterministic verification, reviewer agents, and local PR draft handoff.
 - The command starts local runner/tool daemons, waits until a human gate or terminal root state, prints initiative status, and prints the next operator command.

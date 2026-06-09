@@ -226,6 +226,6 @@ Policy requirements:
 - [x] this slice document
 - [x] `docs/slices/README.md`
 - [x] `docs/architecture.md`
-- [x] `docs/development-orchestrator/README.md`
-- [x] `docs/development-orchestrator/slices/03-slice-runner-branch-control.md`
-- [x] `docs/development-orchestrator/slices/04-opencode-implementer-boundary.md`
+- [x] `examples/weave-maintainer/docs/README.md`
+- [x] `examples/weave-maintainer/docs/slices/03-slice-runner-branch-control.md`
+- [x] `examples/weave-maintainer/docs/slices/04-opencode-implementer-boundary.md`

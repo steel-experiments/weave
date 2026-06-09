@@ -3,9 +3,9 @@ import { promisify } from "node:util";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { DevelopmentCheckpointKeys, InitiativePlanSchema, SourceCheckpointRestoredSchema, SourceCheckpointSchema, developmentEvents } from "./development-orchestrator.js";
-import { ThreadEventSchema, newEventId, nowIso, type ThreadEvent } from "./events.js";
-import { PostgresThreadEngine } from "./postgres-engine.js";
-import { ThreadService } from "./thread-service.js";
+import { ThreadEventSchema, newEventId, nowIso, type ThreadEvent } from "weave";
+import { PostgresThreadEngine } from "weave/postgres";
+import { ThreadService } from "weave/runtime";
 
 const NonEmptyStringSchema = z.string().min(1);
 const execFileAsync = promisify(execFile);

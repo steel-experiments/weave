@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   buildInitiativeRunInput,
   formatInitiativeRunResumeCommand,
@@ -69,13 +70,14 @@ try {
   assert.equal(built.initiativeInput.initiative, "Local Workflow Dashboard");
   assert.equal(built.initiativeInput.workingBranch, "initiative-local-workflow-dashboard");
   assert.equal(built.initiativeInput.initiativeSpec?.source, "prd");
-  assert.deepEqual(built.initiativeInput.contextFiles, ["dashboard-prd.md", "docs/development-orchestrator/README.md"]);
+  assert.deepEqual(built.initiativeInput.contextFiles, ["dashboard-prd.md", "examples/weave-maintainer/docs/README.md"]);
   assert.match(built.idempotencyKey, /^initiative-run:v1:/);
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }
 
-const authEpicPrd = await readFile(path.resolve("docs/prds/auth-gateway-epic.md"), "utf8");
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
+const authEpicPrd = await readFile(path.join(repoRoot, "docs/prds/auth-gateway-epic.md"), "utf8");
 const authEpicPlan = compileMarkdownInitiativePlan({
   repo: "weave",
   baseBranch: "main",
@@ -84,7 +86,7 @@ const authEpicPlan = compileMarkdownInitiativePlan({
     title: titleFromMarkdown(authEpicPrd) ?? "Auth Gateway Remaining Epic",
     statementOfWork: authEpicPrd,
     source: "prd",
-    contextFiles: ["docs/prds/auth-gateway-epic.md", "docs/development-orchestrator/README.md"],
+    contextFiles: ["docs/prds/auth-gateway-epic.md", "examples/weave-maintainer/docs/README.md"],
   },
 });
 assert.deepEqual(authEpicPlan.slices.map((slice) => slice.title), [

@@ -44,7 +44,7 @@ Run the local workflow dashboard:
 npm run dashboard
 ```
 
-It binds to `0.0.0.0:3010` by default so it is reachable from localhost and your Tailscale/device IP. It reads the configured `DATABASE_URL`.
+It is provided by the `examples/weave-maintainer` app, which dogfoods Weave as a framework instead of living in core. It binds to `0.0.0.0:3010` by default so it is reachable from localhost and your Tailscale/device IP. It reads the configured `DATABASE_URL`.
 
 Inspect Weave Maintainer source checkpoints:
 

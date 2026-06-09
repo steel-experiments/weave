@@ -114,7 +114,7 @@ Important checkpoint names:
 
 ## Completion Notes
 
-- Added `src/development-orchestrator.ts` with schemas for initiative inputs, slice plans, slice runner inputs, OpenCode implementation inputs, implementation summaries, verification results, review results, repair results, PR draft results, development capabilities, reviewer roles, and stable checkpoint keys.
+- Added `examples/weave-maintainer/src/development-orchestrator.ts` with schemas for initiative inputs, slice plans, slice runner inputs, OpenCode implementation inputs, implementation summaries, verification results, review results, repair results, PR draft results, development capabilities, reviewer roles, and stable checkpoint keys.
 - Added `developmentEvents` factories for the development workflow events.
 - Promoted `dev.*` payload schemas into `src/events.ts` and added them to `ThreadEventSchema`.
 - Updated Postgres inbox routing so `dev.*` events are durable audit facts but do not wake runners or tool workers by default.

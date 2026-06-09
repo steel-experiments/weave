@@ -63,9 +63,7 @@ import {
   weaveMaintainer,
   weaveSliceRunner,
 } from "../development-orchestrator.js";
-import { createAgentPlanner } from "../agent-runner.js";
-import { ThreadEventSchema, deterministicUuid, eventKey, nowIso, stableJsonHash, type ThreadEvent } from "../events.js";
-import type { WorkspaceProvider } from "../workspace-provider.js";
+import { createAgentPlanner, ThreadEventSchema, deterministicUuid, eventKey, nowIso, stableJsonHash, type ThreadEvent, type WorkspaceProvider } from "weave";
 
 const validSlice = {
   id: "01-contracts",
@@ -100,8 +98,8 @@ const initiativeSpec = InitiativeSpecSchema.parse({
   acceptanceCriteria: ["Generated plans are schema validated"],
   risks: ["Generated slices may be too large"],
   implementationHints: ["Reuse development orchestrator contracts"],
-  affectedAreas: ["src/development-orchestrator.ts", "docs/development-orchestrator/slices/"],
-  contextFiles: ["docs/development-orchestrator/README.md"],
+  affectedAreas: ["examples/weave-maintainer/src/development-orchestrator.ts", "examples/weave-maintainer/docs/slices/"],
+  contextFiles: ["examples/weave-maintainer/docs/README.md"],
 });
 
 assert.equal(initiativeSpec.source, "prd");
@@ -186,7 +184,7 @@ Add a compiler that turns a PRD into a validated plan.
 - Compiler output validates before persistence.
 - Compilation emits no implementation events.
 
-Expected files include \`src/development-orchestrator.ts\`.
+Expected files include \`examples/weave-maintainer/src/development-orchestrator.ts\`.
 
 ## Slice 2: Operator approval flow
 
@@ -207,7 +205,7 @@ Add commands to inspect and approve generated plans.
 assert.equal(compiledPlan.slices.length, 2);
 assert.equal(compiledPlan.slices[0]?.id, "01-initiative-compiler-boundary");
 assert.equal(compiledPlan.slices[0]?.verificationStrategy.includes("npm test"), true);
-assert.equal(compiledPlan.slices[0]?.expectedTouchpoints.includes("src/development-orchestrator.ts"), true);
+assert.equal(compiledPlan.slices[0]?.expectedTouchpoints.includes("examples/weave-maintainer/src/development-orchestrator.ts"), true);
 assert.deepEqual(compiledPlan.slices[1]?.acceptanceCriteria, ["Pending gates can be listed.", "Approvals are durable."]);
 assert.equal(compiledPlan.status, "proposed");
 
@@ -289,7 +287,7 @@ assert.equal(
 );
 
 const implementation = ImplementationSummarySchema.parse({
-  filesChanged: ["src/development-orchestrator.ts"],
+  filesChanged: ["examples/weave-maintainer/src/development-orchestrator.ts"],
   behaviorChanged: ["Development workflow schemas are available."],
   summary: "Added development workflow contracts.",
 });
@@ -323,7 +321,7 @@ const sourceCheckpoint = SourceCheckpointSchema.parse({
   workspaceRef,
   baseSha: "abc123",
   checkpointSha: "def456",
-  changedFiles: ["src/development-orchestrator.ts", "src/events.ts"],
+  changedFiles: ["examples/weave-maintainer/src/development-orchestrator.ts", "src/events.ts"],
   commitMessage: "feat(dev-orchestrator): add source checkpoint contracts",
   verificationSummary: {
     status: "passed",
@@ -374,7 +372,7 @@ const review = ReviewResultSchema.parse({
   findings: [
     {
       severity: "medium",
-      file: "src/development-orchestrator.ts",
+      file: "examples/weave-maintainer/src/development-orchestrator.ts",
       line: 42,
       issue: "Schema should reject empty acceptance criteria.",
       suggestedFix: "Use a minimum length on the acceptance criteria array.",
@@ -626,7 +624,7 @@ const compilerInitiative = DevelopmentInitiativeInputSchema.parse({
   repo: "weave",
   baseBranch: "main",
   workingBranch: "prd-backed-automation",
-  contextFiles: ["docs/development-orchestrator/README.md"],
+  contextFiles: ["examples/weave-maintainer/docs/README.md"],
   initiativeSpec: {
     ...initiativeSpec,
     statementOfWork: `Build the next automation layer.
@@ -665,10 +663,10 @@ const compilerContextCompleted: Extract<ThreadEvent, { type: "tool.completed" }>
     toolCallId: compilerContextRequest.payload.toolCallId,
     output: {
       repo: "weave",
-      filesRead: ["docs/development-orchestrator/README.md"],
+      filesRead: ["examples/weave-maintainer/docs/README.md"],
       totalBytes: 16,
       truncated: false,
-      entries: [{ path: "docs/development-orchestrator/README.md", kind: "file", bytes: 16, content: "orchestrator docs" }],
+      entries: [{ path: "examples/weave-maintainer/docs/README.md", kind: "file", bytes: 16, content: "orchestrator docs" }],
     },
   },
 };
@@ -1775,13 +1773,13 @@ const completedSliceSummary = {
   summary: "Contracts shipped.",
   implementationSummary: {
     ...implementation,
-    docsChanged: ["docs/development-orchestrator/README.md"],
+    docsChanged: ["examples/weave-maintainer/docs/README.md"],
     followUpSuggestions: ["Wire parent slice runner composition."],
   },
   verificationResult,
   reviewResults: [passingReview],
   repairs: [repairResult],
-  docsChanged: ["docs/development-orchestrator/slices/07-pr-draft-and-initiative-handoff.md"],
+  docsChanged: ["examples/weave-maintainer/docs/slices/07-pr-draft-and-initiative-handoff.md"],
   knownLimitations: ["Parent orchestration loop remains separate."],
   followUps: ["Add real GitHub runner."],
 };
@@ -2167,7 +2165,7 @@ const composedSourceCheckpoint = SourceCheckpointSchema.parse({
   workspaceRef,
   baseSha: workspaceRef.baseCommit,
   checkpointSha: "checkpoint-composed",
-  changedFiles: ["src/development-orchestrator.ts"],
+  changedFiles: ["examples/weave-maintainer/src/development-orchestrator.ts"],
   commitMessage: "feat: complete Workflow Contracts And Events",
 });
 const sourceCheckpointCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {

@@ -1,8 +1,6 @@
-import { createPool } from "../db.js";
+import { createPool, migrate, PostgresThreadEngine } from "weave/postgres";
+import { ThreadService } from "weave/runtime";
 import { createLocalDashboardServer } from "../development-dashboard.js";
-import { migrate } from "../migrate.js";
-import { PostgresThreadEngine } from "../postgres-engine.js";
-import { ThreadService } from "../thread-service.js";
 
 const pool = createPool();
 await migrate(pool, { reset: false });

@@ -123,7 +123,7 @@ Repair runner receives existing `RepairAgentInput`:
 
 ## Completion Notes
 
-- Added `src/opencode-runner.ts` as the public OpenCode CLI adapter module.
+- Added `examples/weave-maintainer/src/opencode-runner.ts` as the OpenCode CLI adapter module for the maintainer app.
 - Added `OpenCodeCliRunnerConfigSchema`, `OpenCodeCommandResultSchema`, and `OpenCodeRunnerError`.
 - Added `createOpenCodeCliImplementationRunner(...)`, which satisfies `OpenCodeImplementationRunner` and returns schema-valid `ImplementationSummary` output.
 - Added `createOpenCodeCliRepairRunner(...)`, which satisfies `RepairRunner` and returns schema-valid `RepairResult` output.

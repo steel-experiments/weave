@@ -86,7 +86,7 @@ Initial command names can be adjusted during implementation, but the workflow sh
 
 - Added `src/development-operator.ts` with Postgres-backed read helpers for pending gates, gate details, initiative lists, initiative status, latest proposed plan lookup, and gate resolution delegation through `ThreadService.resolveGate`.
 - Added formatting helpers for gate lists, gate details, initiative lists, and initiative status output.
-- Added `src/scripts/development-operator.ts` as one subcommand entrypoint.
+- Added `examples/weave-maintainer/src/scripts/development-operator.ts` as one subcommand entrypoint.
 - Added package commands: `gates:list`, `gates:show`, `gates:approve`, `gates:reject`, `initiatives:list`, and `initiative:status`.
 - Gate approval/rejection discovers the owning thread from `weave.thread_gate`, then uses the existing durable gate resolution path.
 - Gate detail rendering includes a proposed plan summary when the thread has a `proposed-initiative-plan` or legacy `slice-plan` checkpoint.

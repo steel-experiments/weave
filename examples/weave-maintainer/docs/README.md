@@ -6,6 +6,8 @@ The Weave Development Orchestrator is an internal dogfood workflow for managing 
 
 Its first product name is `Weave Maintainer`.
 
+This code lives under `examples/weave-maintainer` intentionally: it uses Weave as a framework and should not be treated as part of the core Weave library surface.
+
 The goal is not to create an unbounded autonomous coding agent. The goal is to let Weave own the development control loop:
 
 ```txt
@@ -24,7 +26,7 @@ OpenCode remains a reasoning and patching component. Weave owns orchestration, p
 
 ## Why This Comes Before Auth Gateway
 
-The auth gateway work is already represented by proposed core slices `51` through `56` under `../slices/`.
+The auth gateway work is already represented by core slices `51` through `56` under `../../../docs/slices/`.
 
 This vertical should ship first so the auth gateway initiative can become the first serious dogfood run:
 

@@ -1,4 +1,5 @@
-import { createPool } from "../db.js";
+import { createPool, migrate, PostgresThreadEngine } from "weave/postgres";
+import { ThreadService } from "weave/runtime";
 import {
   formatGateDetail,
   formatGateList,
@@ -18,9 +19,6 @@ import {
   resolveOperatorGate,
   restoreSourceCheckpoint,
 } from "../development-operator.js";
-import { migrate } from "../migrate.js";
-import { PostgresThreadEngine } from "../postgres-engine.js";
-import { ThreadService } from "../thread-service.js";
 
 const [command, ...args] = process.argv.slice(2);
 

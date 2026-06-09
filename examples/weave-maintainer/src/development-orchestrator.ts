@@ -3,8 +3,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { agent, event, type AgentContext, type AgentContract } from "./agent-contract.js";
-import { capability } from "./capability-contract.js";
+import { agent, capability, event, tool, type AgentContext, type AgentContract, type ToolProgressUpdate } from "weave";
 import {
   DevImplementationCompletedPayloadSchema,
   DevImplementationStartedPayloadSchema,
@@ -37,8 +36,7 @@ import {
   DevCommandResultSchema,
   deterministicUuid,
   type DevReviewFinding,
-} from "./events.js";
-import { tool, type ToolProgressUpdate } from "./tool-contract.js";
+} from "weave";
 import {
   WorkspaceRefSchema,
   WorkspaceAllocateInputSchema,
@@ -48,7 +46,7 @@ import {
   type WorkspaceProvider,
   type WorkspaceRef,
   type WorkspaceRemovalResult,
-} from "./workspace-provider.js";
+} from "weave";
 
 const NonEmptyStringSchema = z.string().min(1);
 const execFileAsync = promisify(execFile);

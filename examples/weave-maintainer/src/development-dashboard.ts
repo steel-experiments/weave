@@ -13,8 +13,8 @@ import {
   type OperatorInitiativeSummary,
   type OperatorSourceCheckpointSummary,
 } from "./development-operator.js";
-import { ThreadEventSchema, type ThreadEvent } from "./events.js";
-import type { ThreadService } from "./thread-service.js";
+import { ThreadEventSchema, type ThreadEvent } from "weave";
+import type { ThreadService } from "weave/runtime";
 
 export const DashboardStateSchema = z.object({
   initiatives: z.array(z.unknown()),

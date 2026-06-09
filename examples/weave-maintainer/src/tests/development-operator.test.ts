@@ -14,7 +14,7 @@ import {
   OperatorSourceCheckpointRestoreResultSchema,
   OperatorSourceCheckpointSummarySchema,
 } from "../development-operator.js";
-import { newEventId, nowIso } from "../events.js";
+import { newEventId, nowIso } from "weave";
 
 const gate = OperatorGateSummarySchema.parse({
   gateId: "11111111-1111-4111-8111-111111111111",
@@ -154,7 +154,7 @@ const checkpoint = OperatorSourceCheckpointSummarySchema.parse({
   workingBranch: "prd-automation",
   baseSha: "abc123",
   checkpointSha: "def456",
-  changedFiles: ["src/development-orchestrator.ts"],
+  changedFiles: ["examples/weave-maintainer/src/development-orchestrator.ts"],
   commitMessage: "feat: complete PRD Compiler",
   eventThreadId: "slice-thread",
   eventSeq: 42,
@@ -165,7 +165,7 @@ assert.equal(formatSourceCheckpointList([]), "No source checkpoints found.");
 assert.match(formatSourceCheckpointList([checkpoint]), /def456/);
 assert.match(formatSourceCheckpointList([checkpoint]), /checkpoints:show/);
 assert.match(formatSourceCheckpointDetail(checkpoint), /Changed Files/);
-assert.match(formatSourceCheckpointDetail(checkpoint), /src\/development-orchestrator.ts/);
+assert.match(formatSourceCheckpointDetail(checkpoint), /examples\/weave-maintainer\/src\/development-orchestrator.ts/);
 assert.equal(formatSourceCheckpointDiff(checkpoint), checkpoint.diffCommand);
 
 const blockedRestore = OperatorSourceCheckpointRestoreResultSchema.parse({

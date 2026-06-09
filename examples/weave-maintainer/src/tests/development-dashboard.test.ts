@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import { Pool } from "pg";
 import { dashboardHtml, createLocalDashboardServer } from "../development-dashboard.js";
 import { buildDashboardState } from "../development-dashboard.js";
-import { newEventId, nowIso, type ThreadEvent } from "../events.js";
-import { migrate } from "../migrate.js";
-import { PostgresThreadEngine } from "../postgres-engine.js";
+import { newEventId, nowIso, type ThreadEvent } from "weave";
+import { migrate, PostgresThreadEngine } from "weave/postgres";
 
 const html = dashboardHtml();
 assert.match(html, /Workflow Console/);
@@ -89,7 +88,7 @@ try {
           },
           baseSha: "abc123",
           checkpointSha: "def456",
-          changedFiles: ["src/development-dashboard.ts"],
+          changedFiles: ["examples/weave-maintainer/src/development-dashboard.ts"],
           commitMessage: "feat: complete Dashboard State Regression",
           verificationSummary: { status: "passed", commands: [] },
           reviewSummary: [],

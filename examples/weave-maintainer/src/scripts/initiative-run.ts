@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { defineWeaveApp } from "../app-contract.js";
-import type { CredentialProvider, CredentialRequest, CredentialResolution, CredentialResolutionContext } from "../credentials.js";
-import { createPool } from "../db.js";
+import { defineWeaveApp, GitWorktreeWorkspaceProvider, PostgresObservabilitySink, type CredentialProvider, type CredentialRequest, type CredentialResolution, type CredentialResolutionContext, type DevCommandResult, type DevReviewFinding, type ThreadEvent, type ThreadProjection, type WorkspaceProvider } from "weave";
+import { createPool, migrate, PostgresThreadEngine } from "weave/postgres";
+import { createWeaveRuntime, ThreadService } from "weave/runtime";
 import {
   createMarkdownInitiativePlanCompiler,
   createOpenCodeImplementerAgent,
@@ -20,14 +20,7 @@ import {
 } from "../development-orchestrator.js";
 import { buildInitiativeRunInput, formatInitiativeRunResumeCommand, parseInitiativeRunOptions } from "../development-initiative-runner.js";
 import { formatInitiativeStatus, getInitiativeStatus } from "../development-operator.js";
-import type { DevCommandResult, DevReviewFinding, ThreadEvent, ThreadProjection } from "../events.js";
-import { migrate } from "../migrate.js";
 import { createOpenCodeCliImplementationRunner, createOpenCodeCliRepairRunner } from "../opencode-runner.js";
-import { PostgresObservabilitySink } from "../postgres-observability.js";
-import { PostgresThreadEngine } from "../postgres-engine.js";
-import { createWeaveRuntime } from "../runtime.js";
-import { ThreadService } from "../thread-service.js";
-import { GitWorktreeWorkspaceProvider, type WorkspaceProvider } from "../workspace-provider.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
