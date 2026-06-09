@@ -4,6 +4,8 @@ import type { ThreadArtifactStore } from "./artifacts.js";
 import type { WeaveAppDefinition } from "./app-contract.js";
 import type { AuthContext, AuthGateway, AuthSummary } from "./auth-gateway.js";
 import { authRequestFromIncoming, toAuthSummary } from "./auth-gateway.js";
+import { recordAuthDecision } from "./auth-audit.js";
+import type { WeaveAction } from "./auth-gateway.js";
 import type { ThreadEngine } from "./contracts.js";
 import {
   ActorSchema,
@@ -88,6 +90,28 @@ async function authorizeAction(
 
 function actorFromAuth(context: AuthContext): Actor {
   return { type: "user", id: context.principal.id };
+}
+
+async function emitAuthAudit(
+  engine: ThreadEngine,
+  threadId: string,
+  context: AuthContext,
+  action: WeaveAction,
+  actor: Actor,
+  correlationId?: string,
+): Promise<void> {
+  try {
+    await recordAuthDecision(engine, {
+      threadId,
+      context,
+      action,
+      decision: { allowed: true },
+      actor,
+      correlationId,
+    });
+  } catch {
+    // Audit recording failure should not break the request
+  }
 }
 
 export type ApiRouteHandler = (
@@ -186,8 +210,9 @@ async function routeRequest(
     const body = CreateThreadBodySchema.parse(await readJson(request));
 
     let authSummary: AuthSummary | undefined;
+    let authenticated: Awaited<ReturnType<typeof authenticateRequest>> = null;
     if (auth) {
-      const authenticated = await authenticateRequest(auth, request, response);
+      authenticated = await authenticateRequest(auth, request, response);
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "thread.start", agentName: body.agentName }, response))) return;
       authSummary = authenticated.summary;
@@ -203,6 +228,10 @@ async function routeRequest(
       actor: body.actor ?? { type: "user", id: "api-user" },
       metadata: mergedMetadata,
     });
+    if (authenticated) {
+      const auditActor = body.actor ?? actorFromAuth(authenticated.context);
+      await emitAuthAudit(engine, session.threadId, authenticated.context, { type: "thread.start", agentName: body.agentName }, auditActor, session.correlationId);
+    }
     const projection = await engine.getProjection(session.threadId);
     await safeEmitLog(observability, {
       ...span,
@@ -224,6 +253,7 @@ async function routeRequest(
       const authenticated = await authenticateRequest(auth, request, response);
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+      await emitAuthAudit(engine, threadId, authenticated.context, { type: "thread.read", threadId }, actorFromAuth(authenticated.context));
     }
 
     const projection = await engine.getProjection(threadId);
@@ -253,6 +283,7 @@ async function routeRequest(
       const authenticated = await authenticateRequest(auth, request, response);
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+      await emitAuthAudit(engine, threadId, authenticated.context, { type: "thread.read", threadId }, actorFromAuth(authenticated.context));
     }
 
     const events = await engine.read(threadId, { fromSeq, limit });
@@ -276,6 +307,7 @@ async function routeRequest(
       const authenticated = await authenticateRequest(auth, request, response);
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+      await emitAuthAudit(engine, threadId, authenticated.context, { type: "thread.read", threadId }, actorFromAuth(authenticated.context));
     }
 
     const projection = await engine.getProjection(threadId);
@@ -305,6 +337,7 @@ async function routeRequest(
       const authenticated = await authenticateRequest(auth, request, response);
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+      await emitAuthAudit(engine, threadId, authenticated.context, { type: "thread.read", threadId }, actorFromAuth(authenticated.context));
     }
 
     const fromSeq = resolveStreamFromSeq(request, url);
@@ -324,6 +357,7 @@ async function routeRequest(
       const authenticated = await authenticateRequest(auth, request, response);
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "artifact.read", threadId }, response))) return;
+      await emitAuthAudit(engine, threadId, authenticated.context, { type: "artifact.read", threadId }, actorFromAuth(authenticated.context));
     }
 
     const artifacts = await artifactStore.listArtifacts(threadId);
@@ -343,6 +377,7 @@ async function routeRequest(
       const authenticated = await authenticateRequest(auth, request, response);
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+      await emitAuthAudit(engine, threadId, authenticated.context, { type: "thread.read", threadId }, actorFromAuth(authenticated.context));
     }
 
     const items = await engine.listInbox(threadId);
@@ -362,6 +397,7 @@ async function routeRequest(
       const authenticated = await authenticateRequest(auth, request, response);
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+      await emitAuthAudit(engine, threadId, authenticated.context, { type: "thread.read", threadId }, actorFromAuth(authenticated.context));
     }
 
     const spans = await observabilityReader.listSpans(threadId);
@@ -381,6 +417,7 @@ async function routeRequest(
       const authenticated = await authenticateRequest(auth, request, response);
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "thread.read", threadId }, response))) return;
+      await emitAuthAudit(engine, threadId, authenticated.context, { type: "thread.read", threadId }, actorFromAuth(authenticated.context));
     }
 
     const logs = await observabilityReader.listLogs(threadId);
@@ -398,6 +435,7 @@ async function routeRequest(
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "thread.signal", threadId, signalName: body.signal }, response))) return;
       const resolvedActor = body.actor ?? actorFromAuth(authenticated.context);
+      await emitAuthAudit(engine, threadId, authenticated.context, { type: "thread.signal", threadId, signalName: body.signal }, resolvedActor);
       const result = await service.deliverSignal({
         threadId,
         signal: body.signal,
@@ -454,6 +492,7 @@ async function routeRequest(
       const authenticated = await authenticateRequest(auth, request, response);
       if (!authenticated) return;
       if (!(await authorizeAction(auth, authenticated.context, { type: "gate.resolve", threadId, gateId, resolution: body.resolution }, response))) return;
+      await emitAuthAudit(engine, threadId, authenticated.context, { type: "gate.resolve", threadId, gateId, resolution: body.resolution }, actorFromAuth(authenticated.context));
       await service.resolveGate(threadId, gateId, body.resolution, body.comment, actorFromAuth(authenticated.context));
       const projection = await engine.getProjection(threadId);
       await safeEmitLog(observability, {

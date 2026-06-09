@@ -143,8 +143,19 @@ The PoC uses this event set.
 - `dev.pr.opened`
 - `dev.pr.updated`
 - `dev.pr.ready_for_review`
+- `dev.source_checkpoint.proposed`
+- `dev.source_checkpoint.created`
+- `dev.source_checkpoint.failed`
+- `dev.source_checkpoint.restored`
+- `auth.decision.recorded`
 
 Development workflow events are internal audit facts for Weave-managed implementation initiatives. They are valid `ThreadEvent` records, but they do not wake runners or tool workers by default.
+
+Auth decision audit events (`auth.decision.recorded`) are thread-scoped authorization evidence. They record safe, durable auth decision payloads without storing raw tokens, full provider claims, or unhashed provider subjects. Auth audit events are history-only and do not wake runners or tool workers.
+
+### Pre-thread denial limitations
+
+Auth decisions that deny access before a thread exists (e.g., `401 Unauthorized` or `403 Forbidden` on `POST /threads`) cannot be recorded as `auth.decision.recorded` events because there is no target thread to append to. These pre-thread denials are observable only via server logs and observability spans, not via thread history. Similarly, denied auth decisions on existing threads where the requester lacks write access are not recorded in the thread to avoid granting implicit write permissions to denied principals.
 
 The PRD/SOW planning events record compact lifecycle facts only. Full `InitiativeSpec` and `InitiativePlan` data belongs in checkpoints such as `initiative-spec`, `proposed-initiative-plan`, `approved-initiative-plan`, and `latest-plan-decision`.
 
@@ -554,6 +565,23 @@ const CheckpointCompletedPayload = z.object({
 })
 ```
 
+### Auth decision recorded
+
+```ts
+const AuthDecisionRecordedPayload = z.object({
+  principalId: z.string().min(1),
+  principalKind: z.string().min(1),
+  provider: z.string().min(1),
+  action: z.string().min(1),
+  resource: z.string().min(1).optional(),
+  decision: z.enum(["allowed", "denied"]),
+  reason: z.string().min(1).optional(),
+  subjectHash: z.string().min(1).optional(),
+})
+```
+
+`auth.decision.recorded` is a thread-scoped audit event that records an authorization decision. The payload is safe for durable storage: it contains the principal id, principal kind (derived from the actor type), auth provider, action type, optional resource identifier, decision outcome, optional human-readable reason, and an optional hashed provider subject. Raw access tokens, raw ID tokens, refresh tokens, full provider claims, and unhashed provider subjects are never stored. The `subjectHash` is a truncated SHA-256 of `provider\0subject` when a provider alias subject is available.
+
 ## Discriminated Union
 
 ```ts
@@ -702,6 +730,11 @@ const ChildThreadFailedEvent = EventEnvelopeBase.extend({
   payload: ChildThreadFailedPayload,
 })
 
+const AuthDecisionRecordedEvent = EventEnvelopeBase.extend({
+  type: z.literal("auth.decision.recorded"),
+  payload: AuthDecisionRecordedPayload,
+})
+
 export const ThreadEvent = z.discriminatedUnion("type", [
   SessionStartedEvent,
   PromptReceivedEvent,
@@ -728,6 +761,7 @@ export const ThreadEvent = z.discriminatedUnion("type", [
   ChildThreadSpawnedEvent,
   ChildThreadCompletedEvent,
   ChildThreadFailedEvent,
+  AuthDecisionRecordedEvent,
 ])
 ```
 
@@ -764,6 +798,7 @@ Not every durable event needs to wake the runner.
 - `agent.remediation.proposed`
 - `agent.incident_report.produced`
 - `checkpoint.completed`
+- `auth.decision.recorded`
 
 This separation keeps the durable history rich while the runner wake logic stays simple. In V1, `tool.failed` and `agent.failed` mark the thread failed immediately; they are terminal rather than runner wakes.
 

@@ -465,6 +465,17 @@ export const DevPrReadyForReviewPayloadSchema = z.object({
   shippedSlices: z.array(z.string().min(1)),
 });
 
+export const AuthDecisionRecordedPayloadSchema = z.object({
+  principalId: z.string().min(1),
+  principalKind: z.string().min(1),
+  provider: z.string().min(1),
+  action: z.string().min(1),
+  resource: z.string().min(1).optional(),
+  decision: z.enum(["allowed", "denied"]),
+  reason: z.string().min(1).optional(),
+  subjectHash: z.string().min(1).optional(),
+});
+
 const SessionStartedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("session.started"),
   payload: SessionStartedPayloadSchema,
@@ -715,6 +726,34 @@ const DevPrReadyForReviewEventSchema = EventEnvelopeBaseSchema.extend({
   payload: DevPrReadyForReviewPayloadSchema,
 });
 
+<<<<<<< HEAD
+=======
+const DevSourceCheckpointProposedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.source_checkpoint.proposed"),
+  payload: DevSourceCheckpointProposedPayloadSchema,
+});
+
+const DevSourceCheckpointCreatedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.source_checkpoint.created"),
+  payload: DevSourceCheckpointCreatedPayloadSchema,
+});
+
+const DevSourceCheckpointFailedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.source_checkpoint.failed"),
+  payload: DevSourceCheckpointFailedPayloadSchema,
+});
+
+const DevSourceCheckpointRestoredEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.source_checkpoint.restored"),
+  payload: DevSourceCheckpointRestoredPayloadSchema,
+});
+
+const AuthDecisionRecordedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("auth.decision.recorded"),
+  payload: AuthDecisionRecordedPayloadSchema,
+});
+
+>>>>>>> c0ba0a3 (feat: complete Auth Decision Audit Trail)
 export const ThreadEventSchema = z.discriminatedUnion("type", [
   SessionStartedEventSchema,
   PromptReceivedEventSchema,
@@ -766,6 +805,11 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   DevPrOpenedEventSchema,
   DevPrUpdatedEventSchema,
   DevPrReadyForReviewEventSchema,
+  DevSourceCheckpointProposedEventSchema,
+  DevSourceCheckpointCreatedEventSchema,
+  DevSourceCheckpointFailedEventSchema,
+  DevSourceCheckpointRestoredEventSchema,
+  AuthDecisionRecordedEventSchema,
 ]);
 
 export type ThreadEvent = z.infer<typeof ThreadEventSchema>;
