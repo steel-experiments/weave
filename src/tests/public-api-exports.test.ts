@@ -75,8 +75,16 @@ import {
   allowGroup,
   allowEveryone,
   denyEveryone,
+  allowRole,
+  allowScope,
+  allowTenant,
+  allowOrganization,
+  defaultAccessContext,
   toAuthSummary,
   authRequestFromIncoming,
+  createAuthProviderAdapter,
+  jwtAuth,
+  createIdentityAdapterContractTests,
 } from "weave/auth";
 import { z } from "zod";
 
@@ -273,8 +281,16 @@ assert.equal(typeof allowUser, "function");
 assert.equal(typeof allowGroup, "function");
 assert.equal(typeof allowEveryone, "function");
 assert.equal(typeof denyEveryone, "function");
+assert.equal(typeof allowRole, "function");
+assert.equal(typeof allowScope, "function");
+assert.equal(typeof allowTenant, "function");
+assert.equal(typeof allowOrganization, "function");
+assert.equal(typeof defaultAccessContext, "function");
 assert.equal(typeof toAuthSummary, "function");
 assert.equal(typeof authRequestFromIncoming, "function");
+assert.equal(typeof createAuthProviderAdapter, "function");
+assert.equal(typeof jwtAuth, "function");
+assert.equal(typeof createIdentityAdapterContractTests, "function");
 
 assert.equal(typeof DeterministicMockAgent, "function");
 assert.equal(typeof MockAsyncToolWorker, "function");

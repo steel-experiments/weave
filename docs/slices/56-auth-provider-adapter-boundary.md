@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
-- Last updated: `2026-06-03`
+- Status: `Completed`
+- Last updated: `2026-06-09`
 - Owner: `weave-core`
 
 ## Goal
@@ -76,29 +76,30 @@ Core may provide dependency-light adapters such as `jwtAuth(...)` or `oidcAuth(.
 
 ## Acceptance Criteria
 
-- [ ] Provider adapter boundaries are documented.
-- [ ] Core auth interfaces do not depend on Better Auth, OpenAuth, Okta, Clerk, or Slack SDKs.
-- [ ] At least one dependency-light token identity adapter or adapter contract test proves the boundary.
-- [ ] Provider groups, roles, scopes, tenant, and organization can populate normalized auth context.
-- [ ] Usernames and emails are documented as aliases, not preferred immutable identifiers.
-- [ ] Third-party adapter packages have a clear contract to implement.
+- [x] Provider adapter boundaries are documented.
+- [x] Core auth interfaces do not depend on Better Auth, OpenAuth, Okta, Clerk, or Slack SDKs.
+- [x] At least one dependency-light token identity adapter or adapter contract test proves the boundary.
+- [x] Provider groups, roles, scopes, tenant, and organization can populate normalized auth context.
+- [x] Usernames and emails are documented as aliases, not preferred immutable identifiers.
+- [x] Third-party adapter packages have a clear contract to implement.
 
 ## Progress
 
-- [ ] Adapter boundary docs.
-- [ ] Identity adapter contract tests.
-- [ ] Optional dependency-light token adapter.
-- [ ] Group/role/scope mapping.
-- [ ] End-to-end gate example.
-- [ ] Docs updates.
+- [x] Adapter boundary docs.
+- [x] Identity adapter contract tests.
+- [x] Optional dependency-light token adapter.
+- [x] Group/role/scope mapping.
+- [x] End-to-end gate example.
+- [x] Docs updates.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+Completed 2026-06-09. Added `AuthProviderAdapter` contract, `ClaimNormalizer`, and dependency-light `jwtAuth()` (HS256 via Node `crypto`). Extended `Principal` with optional `roles`, `scopes`, `tenantId`, `organizationId`. Added `AccessContext` to `AuthContext` for normalized access claims. Added `allowRole`, `allowScope`, `allowTenant`, `allowOrganization` access rule builders. Added reusable `createIdentityAdapterContractTests` suite. Documented adapter boundary in `docs/auth-provider-adapters.md`. All existing tests continue to pass.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/architecture.md`
-- [ ] package export docs
+- [x] this slice document
+- [x] `docs/declarative-api.md`
+- [x] `docs/architecture.md`
+- [x] package export docs
+- [x] `docs/auth-provider-adapters.md` (new)
