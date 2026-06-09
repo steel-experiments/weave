@@ -143,10 +143,6 @@ The PoC uses this event set.
 - `dev.pr.opened`
 - `dev.pr.updated`
 - `dev.pr.ready_for_review`
-- `dev.source_checkpoint.proposed`
-- `dev.source_checkpoint.created`
-- `dev.source_checkpoint.failed`
-- `dev.source_checkpoint.restored`
 - `auth.decision.recorded`
 
 Development workflow events are internal audit facts for Weave-managed implementation initiatives. They are valid `ThreadEvent` records, but they do not wake runners or tool workers by default.

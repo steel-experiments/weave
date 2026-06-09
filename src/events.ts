@@ -726,26 +726,6 @@ const DevPrReadyForReviewEventSchema = EventEnvelopeBaseSchema.extend({
   payload: DevPrReadyForReviewPayloadSchema,
 });
 
-const DevSourceCheckpointProposedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.source_checkpoint.proposed"),
-  payload: DevSourceCheckpointProposedPayloadSchema,
-});
-
-const DevSourceCheckpointCreatedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.source_checkpoint.created"),
-  payload: DevSourceCheckpointCreatedPayloadSchema,
-});
-
-const DevSourceCheckpointFailedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.source_checkpoint.failed"),
-  payload: DevSourceCheckpointFailedPayloadSchema,
-});
-
-const DevSourceCheckpointRestoredEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.source_checkpoint.restored"),
-  payload: DevSourceCheckpointRestoredPayloadSchema,
-});
-
 const AuthDecisionRecordedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("auth.decision.recorded"),
   payload: AuthDecisionRecordedPayloadSchema,
@@ -802,10 +782,6 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   DevPrOpenedEventSchema,
   DevPrUpdatedEventSchema,
   DevPrReadyForReviewEventSchema,
-  DevSourceCheckpointProposedEventSchema,
-  DevSourceCheckpointCreatedEventSchema,
-  DevSourceCheckpointFailedEventSchema,
-  DevSourceCheckpointRestoredEventSchema,
   AuthDecisionRecordedEventSchema,
 ]);
 
