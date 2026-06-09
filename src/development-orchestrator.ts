@@ -1991,34 +1991,40 @@ export function createRepairAgent(options: {
         highRiskFiles: ["src/events.ts", "src/postgres-engine.ts", "src/capability-contract.ts", "src/policy-contract.ts"],
       });
 
+      let repairAttempt: { attempt: number; repairKey: string };
       if (decision.status === "human-gate") {
-        await ctx.gate("repair-stop", {
+        const resolution = await ctx.gate("repair-stop", {
           reason: "repair-stop",
           proposedAction: decision.reason,
         });
-        return RepairResultSchema.parse({
-          status: "blocked",
-          attempt: input.attempt,
-          branch: input.branch,
-          workspaceRef: input.workspaceRef,
-          summary: decision.reason,
-          limitations: ["Repair stopped for human decision."],
-        });
+        if (resolution.resolution !== "approved") {
+          return RepairResultSchema.parse({
+            status: "blocked",
+            attempt: input.attempt,
+            branch: input.branch,
+            workspaceRef: input.workspaceRef,
+            summary: resolution.comment?.trim() ? `Repair denied: ${resolution.comment}` : decision.reason,
+            limitations: ["Repair stopped for human decision."],
+          });
+        }
+        repairAttempt = { attempt: attemptCount, repairKey: repairAttemptKey(attemptCount) };
+      } else {
+        repairAttempt = decision;
       }
 
       await ctx.emit(
-        `repair-started:${input.slice.id}:${decision.repairKey}`,
+        `repair-started:${input.slice.id}:${repairAttempt.repairKey}`,
         developmentEvents.repairStarted({
           sliceId: input.slice.id,
           branch: input.branch,
-          attempt: decision.attempt,
+          attempt: repairAttempt.attempt,
           findings: input.findings,
         }),
       );
 
-      const repairResult = await ctx.tool(decision.repairKey, repairTool, input);
+      const repairResult = await ctx.tool(repairAttempt.repairKey, repairTool, input);
       await ctx.emit(
-        `repair-completed:${input.slice.id}:${decision.repairKey}`,
+        `repair-completed:${input.slice.id}:${repairAttempt.repairKey}`,
         developmentEvents.repairCompleted({
           sliceId: input.slice.id,
           branch: input.branch,

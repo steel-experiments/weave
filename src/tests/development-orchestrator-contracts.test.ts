@@ -1725,6 +1725,50 @@ const exhaustedOutput = exhaustedFinishedPlan.events.find((candidate): candidate
 assert(exhaustedOutput);
 assert.equal((exhaustedOutput.payload.output as { status: string }).status, "blocked");
 
+const approvedHighRiskRepairAgent = createRepairAgent({ runner: { run: () => repairResult } });
+const approvedHighRiskThreadId = "repair-agent-approved-high-risk";
+const approvedHighRiskInput = {
+  ...repairInput,
+  findings: [{ severity: "high" as const, issue: "Touches credentials.", file: "src/credentials.ts" }],
+};
+const approvedHighRiskHistory = createInitialHistory(approvedHighRiskThreadId, approvedHighRiskInput, approvedHighRiskRepairAgent.name);
+const approvedHighRiskFirstPlan = await createAgentPlanner(approvedHighRiskRepairAgent).plan(approvedHighRiskThreadId, approvedHighRiskHistory);
+assert(approvedHighRiskFirstPlan);
+assert.equal(approvedHighRiskFirstPlan.events.some((candidate) => candidate.type === "tool.requested"), false);
+const approvedHighRiskGate = approvedHighRiskFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
+  candidate.type === "gate.created",
+);
+assert(approvedHighRiskGate);
+assert.equal(approvedHighRiskGate.payload.reason, "repair-stop");
+const approvedHighRiskGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  eventId: eventKey(approvedHighRiskThreadId, "gate.resolved", "repair-stop-approved"),
+  threadId: approvedHighRiskThreadId,
+  type: "gate.resolved",
+  occurredAt: nowIso(),
+  correlationId: approvedHighRiskGate.correlationId,
+  causationId: approvedHighRiskGate.eventId,
+  scopeKey: approvedHighRiskGate.scopeKey,
+  stepKey: approvedHighRiskGate.stepKey,
+  actor: { type: "human", id: "maintainer" },
+  payload: {
+    gateId: approvedHighRiskGate.payload.gateId,
+    resolution: "approved",
+    comment: "proceed with repair",
+  },
+};
+const approvedHighRiskPlan = await createAgentPlanner(approvedHighRiskRepairAgent).plan(approvedHighRiskThreadId, [
+  ...approvedHighRiskHistory,
+  ...approvedHighRiskFirstPlan.events,
+  approvedHighRiskGateResolved,
+]);
+assert(approvedHighRiskPlan);
+assert.equal(approvedHighRiskPlan.events.some((candidate) => candidate.type === "dev.repair.started"), true);
+const approvedHighRiskRequest = approvedHighRiskPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(approvedHighRiskRequest);
+assert.equal(approvedHighRiskRequest.stepKey, "repair:0");
+
 const completedSliceSummary = {
   sliceId: validSlice.id,
   title: validSlice.title,
