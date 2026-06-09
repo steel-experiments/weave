@@ -5,6 +5,8 @@ import {
   DevelopmentBlockedRunnerError,
   DevelopmentSlicePlanSchema,
   DevelopmentWorkspacePolicySchema,
+  FinalizationConfigSchema,
+  FinalizationResultSchema,
   InitiativePlanSchema,
   InitiativeSpecSchema,
   compileInitiativePlan,
@@ -13,6 +15,10 @@ import {
   InitiativeExecutionStateSchema,
   SliceExecutionStateSchema,
   SliceRunnerInputSchema,
+  SourceCheckpointFailedSchema,
+  SourceCheckpointProposedSchema,
+  SourceCheckpointRestoredSchema,
+  SourceCheckpointSchema,
   ImplementationSummarySchema,
   OpenCodeImplementerInputSchema,
   PrDraftInputSchema,
@@ -26,6 +32,7 @@ import {
   buildPrHandoffArtifact,
   buildWorkspaceAllocateInput,
   createGithubPrUpsertTool,
+  createLocalMergeFinalizationTool,
   buildDevelopmentSlicePlan,
   createOpenCodeImplementationTool,
   createOpenCodeImplementerAgent,
@@ -161,6 +168,8 @@ assert.equal(DevelopmentCheckpointKeys.approvedInitiativePlan, "approved-initiat
 assert.equal(DevelopmentCheckpointKeys.latestPlanDecision, "latest-plan-decision");
 assert.equal(DevelopmentCheckpointKeys.approvedSlicePlan, "approved-slice-plan");
 assert.equal(DevelopmentCheckpointKeys.workspaceRef, "workspace-ref");
+assert.equal(DevelopmentCheckpointKeys.sourceCheckpoint, "source-checkpoint");
+assert.equal(DevelopmentCheckpointKeys.finalizationResult, "finalization-result");
 assert.equal(buildDevelopmentSlicePlan(initiative).summary, "Plan 1 development slice for Build Weave Maintainer.");
 
 const compiledPlan = compileMarkdownInitiativePlan({
@@ -304,6 +313,60 @@ const verification = VerificationResultSchema.parse({
 });
 
 assert.equal(verification.commands[0]?.status, "passed");
+
+const sourceCheckpoint = SourceCheckpointSchema.parse({
+  checkpointId: deterministicUuid("source-checkpoint", validSlice.id),
+  initiativeThreadId: "initiative-thread-01",
+  sliceThreadId: "slice-thread-01",
+  sliceId: validSlice.id,
+  title: validSlice.title,
+  workspaceRef,
+  baseSha: "abc123",
+  checkpointSha: "def456",
+  changedFiles: ["src/development-orchestrator.ts", "src/events.ts"],
+  commitMessage: "feat(dev-orchestrator): add source checkpoint contracts",
+  verificationSummary: {
+    status: "passed",
+    commands: verification.commands,
+  },
+  reviewSummary: [
+    {
+      reviewer: "architecture-reviewer",
+      verdict: "pass",
+      findingCount: 0,
+    },
+  ],
+});
+
+assert.equal(sourceCheckpoint.workspaceRef.workingBranch, initiative.workingBranch);
+assert.equal(sourceCheckpoint.verificationSummary.commands[0]?.command, "npm test");
+assert.equal(SourceCheckpointSchema.safeParse({ ...sourceCheckpoint, changedFiles: [] }).success, false);
+assert.equal(SourceCheckpointProposedSchema.parse({ ...sourceCheckpoint, checkpointSha: undefined }).baseSha, "abc123");
+assert.equal(
+  SourceCheckpointFailedSchema.parse({
+    initiativeThreadId: sourceCheckpoint.initiativeThreadId,
+    sliceThreadId: sourceCheckpoint.sliceThreadId,
+    sliceId: sourceCheckpoint.sliceId,
+    reason: "No source changes to checkpoint.",
+  }).changedFiles.length,
+  0,
+);
+const restoredCheckpoint = SourceCheckpointRestoredSchema.parse({
+  checkpointId: sourceCheckpoint.checkpointId,
+  initiativeThreadId: sourceCheckpoint.initiativeThreadId,
+  sliceThreadId: sourceCheckpoint.sliceThreadId,
+  sliceId: sourceCheckpoint.sliceId,
+  title: sourceCheckpoint.title,
+  workspaceRef,
+  restoredBy: "operator",
+  fromSha: "fedcba",
+  checkpointSha: sourceCheckpoint.checkpointSha,
+  restoredSha: sourceCheckpoint.checkpointSha,
+  dirtyBefore: false,
+  forced: false,
+  restoredAt: nowIso(),
+});
+assert.equal(restoredCheckpoint.restoredSha, sourceCheckpoint.checkpointSha);
 
 const review = ReviewResultSchema.parse({
   reviewer: "architecture-reviewer",
@@ -449,6 +512,50 @@ const reviewCompleted = developmentEvents.reviewCompleted({
 
 assert.equal(reviewCompleted.type, "dev.review.completed");
 assert.equal(developmentEvents.prReadyForReview.type, "dev.pr.ready_for_review");
+
+const sourceCheckpointCreated = developmentEvents.sourceCheckpointCreated(sourceCheckpoint);
+assert.equal(sourceCheckpointCreated.type, "dev.source_checkpoint.created");
+const { checkpointSha: _checkpointSha, createdAt: _createdAt, ...sourceCheckpointProposal } = sourceCheckpoint;
+assert.equal(developmentEvents.sourceCheckpointProposed(sourceCheckpointProposal).type, "dev.source_checkpoint.proposed");
+assert.equal(
+  developmentEvents.sourceCheckpointFailed({
+    initiativeThreadId: sourceCheckpoint.initiativeThreadId,
+    sliceThreadId: sourceCheckpoint.sliceThreadId,
+    sliceId: sourceCheckpoint.sliceId,
+    workspaceRef,
+    baseSha: sourceCheckpoint.baseSha,
+    changedFiles: sourceCheckpoint.changedFiles,
+    commitMessage: sourceCheckpoint.commitMessage,
+    reason: "git commit failed",
+    errorCode: "git-commit-failed",
+  }).type,
+  "dev.source_checkpoint.failed",
+);
+
+const parsedCheckpointEvent = ThreadEventSchema.parse({
+  eventId: eventKey("dev-thread", "dev.source_checkpoint.created", "source-checkpoint-created"),
+  threadId: "dev-thread",
+  type: "dev.source_checkpoint.created",
+  occurredAt: nowIso(),
+  actor: { type: "agent", id: "weave.sliceRunner" },
+  payload: sourceCheckpointCreated.payload,
+});
+
+assert.equal(parsedCheckpointEvent.type, "dev.source_checkpoint.created");
+assert.equal(parsedCheckpointEvent.payload.checkpointSha, "def456");
+
+const sourceCheckpointRestored = developmentEvents.sourceCheckpointRestored(restoredCheckpoint);
+assert.equal(sourceCheckpointRestored.type, "dev.source_checkpoint.restored");
+const parsedRestoredEvent = ThreadEventSchema.parse({
+  eventId: eventKey("dev-thread", "dev.source_checkpoint.restored", "source-checkpoint-restored"),
+  threadId: "dev-thread",
+  type: "dev.source_checkpoint.restored",
+  occurredAt: nowIso(),
+  actor: { type: "human", id: "operator" },
+  payload: sourceCheckpointRestored.payload,
+});
+assert.equal(parsedRestoredEvent.type, "dev.source_checkpoint.restored");
+assert.equal(parsedRestoredEvent.payload.restoredBy, "operator");
 
 const actualRepoContext = await readDevelopmentRepoContext({
   repo: "weave",
@@ -696,6 +803,7 @@ assert.equal(
 const sequenceMaintainer = createWeaveMaintainerAgent({ sliceRunnerAgent: weaveSliceRunner, prAgent: createPrAgent() });
 const sequenceThreadId = "initiative-sequencing-complete";
 const firstSliceRunnerInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: sequenceThreadId,
   initiative: sequencePlan.initiative,
   repo: sequencePlan.repo,
   branch: sequencePlan.workingBranch,
@@ -704,6 +812,7 @@ const firstSliceRunnerInput = SliceRunnerInputSchema.parse({
   maxRepairAttempts: 1,
 });
 const secondSliceRunnerInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: sequenceThreadId,
   initiative: sequencePlan.initiative,
   repo: sequencePlan.repo,
   branch: sequencePlan.workingBranch,
@@ -783,9 +892,10 @@ assert.equal((sequenceOutput.payload.output as { prDraft?: unknown }).prDraft !=
 
 const blockedMaintainer = createWeaveMaintainerAgent({ sliceRunnerAgent: weaveSliceRunner });
 const blockedSequenceThreadId = "initiative-sequencing-blocked";
+const blockedFirstSliceRunnerInput = SliceRunnerInputSchema.parse({ ...firstSliceRunnerInput, initiativeThreadId: blockedSequenceThreadId });
 const blockedSequenceHistory = [
   ...createInitialHistory(blockedSequenceThreadId, sequenceInitiative, blockedMaintainer.name),
-  childSpawnedEvent(blockedSequenceThreadId, `slice:${sequencePlan.slices[0]!.id}`, weaveSliceRunner.name, "blocked-child-slice-1", firstSliceRunnerInput, `Run development slice ${sequencePlan.slices[0]!.id}: ${sequencePlan.slices[0]!.title}`, blockedMaintainer.name),
+  childSpawnedEvent(blockedSequenceThreadId, `slice:${sequencePlan.slices[0]!.id}`, weaveSliceRunner.name, "blocked-child-slice-1", blockedFirstSliceRunnerInput, `Run development slice ${sequencePlan.slices[0]!.id}: ${sequencePlan.slices[0]!.title}`, blockedMaintainer.name),
 ];
 const blockedPlanner = createAgentPlanner(blockedMaintainer);
 const blockedFirstPlan = await blockedPlanner.plan(blockedSequenceThreadId, blockedSequenceHistory);
@@ -886,6 +996,7 @@ const lifecycleInitiative = DevelopmentInitiativeInputSchema.parse({
 });
 const lifecyclePlan = buildDevelopmentSlicePlan(lifecycleInitiative);
 const lifecycleFirstSliceInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: "initiative-workspace-lifecycle",
   initiative: lifecyclePlan.initiative,
   repo: lifecyclePlan.repo,
   branch: lifecyclePlan.workingBranch,
@@ -895,6 +1006,7 @@ const lifecycleFirstSliceInput = SliceRunnerInputSchema.parse({
   maxRepairAttempts: 1,
 });
 const lifecycleSecondSliceInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: "initiative-workspace-lifecycle",
   initiative: lifecyclePlan.initiative,
   repo: lifecyclePlan.repo,
   branch: lifecyclePlan.workingBranch,
@@ -1026,6 +1138,7 @@ const sliceModeRefTwo = { ...lifecycleWorkspaceRef, workspaceId: "slice-workspac
 const sliceModeInitiative = DevelopmentInitiativeInputSchema.parse({ ...sequenceInitiative, workspacePolicy: sliceModePolicy });
 const sliceModePlan = buildDevelopmentSlicePlan(sliceModeInitiative);
 const sliceModeFirstInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: "initiative-workspace-slice-mode",
   initiative: sliceModePlan.initiative,
   repo: sliceModePlan.repo,
   branch: sliceModePlan.workingBranch,
@@ -1035,6 +1148,7 @@ const sliceModeFirstInput = SliceRunnerInputSchema.parse({
   maxRepairAttempts: 1,
 });
 const sliceModeSecondInput = SliceRunnerInputSchema.parse({
+  initiativeThreadId: "initiative-workspace-slice-mode",
   initiative: sliceModePlan.initiative,
   repo: sliceModePlan.repo,
   branch: sliceModePlan.workingBranch,
@@ -1611,6 +1725,50 @@ const exhaustedOutput = exhaustedFinishedPlan.events.find((candidate): candidate
 assert(exhaustedOutput);
 assert.equal((exhaustedOutput.payload.output as { status: string }).status, "blocked");
 
+const approvedHighRiskRepairAgent = createRepairAgent({ runner: { run: () => repairResult } });
+const approvedHighRiskThreadId = "repair-agent-approved-high-risk";
+const approvedHighRiskInput = {
+  ...repairInput,
+  findings: [{ severity: "high" as const, issue: "Touches credentials.", file: "src/credentials.ts" }],
+};
+const approvedHighRiskHistory = createInitialHistory(approvedHighRiskThreadId, approvedHighRiskInput, approvedHighRiskRepairAgent.name);
+const approvedHighRiskFirstPlan = await createAgentPlanner(approvedHighRiskRepairAgent).plan(approvedHighRiskThreadId, approvedHighRiskHistory);
+assert(approvedHighRiskFirstPlan);
+assert.equal(approvedHighRiskFirstPlan.events.some((candidate) => candidate.type === "tool.requested"), false);
+const approvedHighRiskGate = approvedHighRiskFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
+  candidate.type === "gate.created",
+);
+assert(approvedHighRiskGate);
+assert.equal(approvedHighRiskGate.payload.reason, "repair-stop");
+const approvedHighRiskGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  eventId: eventKey(approvedHighRiskThreadId, "gate.resolved", "repair-stop-approved"),
+  threadId: approvedHighRiskThreadId,
+  type: "gate.resolved",
+  occurredAt: nowIso(),
+  correlationId: approvedHighRiskGate.correlationId,
+  causationId: approvedHighRiskGate.eventId,
+  scopeKey: approvedHighRiskGate.scopeKey,
+  stepKey: approvedHighRiskGate.stepKey,
+  actor: { type: "human", id: "maintainer" },
+  payload: {
+    gateId: approvedHighRiskGate.payload.gateId,
+    resolution: "approved",
+    comment: "proceed with repair",
+  },
+};
+const approvedHighRiskPlan = await createAgentPlanner(approvedHighRiskRepairAgent).plan(approvedHighRiskThreadId, [
+  ...approvedHighRiskHistory,
+  ...approvedHighRiskFirstPlan.events,
+  approvedHighRiskGateResolved,
+]);
+assert(approvedHighRiskPlan);
+assert.equal(approvedHighRiskPlan.events.some((candidate) => candidate.type === "dev.repair.started"), true);
+const approvedHighRiskRequest = approvedHighRiskPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested",
+);
+assert(approvedHighRiskRequest);
+assert.equal(approvedHighRiskRequest.stepKey, "repair:0");
+
 const completedSliceSummary = {
   sliceId: validSlice.id,
   title: validSlice.title,
@@ -1640,6 +1798,19 @@ assert.equal(builtPrDraft.repairAttempts, 1);
 assert.equal(builtPrDraft.mergeRequiresHumanApproval, true);
 assert.equal(builtPrDraft.body.includes("## Human Approval Checklist"), true);
 assert.equal(builtPrDraft.body.includes("Wire parent slice runner composition."), true);
+assert.equal(PrDraftInputSchema.parse({
+  initiative: initiative.initiative,
+  repo: initiative.repo,
+  baseBranch: initiative.baseBranch,
+  branch: initiative.workingBranch,
+  shippedSlices: [completedSliceSummary],
+}).finalization.mode, "none");
+assert.equal(FinalizationConfigSchema.parse({ mode: "local-merge", repoRoot: "/tmp/weave" }).strategy, "merge-commit");
+assert.equal(FinalizationResultSchema.parse({
+  status: "not-requested",
+  mode: "none",
+  summary: "Local handoff only.",
+}).status, "not-requested");
 const builtHandoff = buildPrHandoffArtifact({
   prInput: {
     initiative: initiative.initiative,
@@ -1652,6 +1823,7 @@ const builtHandoff = buildPrHandoffArtifact({
   draft: builtPrDraft,
 });
 assert.equal(builtHandoff.remote.status, "pending-approval");
+assert.equal(builtHandoff.finalization.status, "not-requested");
 assert.equal(builtHandoff.validation.status, "passed");
 assert.equal(builtHandoff.shippedSlices[0]?.status, "completed");
 assert.throws(
@@ -1700,6 +1872,38 @@ const githubCapabilityName = Array.isArray(githubCapabilities)
   ? githubCapabilities[0]?.name
   : (githubCapabilities as { name?: string } | undefined)?.name;
 assert.equal(githubCapabilityName, "github.pr.create");
+const localMergeTool = createLocalMergeFinalizationTool({
+  run(input) {
+    return {
+      status: "merged",
+      mode: "local-merge",
+      repoRoot: input.repoRoot,
+      baseBranch: input.baseBranch,
+      branch: input.branch,
+      strategy: input.strategy,
+      beforeSha: "abc123",
+      afterSha: "def456",
+      summary: "Merged locally.",
+    };
+  },
+});
+assert.equal(localMergeTool.name, "dev.git.localMerge");
+const localMergeCapabilities =
+  typeof localMergeTool.capabilities === "function"
+    ? localMergeTool.capabilities({
+        input: {
+          repo: initiative.repo,
+          repoRoot: "/tmp/weave",
+          baseBranch: initiative.baseBranch,
+          branch: initiative.workingBranch,
+          strategy: "merge-commit",
+        },
+      })
+    : undefined;
+const localMergeCapabilityName = Array.isArray(localMergeCapabilities)
+  ? localMergeCapabilities[0]?.name
+  : (localMergeCapabilities as { name?: string } | undefined)?.name;
+assert.equal(localMergeCapabilityName, "git.localMerge");
 
 const prAgent = createPrAgent({
   githubRunner: {
@@ -1806,6 +2010,48 @@ assert.equal((prOutput.payload.output as { humanApproval: string }).humanApprova
 assert.equal((prOutput.payload.output as { prUrl: string }).prUrl, "https://github.com/acme/weave/pull/123");
 assert.equal((prOutput.payload.output as { handoffArtifact: { remote: { status: string } } }).handoffArtifact.remote.status, "created");
 
+const localMergePrAgent = createPrAgent();
+const localMergePrInput = {
+  initiative: initiative.initiative,
+  repo: initiative.repo,
+  baseBranch: initiative.baseBranch,
+  branch: initiative.workingBranch,
+  shippedSlices: [completedSliceSummary],
+  github: { mode: "none" as const, draft: true },
+  finalization: { mode: "local-merge" as const, repoRoot: "/tmp/weave" },
+};
+const localMergeThreadId = "pr-agent-local-merge-missing-checkpoints";
+const localMergeHistory = createInitialHistory(localMergeThreadId, localMergePrInput, localMergePrAgent.name);
+const localMergePlanner = createAgentPlanner(localMergePrAgent);
+const localMergeFirstPlan = await localMergePlanner.plan(localMergeThreadId, localMergeHistory);
+assert(localMergeFirstPlan);
+const localMergePrGate = localMergeFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
+  candidate.type === "gate.created" && candidate.payload.reason === "pr-review-approval",
+);
+assert(localMergePrGate);
+assert.match(localMergePrGate.payload.proposedAction ?? "", /Approve local merge/);
+const localMergeGateResolved: Extract<ThreadEvent, { type: "gate.resolved" }> = {
+  eventId: eventKey(localMergeThreadId, "gate.resolved", "pr-review-approval"),
+  threadId: localMergeThreadId,
+  type: "gate.resolved",
+  occurredAt: nowIso(),
+  correlationId: localMergePrGate.correlationId,
+  causationId: localMergePrGate.eventId,
+  scopeKey: localMergePrGate.scopeKey,
+  stepKey: localMergePrGate.stepKey,
+  actor: { type: "human", id: "maintainer" },
+  payload: {
+    gateId: localMergePrGate.payload.gateId,
+    resolution: "approved",
+    comment: "merge locally",
+  },
+};
+const localMergeApprovedPlan = await localMergePlanner.plan(localMergeThreadId, [...localMergeHistory, ...localMergeFirstPlan.events, localMergeGateResolved]);
+assert(localMergeApprovedPlan);
+assert.equal(localMergeApprovedPlan.events.some((candidate) => candidate.type === "tool.requested"), false);
+assert.equal(localMergeApprovedPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "finalization-result"), true);
+assert.equal(localMergeApprovedPlan.events.some((candidate) => candidate.type === "gate.created" && candidate.payload.reason === "finalization-stop"), true);
+
 const initialSliceState = createInitialSliceExecutionState({ ...sliceRunnerInput, workspaceRef, maxRepairAttempts: 1 });
 assert.equal(initialSliceState.phase, "workspace-ready");
 assert.deepEqual(decideNextSliceAction(initialSliceState), { type: "run-implementation" });
@@ -1899,7 +2145,7 @@ const composedAfterVerification = await composedPlanner.plan(composedThreadId, [
   childCompletedEvent(composedThreadId, "wait-verify:0", "child-verify-0", verifier.name, verificationResult),
 ]);
 assert.equal(composedAfterVerification, null);
-const composedFinished = await composedPlanner.plan(composedThreadId, [
+const composedAfterReview = await composedPlanner.plan(composedThreadId, [
   ...composedHistory,
   ...composedFirstPlan.events,
   composedBranchCompleted,
@@ -1908,7 +2154,50 @@ const composedFinished = await composedPlanner.plan(composedThreadId, [
   childCompletedEvent(composedThreadId, "wait-verify:0", "child-verify-0", verifier.name, verificationResult),
   childCompletedEvent(composedThreadId, "wait-review:architecture-reviewer:0", "child-review-architecture-0", reviewerAgent.name, passingReview),
 ]);
+assert(composedAfterReview);
+const sourceCheckpointRequest = composedAfterReview.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested" && candidate.payload.toolName === "dev.sourceCheckpoint.create",
+);
+assert(sourceCheckpointRequest);
+const composedSourceCheckpoint = SourceCheckpointSchema.parse({
+  ...sourceCheckpoint,
+  checkpointId: deterministicUuid("source-checkpoint", composedThreadId),
+  initiativeThreadId: composedThreadId,
+  sliceThreadId: composedThreadId,
+  workspaceRef,
+  baseSha: workspaceRef.baseCommit,
+  checkpointSha: "checkpoint-composed",
+  changedFiles: ["src/development-orchestrator.ts"],
+  commitMessage: "feat: complete Workflow Contracts And Events",
+});
+const sourceCheckpointCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(composedThreadId, "tool.completed", "create-source-checkpoint:01-contracts"),
+  threadId: composedThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: sourceCheckpointRequest.correlationId,
+  causationId: sourceCheckpointRequest.eventId,
+  scopeKey: sourceCheckpointRequest.scopeKey,
+  stepKey: sourceCheckpointRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: sourceCheckpointRequest.payload.toolCallId,
+    output: { ...composedSourceCheckpoint, status: "created" },
+  },
+};
+const composedFinished = await composedPlanner.plan(composedThreadId, [
+  ...composedHistory,
+  ...composedFirstPlan.events,
+  composedBranchCompleted,
+  ...composedAfterBranch.events,
+  childCompletedEvent(composedThreadId, "wait-implement", "child-implement", openCodeImplementer.name, implementationChildOutput),
+  childCompletedEvent(composedThreadId, "wait-verify:0", "child-verify-0", verifier.name, verificationResult),
+  childCompletedEvent(composedThreadId, "wait-review:architecture-reviewer:0", "child-review-architecture-0", reviewerAgent.name, passingReview),
+  ...composedAfterReview.events,
+  sourceCheckpointCompleted,
+]);
 assert(composedFinished);
+assert.equal(composedFinished.events.some((candidate) => candidate.type === "dev.source_checkpoint.created"), true);
 assert.equal(composedFinished.events.some((candidate) => candidate.type === "dev.slice.completed"), true);
 assert.equal(composedFinished.events.filter((candidate) => candidate.type === "dev.slice.completed").length, 1);
 const composedOutput = composedFinished.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
@@ -1916,6 +2205,7 @@ const composedOutput = composedFinished.events.find((candidate): candidate is Ex
 );
 assert(composedOutput);
 assert.equal((composedOutput.payload.output as { status: string }).status, "completed");
+assert.equal((composedOutput.payload.output as { sourceCheckpoint: { checkpointSha: string } }).sourceCheckpoint.checkpointSha, "checkpoint-composed");
 
 const failedVerificationResult = {
   status: "failed" as const,
@@ -2008,6 +2298,58 @@ const repairComposedBranchRequest = repairComposedFirstPlan.events.find((candida
   candidate.type === "tool.requested",
 );
 assert(repairComposedBranchRequest);
+const repairComposedAfterReview = await repairComposedPlanner.plan(repairComposedThreadId, [
+  ...repairComposedHistory,
+  ...repairComposedFirstPlan.events,
+  {
+    eventId: eventKey(repairComposedThreadId, "tool.completed", "read-branch-state"),
+    threadId: repairComposedThreadId,
+    type: "tool.completed",
+    occurredAt: nowIso(),
+    correlationId: repairComposedBranchRequest.correlationId,
+    causationId: repairComposedBranchRequest.eventId,
+    scopeKey: repairComposedBranchRequest.scopeKey,
+    stepKey: repairComposedBranchRequest.stepKey,
+    actor: { type: "worker", id: "test-worker" },
+    payload: {
+      toolCallId: repairComposedBranchRequest.payload.toolCallId,
+      output: branchState,
+    },
+  } satisfies Extract<ThreadEvent, { type: "tool.completed" }>,
+  childCompletedEvent(repairComposedThreadId, "wait-implement", "repair-child-implement", openCodeImplementer.name, implementationChildOutput),
+  childCompletedEvent(repairComposedThreadId, "wait-verify:0", "repair-child-verify-0", verifier.name, failedVerificationResult),
+  childCompletedEvent(repairComposedThreadId, "wait-review:architecture-reviewer:0", "repair-child-review-0", reviewerAgent.name, passingReview),
+  childCompletedEvent(repairComposedThreadId, "wait-repair:0", "repair-child-repair-0", repairAgent.name, repairResult),
+  childCompletedEvent(repairComposedThreadId, "wait-verify:1", "repair-child-verify-1", verifier.name, verificationResult),
+  childCompletedEvent(repairComposedThreadId, "wait-review:architecture-reviewer:1", "repair-child-review-1", reviewerAgent.name, passingReview),
+]);
+assert(repairComposedAfterReview);
+const repairSourceCheckpointRequest = repairComposedAfterReview.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
+  candidate.type === "tool.requested" && candidate.payload.toolName === "dev.sourceCheckpoint.create",
+);
+assert(repairSourceCheckpointRequest);
+const repairSourceCheckpointCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
+  eventId: eventKey(repairComposedThreadId, "tool.completed", "create-source-checkpoint:01-contracts"),
+  threadId: repairComposedThreadId,
+  type: "tool.completed",
+  occurredAt: nowIso(),
+  correlationId: repairSourceCheckpointRequest.correlationId,
+  causationId: repairSourceCheckpointRequest.eventId,
+  scopeKey: repairSourceCheckpointRequest.scopeKey,
+  stepKey: repairSourceCheckpointRequest.stepKey,
+  actor: { type: "worker", id: "test-worker" },
+  payload: {
+    toolCallId: repairSourceCheckpointRequest.payload.toolCallId,
+    output: {
+      ...composedSourceCheckpoint,
+      checkpointId: deterministicUuid("source-checkpoint", repairComposedThreadId),
+      initiativeThreadId: repairComposedThreadId,
+      sliceThreadId: repairComposedThreadId,
+      checkpointSha: "checkpoint-repair-composed",
+      status: "created",
+    },
+  },
+};
 const repairComposedFinished = await repairComposedPlanner.plan(repairComposedThreadId, [
   ...repairComposedHistory,
   ...repairComposedFirstPlan.events,
@@ -2032,6 +2374,8 @@ const repairComposedFinished = await repairComposedPlanner.plan(repairComposedTh
   childCompletedEvent(repairComposedThreadId, "wait-repair:0", "repair-child-repair-0", repairAgent.name, repairResult),
   childCompletedEvent(repairComposedThreadId, "wait-verify:1", "repair-child-verify-1", verifier.name, verificationResult),
   childCompletedEvent(repairComposedThreadId, "wait-review:architecture-reviewer:1", "repair-child-review-1", reviewerAgent.name, passingReview),
+  ...repairComposedAfterReview.events,
+  repairSourceCheckpointCompleted,
 ]);
 assert(repairComposedFinished);
 assert.equal(repairComposedFinished.events.some((candidate) => candidate.type === "dev.slice.completed"), true);

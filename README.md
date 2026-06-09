@@ -46,6 +46,15 @@ npm run dashboard
 
 It binds to `0.0.0.0:3010` by default so it is reachable from localhost and your Tailscale/device IP. It reads the configured `DATABASE_URL`.
 
+Inspect Weave Maintainer source checkpoints:
+
+```sh
+npm run checkpoints:list -- <initiative-thread-id>
+npm run checkpoints:show -- <checkpoint-id-or-sha>
+npm run checkpoints:diff -- <checkpoint-id-or-sha>
+npm run checkpoints:restore -- <checkpoint-id-or-sha> --confirm [--force]
+```
+
 Run the mock SRE north-star demo:
 
 ```sh

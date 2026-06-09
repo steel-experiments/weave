@@ -4,12 +4,19 @@ import {
   formatGateList,
   formatInitiativeList,
   formatInitiativeStatus,
+  formatSourceCheckpointDetail,
+  formatSourceCheckpointDiff,
+  formatSourceCheckpointList,
+  formatSourceCheckpointRestoreResult,
   getGate,
   getInitiativeStatus,
+  getSourceCheckpoint,
   latestPlanForGate,
   listInitiatives,
   listPendingGates,
+  listSourceCheckpoints,
   resolveOperatorGate,
+  restoreSourceCheckpoint,
 } from "../development-operator.js";
 import { migrate } from "../migrate.js";
 import { PostgresThreadEngine } from "../postgres-engine.js";
@@ -76,6 +83,40 @@ async function run(command: string, args: string[]): Promise<void> {
       console.log(formatInitiativeStatus(status));
       return;
     }
+    case "checkpoints:list": {
+      const threadId = requiredArg(args, 0, "initiative thread id");
+      console.log(formatSourceCheckpointList(await listSourceCheckpoints(pool, threadId)));
+      return;
+    }
+    case "checkpoints:show": {
+      const checkpointIdOrSha = requiredArg(args, 0, "checkpoint id or sha");
+      const checkpoint = await getSourceCheckpoint(pool, checkpointIdOrSha);
+      if (!checkpoint) {
+        throw new Error(`Source checkpoint not found: ${checkpointIdOrSha}`);
+      }
+      console.log(formatSourceCheckpointDetail(checkpoint));
+      return;
+    }
+    case "checkpoints:diff": {
+      const checkpointIdOrSha = requiredArg(args, 0, "checkpoint id or sha");
+      const checkpoint = await getSourceCheckpoint(pool, checkpointIdOrSha);
+      if (!checkpoint) {
+        throw new Error(`Source checkpoint not found: ${checkpointIdOrSha}`);
+      }
+      console.log(formatSourceCheckpointDiff(checkpoint));
+      return;
+    }
+    case "checkpoints:restore": {
+      const checkpointIdOrSha = requiredArg(args, 0, "checkpoint id or sha");
+      console.log(formatSourceCheckpointRestoreResult(await restoreSourceCheckpoint({
+        pool,
+        checkpointIdOrSha,
+        confirmed: hasFlag(args, "--confirm"),
+        force: hasFlag(args, "--force"),
+        actorId: optionValue(args, "--actor") ?? "operator",
+      })));
+      return;
+    }
     default:
       usage(1);
   }
@@ -101,6 +142,10 @@ function optionValue(args: readonly string[], name: string): string | undefined 
   return value;
 }
 
+function hasFlag(args: readonly string[], name: string): boolean {
+  return args.includes(name);
+}
+
 function usage(exitCode: number): never {
   console.error([
     "Usage:",
@@ -110,6 +155,10 @@ function usage(exitCode: number): never {
     "  npm run gates:reject -- <gate-id> --note \"reason\"",
     "  npm run initiatives:list",
     "  npm run initiative:status -- <thread-id>",
+    "  npm run checkpoints:list -- <initiative-thread-id>",
+    "  npm run checkpoints:show -- <checkpoint-id-or-sha>",
+    "  npm run checkpoints:diff -- <checkpoint-id-or-sha>",
+    "  npm run checkpoints:restore -- <checkpoint-id-or-sha> --confirm [--force]",
   ].join("\n"));
   process.exit(exitCode);
 }

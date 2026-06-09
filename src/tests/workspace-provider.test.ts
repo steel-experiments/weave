@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
+import { createGitLocalMergeFinalizationRunner, createGitSourceCheckpoint } from "../development-orchestrator.js";
+import { restoreSourceCheckpointWorktree } from "../development-operator.js";
 import {
   GitWorktreeWorkspaceProvider,
   WorkspaceAllocateInputSchema,
@@ -81,6 +83,85 @@ try {
   assert.equal(diff.changedFiles.includes("README.md"), true);
   assert.match(diff.diff, /changed/);
   assert.equal(diff.truncated, false);
+
+  const sourceCheckpoint = await createGitSourceCheckpoint({
+    initiativeThreadId: "initiative-thread",
+    sliceThreadId: "slice-thread",
+    sliceId: "57",
+    title: "Workspace Provider Boundary",
+    workspaceRef: ref,
+    commitMessage: "feat: complete Workspace Provider Boundary",
+    verificationSummary: {
+      status: "passed",
+      commands: [{ command: "npm test", exitCode: 0, status: "passed", summary: "Tests passed." }],
+    },
+    reviewSummary: [{ reviewer: "architecture-reviewer", verdict: "pass", findingCount: 0 }],
+  });
+  assert.equal(sourceCheckpoint.status, "created");
+  assert.equal(sourceCheckpoint.changedFiles.includes("README.md"), true);
+  assert.notEqual(sourceCheckpoint.checkpointSha, baseCommit);
+
+  const localMergeRunner = createGitLocalMergeFinalizationRunner();
+  const mergeResult = await localMergeRunner.run({
+    repo: "weave",
+    repoRoot: sourceRepoPath,
+    baseBranch: "main",
+    branch: "slice-57",
+    strategy: "merge-commit",
+  });
+  assert.equal(mergeResult.status, "merged");
+  assert.equal(mergeResult.status === "merged" ? mergeResult.beforeSha : "", baseCommit);
+
+  await git(sourceRepoPath, ["checkout", "-b", "conflict-branch", baseCommit]);
+  await writeFile(path.join(sourceRepoPath, "README.md"), "branch conflict\n", "utf8");
+  await git(sourceRepoPath, ["add", "README.md"]);
+  await git(sourceRepoPath, ["commit", "-m", "branch conflict"]);
+  await git(sourceRepoPath, ["checkout", "main"]);
+  await writeFile(path.join(sourceRepoPath, "README.md"), "main conflict\n", "utf8");
+  await git(sourceRepoPath, ["add", "README.md"]);
+  await git(sourceRepoPath, ["commit", "-m", "main conflict"]);
+  const conflictResult = await localMergeRunner.run({
+    repo: "weave",
+    repoRoot: sourceRepoPath,
+    baseBranch: "main",
+    branch: "conflict-branch",
+    strategy: "merge-commit",
+  });
+  assert.equal(conflictResult.status, "blocked");
+  assert.equal(conflictResult.status === "blocked" ? conflictResult.conflictFiles.includes("README.md") : false, true);
+  await git(sourceRepoPath, ["merge", "--abort"]);
+
+  if (sourceCheckpoint.status !== "created") {
+    throw new Error("Expected source checkpoint creation to succeed.");
+  }
+  const checkpointSummary = {
+    checkpointId: sourceCheckpoint.checkpointId,
+    initiativeThreadId: sourceCheckpoint.initiativeThreadId,
+    sliceThreadId: sourceCheckpoint.sliceThreadId,
+    sliceId: sourceCheckpoint.sliceId,
+    title: sourceCheckpoint.title,
+    workspaceRef: sourceCheckpoint.workspaceRef,
+    workspacePath: sourceCheckpoint.workspaceRef.path,
+    workingBranch: sourceCheckpoint.workspaceRef.workingBranch,
+    baseSha: sourceCheckpoint.baseSha,
+    checkpointSha: sourceCheckpoint.checkpointSha,
+    changedFiles: sourceCheckpoint.changedFiles,
+    commitMessage: sourceCheckpoint.commitMessage,
+    createdAt: sourceCheckpoint.createdAt,
+    eventThreadId: sourceCheckpoint.sliceThreadId,
+    eventSeq: 1,
+    diffCommand: `git -C '${sourceCheckpoint.workspaceRef.path}' diff ${sourceCheckpoint.baseSha}..${sourceCheckpoint.checkpointSha} --`,
+  };
+  await writeFile(path.join(ref.path, "LATER.md"), "later\n", "utf8");
+  assert.equal((await restoreSourceCheckpointWorktree(checkpointSummary, { confirmed: false })).status, "blocked");
+  const dirtyRestore = await restoreSourceCheckpointWorktree(checkpointSummary, { confirmed: true });
+  assert.equal(dirtyRestore.status, "blocked");
+  assert.match(dirtyRestore.status === "blocked" ? dirtyRestore.reason : "", /uncommitted/);
+  const forcedRestore = await restoreSourceCheckpointWorktree(checkpointSummary, { confirmed: true, force: true });
+  assert.equal(forcedRestore.status, "restored");
+  assert.equal(forcedRestore.status === "restored" ? forcedRestore.restoredSha : "", sourceCheckpoint.checkpointSha);
+
+  await writeFile(path.join(ref.path, "UNCOMMITTED.md"), "pending\n", "utf8");
 
   const blockedDirtyRemoval = await provider.remove({ ref, workspaceRoot, requireClean: true });
   assert.equal(blockedDirtyRemoval.status, "blocked");

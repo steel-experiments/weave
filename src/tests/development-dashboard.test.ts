@@ -13,6 +13,7 @@ assert.match(html, /#0b1326/);
 assert.match(html, /JetBrains Mono/);
 assert.match(html, /\/api\/state/);
 assert.match(html, /\/api\/gates\//);
+assert.match(html, /Source Checkpoints/);
 
 const server = createLocalDashboardServer({ pool: {} as never, service: {} as never });
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -62,11 +63,46 @@ try {
         message: "Halfway there.",
       },
     },
+    {
+      eventId: newEventId(),
+      threadId,
+      type: "checkpoint.completed",
+      occurredAt: nowIso(),
+      actor: { type: "agent", id: "weave.sliceRunner" },
+      payload: {
+        scopeKey: "agent:weave.sliceRunner",
+        stepKey: "source-checkpoint:01-dashboard-state",
+        value: {
+          checkpointId: newEventId(),
+          initiativeThreadId: threadId,
+          sliceThreadId: threadId,
+          sliceId: "01-dashboard-state",
+          title: "Dashboard State Regression",
+          workspaceRef: {
+            provider: "git-worktree",
+            workspaceId: "dashboard-workspace",
+            path: "/tmp/weave/dashboard-workspace",
+            repo: "weave",
+            baseBranch: "main",
+            workingBranch: "dashboard-state-regression",
+            baseCommit: "abc123",
+          },
+          baseSha: "abc123",
+          checkpointSha: "def456",
+          changedFiles: ["src/development-dashboard.ts"],
+          commitMessage: "feat: complete Dashboard State Regression",
+          verificationSummary: { status: "passed", commands: [] },
+          reviewSummary: [],
+          createdAt: nowIso(),
+        },
+      },
+    },
   ];
   await engine.append(events);
   const state = await buildDashboardState(testPool, threadId);
   assert.equal(state.selected?.threadId, threadId);
   assert.equal(state.toolEvents.some((event) => event.detail === "Halfway there."), true);
+  assert.equal(state.sourceCheckpoints.some((checkpoint) => checkpoint.checkpointSha === "def456"), true);
   await testPool.query("delete from weave.thread where id = $1", [threadId]);
 } catch (error) {
   console.log(`Development dashboard Postgres regression skipped: ${error instanceof Error ? error.message : String(error)}`);

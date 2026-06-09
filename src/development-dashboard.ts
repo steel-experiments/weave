@@ -4,12 +4,14 @@ import { z } from "zod";
 import { DevelopmentCheckpointKeys } from "./development-orchestrator.js";
 import {
   getInitiativeStatus,
+  listSourceCheckpoints,
   listInitiatives,
   listPendingGates,
   resolveOperatorGate,
   type OperatorGateSummary,
   type OperatorInitiativeStatus,
   type OperatorInitiativeSummary,
+  type OperatorSourceCheckpointSummary,
 } from "./development-operator.js";
 import { ThreadEventSchema, type ThreadEvent } from "./events.js";
 import type { ThreadService } from "./thread-service.js";
@@ -28,6 +30,7 @@ export const DashboardStateSchema = z.object({
       occurredAt: z.string().min(1),
     }),
   ),
+  sourceCheckpoints: z.array(z.unknown()),
   handoff: z.unknown().optional(),
 });
 export type DashboardState = {
@@ -35,6 +38,7 @@ export type DashboardState = {
   gates: OperatorGateSummary[];
   selected?: OperatorInitiativeStatus;
   toolEvents: Array<z.infer<typeof DashboardStateSchema>["toolEvents"][number]>;
+  sourceCheckpoints: OperatorSourceCheckpointSummary[];
   handoff?: unknown;
 };
 
@@ -57,11 +61,11 @@ export async function buildDashboardState(pool: Pool, threadId?: string): Promis
   const [initiatives, gates] = await Promise.all([listInitiatives(pool), listPendingGates(pool)]);
   const selectedThreadId = threadId ?? initiatives[0]?.threadId;
   const selected = selectedThreadId ? await getInitiativeStatus(pool, selectedThreadId) : undefined;
-  const [toolEvents, handoff] = selected
-    ? await Promise.all([listToolEventsForInitiative(pool, selected.threadId), latestHandoffForInitiative(pool, selected.threadId)])
-    : [[], undefined] as const;
+  const [toolEvents, sourceCheckpoints, handoff] = selected
+    ? await Promise.all([listToolEventsForInitiative(pool, selected.threadId), listSourceCheckpoints(pool, selected.threadId), latestHandoffForInitiative(pool, selected.threadId)])
+    : [[], [], undefined] as const;
 
-  return DashboardStateSchema.parse({ initiatives, gates, selected, toolEvents, handoff }) as DashboardState;
+  return DashboardStateSchema.parse({ initiatives, gates, selected, toolEvents, sourceCheckpoints, handoff }) as DashboardState;
 }
 
 export function dashboardHtml(): string {
@@ -106,6 +110,10 @@ export function dashboardHtml(): string {
         <div class="panel-title">Execution Nodes</div>
         <div id="children" class="node-grid muted">No child threads.</div>
       </section>
+      <section class="panel span-2">
+        <div class="panel-title">Source Checkpoints</div>
+        <div id="source-checkpoints" class="list muted">No source checkpoints.</div>
+      </section>
       <section class="panel">
         <div class="panel-title">Pending Gates</div>
         <div id="gates" class="list muted">No pending gates.</div>
@@ -124,7 +132,7 @@ export function dashboardHtml(): string {
       </section>
     </section>
   </main>
-  <script>${dashboardScript()}</script>
+  <script>${dashboardScript()}${sourceCheckpointDashboardScript()}</script>
 </body>
 </html>`;
 }
@@ -253,6 +261,10 @@ function writeJson(response: ServerResponse, statusCode: number, body: unknown):
 
 function dashboardCss(): string {
   return `:root{color-scheme:dark;--bg:#0b1326;--low:#131b2e;--panel:#171f33;--panel-hi:#222a3d;--edge:#464554;--text:#dae2fd;--muted:#c7c4d7;--primary:#c0c1ff;--primary-strong:#8083ff;--cyan:#5de6ff;--danger:#ffb4ab;--ok:#10b981;--warn:#f59e0b}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,#1b2550 0,#0b1326 34rem);color:var(--text);font:14px/1.5 Geist,Inter,system-ui,sans-serif}.shell{display:grid;grid-template-columns:320px 1fr;gap:16px;min-height:100vh;padding:24px}.sidebar,.panel{background:linear-gradient(180deg,rgba(23,31,51,.92),rgba(19,27,46,.88));border:1px solid rgba(199,196,215,.16);border-radius:8px;backdrop-filter:blur(20px)}.sidebar{padding:16px;display:flex;flex-direction:column;gap:16px}.brand{display:flex;gap:12px;align-items:center}.brand-mark{width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--cyan));box-shadow:0 0 30px rgba(93,230,255,.18)}h1,h2{margin:0;letter-spacing:-.01em}h1{font-size:18px}h2{font-size:28px}.eyebrow,.panel-title,.chip{font:600 11px/1 JetBrains Mono,monospace;letter-spacing:.05em;text-transform:uppercase;color:var(--cyan)}.main-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.panel{padding:16px;min-width:0}.hero{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between}.span-2{grid-column:1/-1}.compact{padding:12px}.muted{color:var(--muted)}button{border:1px solid rgba(93,230,255,.36);background:rgba(93,230,255,.12);color:var(--text);border-radius:4px;padding:8px 10px;font:600 12px/1 JetBrains Mono,monospace;cursor:pointer}button.primary{background:var(--primary);color:#1000a9;border-color:var(--primary)}button.danger{background:rgba(255,180,171,.14);border-color:rgba(255,180,171,.45);color:var(--danger)}.list,.log{display:grid;gap:8px;margin-top:12px}.row,.node{border:1px solid rgba(199,196,215,.12);background:rgba(6,14,32,.55);border-radius:6px;padding:10px}.row.active{border-color:var(--primary);background:rgba(128,131,255,.16)}.node{border-left:3px solid var(--primary-strong)}.node.running{border-left-color:var(--cyan)}.node.completed{border-left-color:var(--ok)}.node.failed,.node.blocked{border-left-color:var(--danger)}.row-title{font-weight:700}.mono,code,.payload,.log{font-family:JetBrains Mono,ui-monospace,monospace}.payload{white-space:pre-wrap;overflow:auto;background:#060e20;border:1px solid rgba(199,196,215,.12);border-radius:6px;padding:12px;max-height:320px}.command-map{display:flex;flex-wrap:wrap;gap:8px}.command-map span{width:100%;color:var(--muted)}code{background:#060e20;border:1px solid rgba(199,196,215,.12);border-radius:999px;padding:5px 7px;color:var(--primary)}.actions{display:flex;gap:8px;margin-top:8px}@media(max-width:900px){.shell{grid-template-columns:1fr;padding:12px}.main-grid{grid-template-columns:1fr}.span-2,.hero{grid-column:auto}.hero{align-items:flex-start;gap:16px;flex-direction:column}}`;
+}
+
+function sourceCheckpointDashboardScript(): string {
+  return `const originalRender=render;render=function(state){originalRender(state);const el=document.getElementById('source-checkpoints');if(!el)return;el.innerHTML=state.sourceCheckpoints&&state.sourceCheckpoints.length?state.sourceCheckpoints.map(c=>'<div class="row"><div class="row-title">'+esc(c.sliceId)+' '+esc(c.title||'')+'</div><div class="mono">'+esc(c.checkpointSha.slice(0,12))+' files='+esc(c.changedFiles.length)+'</div><div class="muted">'+esc(c.commitMessage)+'</div><code>'+esc(c.diffCommand)+'</code></div>').join(''):'No source checkpoints.'};`;
 }
 
 function dashboardScript(): string {

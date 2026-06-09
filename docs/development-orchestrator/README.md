@@ -174,10 +174,16 @@ The repair agent boundary, stop-gate policy, and PR handoff boundary are shipped
 | 15. Resumable Initiative Runner Command | Shipped | `slices/15-resumable-initiative-runner-command.md` | One command creates/resumes PRD-backed initiatives, waits for approval, then runs approved slices sequentially. |
 | 16. PR Draft Handoff Automation | Shipped | `slices/16-pr-draft-handoff-automation.md` | Completed initiatives produce PR-ready handoff artifacts and optional gated draft PR creation. |
 | 17. Local Workflow Dashboard | Shipped | `slices/17-local-workflow-dashboard.md` | A localhost operator dashboard shows initiatives, slice threads, gates, progress, and events using `DESIGN.md`. |
+| 18. Source Checkpoint Contracts | Shipped | `slices/18-source-checkpoint-contracts.md` | Durable schemas and events describe source-code checkpoints without mutating Git. |
+| 19. Per-Slice Git Commit Checkpoints | Shipped | `slices/19-per-slice-git-commit-checkpoints.md` | Passing slices create Git commits and store their SHAs as source checkpoints. |
+| 20. Source Checkpoint Inspection | Shipped | `slices/20-source-checkpoint-inspection.md` | Operator CLI and dashboard expose per-slice checkpoint metadata and diff commands. |
+| 21. Guarded Source Checkpoint Restore | Shipped | `slices/21-guarded-source-checkpoint-restore.md` | Maintainers can restore an initiative worktree to a checkpoint through guarded, auditable commands. |
+| 22. Finalization Git Side Effects | Shipped | `slices/22-finalization-git-side-effects.md` | Explicit finalization modes can merge locally only after final approval. |
+| 23. Auth Gateway Epic PRD | Shipped | `slices/23-auth-gateway-epic-prd.md` | A multi-slice auth PRD lets Maintainer execute remaining auth work as one epic after checkpointing. |
 
 ## Auth Execution Readiness Path
 
-The orchestrator foundation needed before auth work is shipped. Next, dry-run only `../../slices/51-auth-gateway-thread-start.md` first. Do not run auth slices `51` through `56` unattended until one low-risk auth slice has completed implementation, verification, review, repair handling if needed, and a human gate.
+The orchestrator foundation needed before auth work is shipped. Slices `51` and `52` have been dogfooded individually. Do not run the remaining auth slices as one unattended epic until source checkpoints are shipped, because each accepted slice needs an inspectable Git commit boundary before the next slice starts.
 
 ## Auth Slice 51 Dry Run
 
@@ -236,6 +242,10 @@ Commands:
 - `npm run gates:reject -- <gate-id> --note "reason"`
 - `npm run initiatives:list`
 - `npm run initiative:status -- <thread-id>`
+- `npm run checkpoints:list -- <initiative-thread-id>`
+- `npm run checkpoints:show -- <checkpoint-id-or-sha>`
+- `npm run checkpoints:diff -- <checkpoint-id-or-sha>`
+- `npm run checkpoints:restore -- <checkpoint-id-or-sha> --confirm [--force]`
 
 Typical approval flow:
 
@@ -276,6 +286,14 @@ Useful options:
 
 The command is local/Postgres-backed. It does not push, merge, or create a remote PR.
 
+Auth gateway remaining-work epic:
+
+```txt
+npm run initiative:run -- --from docs/prds/auth-gateway-epic.md --working-branch auth-gateway-remaining
+```
+
+The auth epic PRD compiles into the ordered remaining auth sections: authenticated thread actions, authenticated integration ingress, auth decision audit trail, and auth provider adapter boundary. Run it only with source checkpoint support enabled so each accepted section has an inspectable Git commit boundary.
+
 ## PR Handoff
 
 Completed initiatives produce a `pr-handoff` checkpoint before any remote PR side effect. The handoff includes shipped slices, changed files, validation commands, reviewer results, known limitations, follow-ups, suggested PR title/body, and remote PR state.
@@ -286,6 +304,26 @@ Remote PR creation or update is behind the final `pr-review-approval` gate:
 - If the final gate is denied, the workflow returns without remote side effects.
 - If approved and GitHub mode is enabled, the PR agent calls the configured GitHub runner and records `pr-url` plus `pr-remote-handoff`.
 - If GitHub mode is disabled, the local handoff remains the terminal review artifact.
+
+Finalization Git side effects are opt-in. The default `finalization.mode` is `none`, which keeps the reviewed local handoff as the terminal artifact. `local-merge` runs only after `pr-review-approval`, requires every shipped slice to have a source checkpoint, records `finalization-result`, and stops at `finalization-stop` for missing checkpoints, dirty repositories, merge conflicts, or Git failures.
+
+## Source Checkpoints
+
+Source checkpoint contracts define how a completed development slice will be tied to a concrete Git state. The shipped contract adds the `source-checkpoint` checkpoint key plus source checkpoint lifecycle events:
+
+- `dev.source_checkpoint.proposed`
+- `dev.source_checkpoint.created`
+- `dev.source_checkpoint.failed`
+
+The checkpoint payload records the initiative thread, slice thread, slice id, workspace ref, `baseSha`, `checkpointSha`, changed files, commit message, verification summary, and review summary.
+
+Slice 19 adds per-slice Git commit creation. After implementation, verification, and review pass, the slice runner stages all workspace changes, commits them on the working branch, stores `source-checkpoint:<sliceId>`, and then marks the slice completed. Empty diffs, branch mismatches, or Git commit failures stop at a `source-checkpoint-stop` human gate. Later slices can inspect, restore, and finalize from these checkpoint SHAs.
+
+Slice 20 adds checkpoint inspection. Operators can list checkpoints for an initiative, inspect a checkpoint by id or SHA, or print a ready-to-run diff command. The local dashboard shows source checkpoints next to the selected initiative without adding dashboard-owned state.
+
+Slice 21 adds guarded restore. `checkpoints:restore` moves the initiative worktree back to a checkpoint SHA only when `--confirm` is supplied. Dirty worktrees are blocked by default and require `--force` to discard local changes. Successful restores emit `dev.source_checkpoint.restored` for audit.
+
+Slice 22 adds explicit finalization modes. `none` remains the default. `local-merge` can merge the working branch into the base branch locally after the final PR review gate, but only when required source checkpoints exist. Merge results are stored in `finalization-result`; conflicts and failures create a `finalization-stop` gate for human intervention.
 
 ## Local Dashboard
 
@@ -308,7 +346,7 @@ Environment overrides:
 - `WEAVE_DASHBOARD_PORT`
 - `PORT`
 
-The dashboard reads durable Postgres state and mirrors the operator CLI vocabulary. It shows initiatives, child slice threads, pending gates, approve/reject actions, live tool progress, recent events, and PR handoff artifacts.
+The dashboard reads durable Postgres state and mirrors the operator CLI vocabulary. It shows initiatives, child slice threads, source checkpoints, pending gates, approve/reject actions, live tool progress, recent events, and PR handoff artifacts.
 
 Security posture:
 

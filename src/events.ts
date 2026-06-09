@@ -201,7 +201,7 @@ export const CredentialFailedPayloadSchema = z.object({
 export const GateCreatedPayloadSchema = z.object({
   gateId: z.string().uuid(),
   gateType: z.literal("manual-approval"),
-  reason: z.enum(["tool-result-requires-approval", "risky-remediation", "slice-plan-approval", "repair-stop", "pr-review-approval"]),
+  reason: z.enum(["tool-result-requires-approval", "risky-remediation", "slice-plan-approval", "repair-stop", "source-checkpoint-stop", "pr-review-approval", "finalization-stop"]),
   relatedToolCallId: z.string().uuid().optional(),
   proposedAction: z.string().optional(),
 });
@@ -315,6 +315,80 @@ export const DevCommandResultSchema = z.object({
   output: z.string().optional(),
 });
 export type DevCommandResult = z.infer<typeof DevCommandResultSchema>;
+
+export const DevSourceCheckpointWorkspaceRefSchema = z.object({
+  provider: z.string().min(1),
+  workspaceId: z.string().min(1),
+  path: z.string().min(1),
+  repo: z.string().min(1),
+  baseBranch: z.string().min(1),
+  workingBranch: z.string().min(1),
+  baseCommit: z.string().min(1),
+  parentWorkspaceId: z.string().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const DevSourceCheckpointVerificationSummarySchema = z.object({
+  status: z.enum(["passed", "failed", "blocked"]),
+  commands: z.array(DevCommandResultSchema).default([]),
+});
+
+export const DevSourceCheckpointReviewSummarySchema = z.object({
+  reviewer: z.string().min(1),
+  verdict: DevReviewVerdictSchema,
+  findingCount: z.number().int().nonnegative(),
+});
+
+export const DevSourceCheckpointCreatedPayloadSchema = z.object({
+  checkpointId: z.string().uuid(),
+  initiativeThreadId: z.string().min(1),
+  sliceThreadId: z.string().min(1),
+  sliceId: z.string().min(1),
+  title: z.string().min(1).optional(),
+  workspaceRef: DevSourceCheckpointWorkspaceRefSchema,
+  baseSha: z.string().min(1),
+  checkpointSha: z.string().min(1),
+  changedFiles: z.array(z.string().min(1)).min(1),
+  commitMessage: z.string().min(1),
+  verificationSummary: DevSourceCheckpointVerificationSummarySchema,
+  reviewSummary: z.array(DevSourceCheckpointReviewSummarySchema).default([]),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const DevSourceCheckpointProposedPayloadSchema = DevSourceCheckpointCreatedPayloadSchema.omit({ checkpointSha: true, createdAt: true }).extend({
+  proposedAt: z.string().datetime().optional(),
+});
+
+export const DevSourceCheckpointFailedPayloadSchema = z.object({
+  checkpointId: z.string().uuid().optional(),
+  initiativeThreadId: z.string().min(1),
+  sliceThreadId: z.string().min(1),
+  sliceId: z.string().min(1),
+  title: z.string().min(1).optional(),
+  workspaceRef: DevSourceCheckpointWorkspaceRefSchema.optional(),
+  baseSha: z.string().min(1).optional(),
+  changedFiles: z.array(z.string().min(1)).default([]),
+  commitMessage: z.string().min(1).optional(),
+  reason: z.string().min(1),
+  errorCode: z.string().min(1).optional(),
+  failedAt: z.string().datetime().optional(),
+});
+
+export const DevSourceCheckpointRestoredPayloadSchema = z.object({
+  checkpointId: z.string().uuid(),
+  initiativeThreadId: z.string().min(1),
+  sliceThreadId: z.string().min(1),
+  sliceId: z.string().min(1),
+  title: z.string().min(1).optional(),
+  workspaceRef: DevSourceCheckpointWorkspaceRefSchema,
+  restoredBy: z.string().min(1),
+  fromSha: z.string().min(1),
+  checkpointSha: z.string().min(1),
+  restoredSha: z.string().min(1),
+  dirtyBefore: z.boolean(),
+  forced: z.boolean().default(false),
+  restoredAt: z.string().datetime().optional(),
+});
 
 export const DevInitiativeStartedPayloadSchema = z.object({
   initiative: z.string().min(1),
@@ -726,6 +800,26 @@ const DevPrReadyForReviewEventSchema = EventEnvelopeBaseSchema.extend({
   payload: DevPrReadyForReviewPayloadSchema,
 });
 
+const DevSourceCheckpointProposedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.source_checkpoint.proposed"),
+  payload: DevSourceCheckpointProposedPayloadSchema,
+});
+
+const DevSourceCheckpointCreatedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.source_checkpoint.created"),
+  payload: DevSourceCheckpointCreatedPayloadSchema,
+});
+
+const DevSourceCheckpointFailedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.source_checkpoint.failed"),
+  payload: DevSourceCheckpointFailedPayloadSchema,
+});
+
+const DevSourceCheckpointRestoredEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("dev.source_checkpoint.restored"),
+  payload: DevSourceCheckpointRestoredPayloadSchema,
+});
+
 const AuthDecisionRecordedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("auth.decision.recorded"),
   payload: AuthDecisionRecordedPayloadSchema,
@@ -782,6 +876,10 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   DevPrOpenedEventSchema,
   DevPrUpdatedEventSchema,
   DevPrReadyForReviewEventSchema,
+  DevSourceCheckpointProposedEventSchema,
+  DevSourceCheckpointCreatedEventSchema,
+  DevSourceCheckpointFailedEventSchema,
+  DevSourceCheckpointRestoredEventSchema,
   AuthDecisionRecordedEventSchema,
 ]);
 

@@ -143,6 +143,10 @@ The PoC uses this event set.
 - `dev.pr.opened`
 - `dev.pr.updated`
 - `dev.pr.ready_for_review`
+- `dev.source_checkpoint.proposed`
+- `dev.source_checkpoint.created`
+- `dev.source_checkpoint.failed`
+- `dev.source_checkpoint.restored`
 - `auth.decision.recorded`
 
 Development workflow events are internal audit facts for Weave-managed implementation initiatives. They are valid `ThreadEvent` records, but they do not wake runners or tool workers by default.
@@ -154,6 +158,10 @@ Auth decision audit events (`auth.decision.recorded`) are thread-scoped authoriz
 Auth decisions that deny access before a thread exists (e.g., `401 Unauthorized` or `403 Forbidden` on `POST /threads`) cannot be recorded as `auth.decision.recorded` events because there is no target thread to append to. These pre-thread denials are observable only via server logs and observability spans, not via thread history. Similarly, denied auth decisions on existing threads where the requester lacks write access are not recorded in the thread to avoid granting implicit write permissions to denied principals.
 
 The PRD/SOW planning events record compact lifecycle facts only. Full `InitiativeSpec` and `InitiativePlan` data belongs in checkpoints such as `initiative-spec`, `proposed-initiative-plan`, `approved-initiative-plan`, and `latest-plan-decision`.
+
+Source checkpoint events record the audit lifecycle for per-slice Git checkpoints. The full source checkpoint payload belongs in the `source-checkpoint` checkpoint and includes slice identity, workspace ref, `baseSha`, `checkpointSha`, changed files, commit message, verification summary, and review summary. Restore events record operator-triggered moves back to a checkpoint SHA. Contract events are audit-only and do not wake runners or tool workers by default.
+
+Finalization side effects are recorded in the `finalization-result` checkpoint. `finalization-stop` gates pause local merge finalization when required source checkpoints are missing, the repository is dirty, merge conflicts occur, or Git reports an unexpected failure.
 
 ## Typed Payload Schemas
 
