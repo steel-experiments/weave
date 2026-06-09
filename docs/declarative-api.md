@@ -44,6 +44,14 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | package subpaths | Current runtime boundary |
 | `authGateway` | Current auth composition helper |
 | `weave/auth` subpath | Current auth gateway package boundary |
+| `jwtAuth` | Current dependency-light HS256 JWT identity adapter |
+| `createAuthProviderAdapter` | Current third-party adapter contract factory |
+| `createIdentityAdapterContractTests` | Current reusable adapter contract test suite |
+| `allowRole` | Current role-based access rule builder |
+| `allowScope` | Current scope-based access rule builder |
+| `allowTenant` | Current tenant-based access rule builder |
+| `allowOrganization` | Current organization-based access rule builder |
+| `AccessContext` | Current normalized access claims type |
 
 ## Authoring Primitives
 

@@ -131,6 +131,16 @@ try {
   assert.equal(conflictResult.status === "blocked" ? conflictResult.conflictFiles.includes("README.md") : false, true);
   await git(sourceRepoPath, ["merge", "--abort"]);
 
+  const missingBaseResult = await localMergeRunner.run({
+    repo: "weave",
+    repoRoot: sourceRepoPath,
+    baseBranch: "missing-base",
+    branch: "conflict-branch",
+    strategy: "merge-commit",
+  });
+  assert.equal(missingBaseResult.status, "blocked");
+  assert.match(missingBaseResult.status === "blocked" ? missingBaseResult.reason : "", /Could not resolve base branch missing-base/);
+
   if (sourceCheckpoint.status !== "created") {
     throw new Error("Expected source checkpoint creation to succeed.");
   }

@@ -485,6 +485,7 @@ export class ThreadService {
     gateId: string,
     resolution: "approved" | "denied",
     comment?: string,
+    actor?: Actor,
   ): Promise<void> {
     const events = await this.engine.read(threadId);
     const gateCreated = events.find(
@@ -513,7 +514,7 @@ export class ThreadService {
         causationId: gateCreated.eventId,
         scopeKey: gateCreated.scopeKey,
         stepKey: gateCreated.stepKey,
-        actor: { type: "human", id: "demo-approver" },
+        actor: actor ?? { type: "human", id: "demo-approver" },
         payload: { gateId, resolution, comment },
       },
     ]);

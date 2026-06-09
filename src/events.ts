@@ -539,6 +539,17 @@ export const DevPrReadyForReviewPayloadSchema = z.object({
   shippedSlices: z.array(z.string().min(1)),
 });
 
+export const AuthDecisionRecordedPayloadSchema = z.object({
+  principalId: z.string().min(1),
+  principalKind: z.string().min(1),
+  provider: z.string().min(1),
+  action: z.string().min(1),
+  resource: z.string().min(1).optional(),
+  decision: z.enum(["allowed", "denied"]),
+  reason: z.string().min(1).optional(),
+  subjectHash: z.string().min(1).optional(),
+});
+
 const SessionStartedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("session.started"),
   payload: SessionStartedPayloadSchema,
@@ -809,6 +820,11 @@ const DevSourceCheckpointRestoredEventSchema = EventEnvelopeBaseSchema.extend({
   payload: DevSourceCheckpointRestoredPayloadSchema,
 });
 
+const AuthDecisionRecordedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("auth.decision.recorded"),
+  payload: AuthDecisionRecordedPayloadSchema,
+});
+
 export const ThreadEventSchema = z.discriminatedUnion("type", [
   SessionStartedEventSchema,
   PromptReceivedEventSchema,
@@ -864,6 +880,7 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   DevSourceCheckpointCreatedEventSchema,
   DevSourceCheckpointFailedEventSchema,
   DevSourceCheckpointRestoredEventSchema,
+  AuthDecisionRecordedEventSchema,
 ]);
 
 export type ThreadEvent = z.infer<typeof ThreadEventSchema>;

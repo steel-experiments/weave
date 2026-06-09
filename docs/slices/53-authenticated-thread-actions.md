@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
-- Last updated: `2026-06-03`
+- Status: `Shipped`
+- Last updated: `2026-06-05`
 - Owner: `weave-core`
 
 ## Goal
@@ -64,29 +64,39 @@ If a route does not exist yet, this slice should cover the existing closest serv
 
 ## Acceptance Criteria
 
-- [ ] Existing HTTP thread action routes authenticate through the configured auth gateway.
-- [ ] Each protected route authorizes a Weave action with resource metadata.
-- [ ] Denied mutation routes do not append thread events.
-- [ ] Gate resolution records who resolved the gate.
-- [ ] Signal delivery records who delivered the signal.
-- [ ] Authorization rules are expressed against Weave actions rather than HTTP route strings.
+- [x] Existing HTTP thread action routes authenticate through the configured auth gateway.
+- [x] Each protected route authorizes a Weave action with resource metadata.
+- [x] Denied mutation routes do not append thread events.
+- [x] Gate resolution records who resolved the gate.
+- [x] Signal delivery records who delivered the signal.
+- [x] Authorization rules are expressed against Weave actions rather than HTTP route strings.
 
 ## Progress
 
-- [ ] Route inventory.
-- [ ] Action/resource mapping.
-- [ ] API auth enforcement.
-- [ ] Actor context for mutations.
-- [ ] Tests.
-- [ ] Docs updates.
+- [x] Route inventory.
+- [x] Action/resource mapping.
+- [x] API auth enforcement.
+- [x] Actor context for mutations.
+- [x] Tests.
+- [x] Docs updates.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+Shipped as slice 01-authenticated-thread-actions.
+
+- Extended `WeaveAction` with `thread.read`, `thread.signal`, `gate.resolve`, `thread.cancel`, and `artifact.read` action types.
+- Added access policy helpers: `allowUserToReadThreads`, `allowUserToResolveGate`, `allowUserToDeliverSignal`, `allowUserToCancelThread`, `allowUserToReadArtifacts`, and corresponding `allowGroup*` and `allowService*` variants.
+- All existing HTTP thread routes (`GET /threads/:id`, `GET /threads/:id/events`, `GET /threads/:id/summary`, `GET /threads/:id/stream`, `GET /threads/:id/artifacts`, `GET /threads/:id/diagnostics/inbox`, `GET /threads/:id/observability/spans`, `GET /threads/:id/observability/logs`) now authenticate and authorize through the configured auth gateway.
+- Added `POST /threads/:id/signals` route for signal delivery with auth enforcement.
+- `POST /threads/:id/gates/:gateId/resolve` now authenticates, authorizes `gate.resolve`, and passes the authenticated principal as the actor to `ThreadService.resolveGate`.
+- `POST /threads/:id/signals` authenticates, authorizes `thread.signal`, and passes the authenticated principal as the actor to `ThreadService.deliverSignal`.
+- Denied mutation routes return 403 before any thread events are appended.
+- `ThreadService.resolveGate` now accepts an optional `actor` parameter; when called from the authenticated API route, the authenticated principal is recorded as the actor in the `gate.resolved` event.
+- When auth is not configured, existing unauthenticated behavior is preserved.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
+- [x] this slice document
 - [ ] `docs/declarative-api.md`
 - [ ] `docs/event-taxonomy.md`
 - [ ] `docs/architecture.md`

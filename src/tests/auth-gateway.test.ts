@@ -3,8 +3,20 @@ import { request as httpRequest, type IncomingMessage, type Server } from "node:
 import {
   allowEveryone,
   allowGroup,
+  allowGroupToDeliverSignal,
+  allowGroupToReadArtifacts,
+  allowGroupToReadThreads,
+  allowGroupToResolveGate,
   allowService,
+  allowServiceToDeliverSignal,
+  allowServiceToReadArtifacts,
+  allowServiceToReadThreads,
+  allowServiceToResolveGate,
   allowUser,
+  allowUserToDeliverSignal,
+  allowUserToReadArtifacts,
+  allowUserToReadThreads,
+  allowUserToResolveGate,
   anonymousAuth,
   authGateway,
   authRequestFromIncoming,
@@ -508,5 +520,401 @@ await testApiAuthAcceptedRecordsMetadata();
 await testApiAuthDeniedDoesNotCreateSession();
 await testApiAuthForbiddenDoesNotCreateSession();
 await testApiNoAuthAllowsUnauthenticated();
+
+async function testAccessPolicyAllowUserToReadThreads(): Promise<void> {
+  const principal: Principal = { id: "user-1", provider: "web", aliases: [], groups: [] };
+  const context: AuthContext = { principal, source: "session", authenticatedAt: nowIso() };
+  const access = weaveAccessPolicy({
+    rules: [allowUserToReadThreads("user-1")],
+  });
+
+  const allowed = await access.authorize({ context, action: { type: "thread.read", threadId: "t-1" } });
+  assert.equal(allowed.allowed, true);
+
+  const denied = await access.authorize({ context, action: { type: "gate.resolve", threadId: "t-1", gateId: "g-1" } });
+  assert.equal(denied.allowed, false);
+}
+
+async function testAccessPolicyAllowUserToResolveGate(): Promise<void> {
+  const principal: Principal = { id: "user-2", provider: "web", aliases: [], groups: [] };
+  const context: AuthContext = { principal, source: "session", authenticatedAt: nowIso() };
+  const access = weaveAccessPolicy({
+    rules: [allowUserToResolveGate("user-2")],
+  });
+
+  const allowed = await access.authorize({ context, action: { type: "gate.resolve", threadId: "t-1", gateId: "g-1", resolution: "approved" } });
+  assert.equal(allowed.allowed, true);
+
+  const denied = await access.authorize({ context, action: { type: "thread.read", threadId: "t-1" } });
+  assert.equal(denied.allowed, false);
+}
+
+async function testAccessPolicyAllowUserToDeliverSignal(): Promise<void> {
+  const principal: Principal = { id: "user-3", provider: "web", aliases: [], groups: [] };
+  const context: AuthContext = { principal, source: "session", authenticatedAt: nowIso() };
+  const access = weaveAccessPolicy({
+    rules: [allowUserToDeliverSignal("user-3")],
+  });
+
+  const allowed = await access.authorize({ context, action: { type: "thread.signal", threadId: "t-1", signalName: "approval" } });
+  assert.equal(allowed.allowed, true);
+}
+
+async function testAccessPolicyAllowGroupToResolveGate(): Promise<void> {
+  const principal: Principal = { id: "user-4", provider: "web", aliases: [], groups: ["approvers"] };
+  const context: AuthContext = { principal, source: "session", authenticatedAt: nowIso() };
+  const access = weaveAccessPolicy({
+    rules: [allowGroupToResolveGate("approvers")],
+  });
+
+  const allowed = await access.authorize({ context, action: { type: "gate.resolve", threadId: "t-1", gateId: "g-1" } });
+  assert.equal(allowed.allowed, true);
+
+  const otherPrincipal: Principal = { id: "user-5", provider: "web", aliases: [], groups: [] };
+  const otherContext: AuthContext = { principal: otherPrincipal, source: "session", authenticatedAt: nowIso() };
+  const denied = await access.authorize({ context: otherContext, action: { type: "gate.resolve", threadId: "t-1", gateId: "g-1" } });
+  assert.equal(denied.allowed, false);
+}
+
+async function testAccessPolicyAllowServiceToReadArtifacts(): Promise<void> {
+  const principal: Principal = { id: "artifact-svc", provider: "ci", aliases: [], groups: [] };
+  const context: AuthContext = { principal, source: "bearer-token", authenticatedAt: nowIso() };
+  const access = weaveAccessPolicy({
+    rules: [allowServiceToReadArtifacts("artifact-svc")],
+  });
+
+  const allowed = await access.authorize({ context, action: { type: "artifact.read", threadId: "t-1" } });
+  assert.equal(allowed.allowed, true);
+
+  const denied = await access.authorize({ context, action: { type: "thread.read", threadId: "t-1" } });
+  assert.equal(denied.allowed, false);
+}
+
+async function createThreadWithGate(engine: MinimalEngine, service: ThreadService): Promise<{ threadId: string; gateId: string }> {
+  const session = await service.startSession({ prompt: "test", source: "test" });
+  const gateId = "550e8400-e29b-41d4-a716-446655440000";
+  await engine.append([
+    {
+      eventId: "660e8400-e29b-41d4-a716-446655440001",
+      threadId: session.threadId,
+      type: "gate.created",
+      occurredAt: nowIso(),
+      correlationId: session.correlationId,
+      actor: { type: "system", id: "test" },
+      payload: {
+        gateId,
+        gateType: "manual-approval",
+        reason: "tool-result-requires-approval",
+      },
+    },
+  ]);
+  return { threadId: session.threadId, gateId };
+}
+
+async function testApiThreadReadAuthenticated(): Promise<void> {
+  const engine = new MinimalEngine();
+  const service = new ThreadService(engine);
+  const principal: Principal = { id: "reader-1", provider: "web", aliases: [], groups: [] };
+  const auth = authGateway({
+    identity: bearerTokenAuth({
+      async verify(token: string) { return token === "reader-token" ? principal : null; },
+    }),
+    access: weaveAccessPolicy({
+      rules: [allowUserToReadThreads("reader-1")],
+    }),
+  });
+
+  const session = await service.startSession({ prompt: "hello", source: "test" });
+  const server = createApiServer(engine, service, { auth });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const response = await makeRequest(server, "GET", `/threads/${session.threadId}`, undefined, { authorization: "Bearer reader-token" });
+    assert.equal(response.status, 200);
+    const body = response.body as Record<string, unknown>;
+    assert.equal(body.threadId, session.threadId);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function testApiThreadReadDenied(): Promise<void> {
+  const engine = new MinimalEngine();
+  const service = new ThreadService(engine);
+  const principal: Principal = { id: "reader-x", provider: "web", aliases: [], groups: [] };
+  const auth = authGateway({
+    identity: bearerTokenAuth({
+      async verify(token: string) { return token === "valid" ? principal : null; },
+    }),
+    access: weaveAccessPolicy({
+      rules: [allowUserToReadThreads("other-user")],
+    }),
+  });
+
+  const session = await service.startSession({ prompt: "hello", source: "test" });
+  const server = createApiServer(engine, service, { auth });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const response = await makeRequest(server, "GET", `/threads/${session.threadId}`, undefined, { authorization: "Bearer valid" });
+    assert.equal(response.status, 403);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function testApiGateResolveAuthenticatedRecordsActor(): Promise<void> {
+  const engine = new MinimalEngine();
+  const service = new ThreadService(engine);
+  const principal: Principal = { id: "approver-1", provider: "web", aliases: [], groups: [] };
+  const auth = authGateway({
+    identity: bearerTokenAuth({
+      async verify(token: string) { return token === "approver-token" ? principal : null; },
+    }),
+    access: weaveAccessPolicy({
+      rules: [allowUserToResolveGate("approver-1")],
+    }),
+  });
+
+  const { threadId, gateId } = await createThreadWithGate(engine, service);
+  const server = createApiServer(engine, service, { auth });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const response = await makeRequest(server, "POST", `/threads/${threadId}/gates/${gateId}/resolve`, { resolution: "approved", comment: "looks good" }, { authorization: "Bearer approver-token" });
+    assert.equal(response.status, 200);
+
+    const allEvents = engine.getAllEvents();
+    const gateResolved = allEvents.find((e) => e.type === "gate.resolved");
+    assert.ok(gateResolved);
+    if (gateResolved && gateResolved.type === "gate.resolved") {
+      assert.equal(gateResolved.actor.id, "approver-1");
+      assert.equal(gateResolved.actor.type, "user");
+      assert.equal(gateResolved.payload.resolution, "approved");
+      assert.equal(gateResolved.payload.comment, "looks good");
+    }
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function testApiGateResolveDeniedAppendsNothing(): Promise<void> {
+  const engine = new MinimalEngine();
+  const service = new ThreadService(engine);
+  const principal: Principal = { id: "unauthorized-user", provider: "web", aliases: [], groups: [] };
+  const auth = authGateway({
+    identity: bearerTokenAuth({
+      async verify(token: string) { return token === "valid" ? principal : null; },
+    }),
+    access: weaveAccessPolicy({
+      rules: [allowUserToResolveGate("other-approver")],
+    }),
+  });
+
+  const { threadId, gateId } = await createThreadWithGate(engine, service);
+  const eventsBefore = engine.getAllEvents().length;
+  const server = createApiServer(engine, service, { auth });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const response = await makeRequest(server, "POST", `/threads/${threadId}/gates/${gateId}/resolve`, { resolution: "approved" }, { authorization: "Bearer valid" });
+    assert.equal(response.status, 403);
+    assert.equal(engine.getAllEvents().length, eventsBefore);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function testApiSignalDeliveryAuthenticated(): Promise<void> {
+  const engine = new MinimalEngine();
+  const service = new ThreadService(engine);
+  const principal: Principal = { id: "signal-sender-1", provider: "web", aliases: [], groups: [] };
+  const auth = authGateway({
+    identity: bearerTokenAuth({
+      async verify(token: string) { return token === "sender-token" ? principal : null; },
+    }),
+    access: weaveAccessPolicy({
+      rules: [allowUserToDeliverSignal("signal-sender-1")],
+    }),
+  });
+
+  const session = await service.startSession({ prompt: "test", source: "test" });
+  const waitId = "770e8400-e29b-41d4-a716-446655440002";
+  await engine.append([
+    {
+      eventId: "880e8400-e29b-41d4-a716-446655440003",
+      threadId: session.threadId,
+      type: "signal.waiting",
+      occurredAt: nowIso(),
+      correlationId: session.correlationId,
+      actor: { type: "system", id: "test" },
+      payload: { waitId, signalName: "approval", scopeKey: "test-scope", stepKey: "test-step" },
+    },
+  ]);
+
+  const server = createApiServer(engine, service, { auth });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const response = await makeRequest(server, "POST", `/threads/${session.threadId}/signals`, { signal: "approval", payload: { ok: true } }, { authorization: "Bearer sender-token" });
+    assert.equal(response.status, 200);
+    const body = response.body as Record<string, unknown>;
+    assert.equal(body.delivered, true);
+
+    const allEvents = engine.getAllEvents();
+    const signalReceived = allEvents.find((e) => e.type === "signal.received");
+    assert.ok(signalReceived);
+    if (signalReceived && signalReceived.type === "signal.received") {
+      assert.equal(signalReceived.actor.id, "signal-sender-1");
+      assert.equal(signalReceived.actor.type, "user");
+    }
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function testApiSignalDeliveryDeniedAppendsNothing(): Promise<void> {
+  const engine = new MinimalEngine();
+  const service = new ThreadService(engine);
+  const principal: Principal = { id: "unauthorized-sender", provider: "web", aliases: [], groups: [] };
+  const auth = authGateway({
+    identity: bearerTokenAuth({
+      async verify(token: string) { return token === "valid" ? principal : null; },
+    }),
+    access: weaveAccessPolicy({
+      rules: [allowUserToDeliverSignal("other-sender")],
+    }),
+  });
+
+  const session = await service.startSession({ prompt: "test", source: "test" });
+  const waitId = "990e8400-e29b-41d4-a716-446655440004";
+  await engine.append([
+    {
+      eventId: "aa0e8400-e29b-41d4-a716-446655440005",
+      threadId: session.threadId,
+      type: "signal.waiting",
+      occurredAt: nowIso(),
+      correlationId: session.correlationId,
+      actor: { type: "system", id: "test" },
+      payload: { waitId, signalName: "approval", scopeKey: "test-scope", stepKey: "test-step" },
+    },
+  ]);
+
+  const eventsBefore = engine.getAllEvents().length;
+  const server = createApiServer(engine, service, { auth });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const response = await makeRequest(server, "POST", `/threads/${session.threadId}/signals`, { signal: "approval", payload: { ok: true } }, { authorization: "Bearer valid" });
+    assert.equal(response.status, 403);
+    assert.equal(engine.getAllEvents().length, eventsBefore);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function testApiArtifactReadAuthenticated(): Promise<void> {
+  const engine = new MinimalEngine();
+  const service = new ThreadService(engine);
+  const principal: Principal = { id: "artifact-reader", provider: "web", aliases: [], groups: [] };
+  const auth = authGateway({
+    identity: bearerTokenAuth({
+      async verify(token: string) { return token === "artifact-token" ? principal : null; },
+    }),
+    access: weaveAccessPolicy({
+      rules: [allowUserToReadArtifacts("artifact-reader")],
+    }),
+  });
+
+  const mockArtifactStore = {
+    async putArtifact() { throw new Error("not implemented"); },
+    async listArtifacts(_threadId: string) { return [{ artifactId: "00000000-0000-0000-0000-000000000001", threadId: _threadId, toolCallId: null, kind: "test", mediaType: "text/plain", sha256: "0".repeat(64), byteLength: 100, uri: "file:///test", sourceUrl: "https://example.com/test", createdAt: nowIso() }]; },
+    async getSnapshot() { return null; },
+    async putSnapshot() { throw new Error("not implemented"); },
+  };
+
+  const session = await service.startSession({ prompt: "test", source: "test" });
+  const server = createApiServer(engine, service, { auth, artifactStore: mockArtifactStore });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const response = await makeRequest(server, "GET", `/threads/${session.threadId}/artifacts`, undefined, { authorization: "Bearer artifact-token" });
+    assert.equal(response.status, 200);
+    const body = response.body as Record<string, unknown>;
+    assert.ok(Array.isArray(body.artifacts));
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function testApiArtifactReadDenied(): Promise<void> {
+  const engine = new MinimalEngine();
+  const service = new ThreadService(engine);
+  const principal: Principal = { id: "unauthorized-reader", provider: "web", aliases: [], groups: [] };
+  const auth = authGateway({
+    identity: bearerTokenAuth({
+      async verify(token: string) { return token === "valid" ? principal : null; },
+    }),
+    access: weaveAccessPolicy({
+      rules: [allowUserToReadArtifacts("other-reader")],
+    }),
+  });
+
+  const mockArtifactStore = {
+    async putArtifact() { throw new Error("not implemented"); },
+    async listArtifacts(_threadId: string) { return []; },
+    async getSnapshot() { return null; },
+    async putSnapshot() { throw new Error("not implemented"); },
+  };
+
+  const session = await service.startSession({ prompt: "test", source: "test" });
+  const server = createApiServer(engine, service, { auth, artifactStore: mockArtifactStore });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const response = await makeRequest(server, "GET", `/threads/${session.threadId}/artifacts`, undefined, { authorization: "Bearer valid" });
+    assert.equal(response.status, 403);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function testApiNoAuthAllowsGateResolve(): Promise<void> {
+  const engine = new MinimalEngine();
+  const service = new ThreadService(engine);
+
+  const { threadId, gateId } = await createThreadWithGate(engine, service);
+  const server = createApiServer(engine, service);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const response = await makeRequest(server, "POST", `/threads/${threadId}/gates/${gateId}/resolve`, { resolution: "approved" });
+    assert.equal(response.status, 200);
+
+    const allEvents = engine.getAllEvents();
+    const gateResolved = allEvents.find((e) => e.type === "gate.resolved");
+    assert.ok(gateResolved);
+    if (gateResolved && gateResolved.type === "gate.resolved") {
+      assert.equal(gateResolved.actor.id, "demo-approver");
+    }
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+await testAccessPolicyAllowUserToReadThreads();
+await testAccessPolicyAllowUserToResolveGate();
+await testAccessPolicyAllowUserToDeliverSignal();
+await testAccessPolicyAllowGroupToResolveGate();
+await testAccessPolicyAllowServiceToReadArtifacts();
+await testApiThreadReadAuthenticated();
+await testApiThreadReadDenied();
+await testApiGateResolveAuthenticatedRecordsActor();
+await testApiGateResolveDeniedAppendsNothing();
+await testApiSignalDeliveryAuthenticated();
+await testApiSignalDeliveryDeniedAppendsNothing();
+await testApiArtifactReadAuthenticated();
+await testApiArtifactReadDenied();
+await testApiNoAuthAllowsGateResolve();
 
 console.log("Auth gateway tests passed");

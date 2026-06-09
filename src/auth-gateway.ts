@@ -10,11 +10,24 @@ export type Principal = {
   provider: string;
   aliases: readonly IdentityAlias[];
   groups: readonly string[];
+  roles?: readonly string[];
+  scopes?: readonly string[];
+  tenantId?: string;
+  organizationId?: string;
   displayName?: string;
+};
+
+export type AccessContext = {
+  groups: readonly string[];
+  roles: readonly string[];
+  scopes: readonly string[];
+  tenantId?: string;
+  organizationId?: string;
 };
 
 export type AuthContext = {
   principal: Principal;
+  access?: AccessContext;
   source: string;
   authenticatedAt: string;
 };
@@ -31,7 +44,13 @@ export type AuthResult =
 
 export type WeaveAction =
   | { type: "thread.start"; agentName?: string }
-  | { type: "agent.run"; agentName: string };
+  | { type: "agent.run"; agentName: string }
+  | { type: "thread.read"; threadId?: string }
+  | { type: "thread.signal"; threadId?: string; signalName?: string }
+  | { type: "gate.resolve"; threadId?: string; gateId?: string; resolution?: "approved" | "denied" }
+  | { type: "thread.cancel"; threadId?: string }
+  | { type: "artifact.read"; threadId?: string }
+  | { type: "integration.trigger"; integrationName: string; triggerName?: string };
 
 export type AuthorizationRequest = {
   context: AuthContext;
@@ -91,6 +110,7 @@ export function anonymousAuth(): AuthGateway {
           authenticated: true,
           context: {
             principal,
+            access: defaultAccessContext(principal),
             source: "anonymous",
             authenticatedAt: new Date().toISOString(),
           },
@@ -110,6 +130,16 @@ export type BearerTokenAuthOptions = {
   source?: string;
 };
 
+export function defaultAccessContext(principal: Principal): AccessContext {
+  return {
+    groups: [...principal.groups],
+    roles: principal.roles ? [...principal.roles] : [],
+    scopes: principal.scopes ? [...principal.scopes] : [],
+    tenantId: principal.tenantId,
+    organizationId: principal.organizationId,
+  };
+}
+
 export function bearerTokenAuth(options: BearerTokenAuthOptions): IdentityProvider {
   return {
     async authenticate(request: AuthRequest): Promise<AuthResult> {
@@ -126,6 +156,7 @@ export function bearerTokenAuth(options: BearerTokenAuthOptions): IdentityProvid
         authenticated: true,
         context: {
           principal,
+          access: defaultAccessContext(principal),
           source: options.source ?? "bearer-token",
           authenticatedAt: new Date().toISOString(),
         },
@@ -193,7 +224,7 @@ function matchActionTypeAndAgentName(actionType: WeaveAction["type"], agentName:
     if (action.type !== actionType) {
       return false;
     }
-    return action.agentName === agentName;
+    return "agentName" in action && action.agentName === agentName;
   };
 }
 
@@ -203,6 +234,46 @@ function matchPrincipalId(principalId: string): RuleSubjectMatcher {
 
 function matchPrincipalGroup(group: string): RuleSubjectMatcher {
   return (request: AuthorizationRequest) => request.context.principal.groups.includes(group);
+}
+
+function matchAccessRole(role: string): RuleSubjectMatcher {
+  return (request: AuthorizationRequest) => {
+    const access = request.context.access;
+    if (access && access.roles.includes(role)) {
+      return true;
+    }
+    return request.context.principal.roles?.includes(role) ?? false;
+  };
+}
+
+function matchAccessScope(scope: string): RuleSubjectMatcher {
+  return (request: AuthorizationRequest) => {
+    const access = request.context.access;
+    if (access && access.scopes.includes(scope)) {
+      return true;
+    }
+    return request.context.principal.scopes?.includes(scope) ?? false;
+  };
+}
+
+function matchTenant(tenantId: string): RuleSubjectMatcher {
+  return (request: AuthorizationRequest) => {
+    const access = request.context.access;
+    if (access?.tenantId === tenantId) {
+      return true;
+    }
+    return request.context.principal.tenantId === tenantId;
+  };
+}
+
+function matchOrganization(organizationId: string): RuleSubjectMatcher {
+  return (request: AuthorizationRequest) => {
+    const access = request.context.access;
+    if (access?.organizationId === organizationId) {
+      return true;
+    }
+    return request.context.principal.organizationId === organizationId;
+  };
 }
 
 function matchAll(): RuleSubjectMatcher {
@@ -272,6 +343,248 @@ export function allowEveryone(): AccessRule {
 
 export function denyEveryone(): AccessRule {
   return buildRule(matchAll(), matchActionType("thread.start"), { allowed: false, reason: "Everyone denied" });
+}
+
+function matchActionTypeAny(...actionTypes: WeaveAction["type"][]): RuleActionMatcher {
+  return (action: WeaveAction) => actionTypes.includes(action.type);
+}
+
+export function allowUserToReadThreads(userId: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchActionTypeAny("thread.read"),
+    { allowed: true, reason: `User ${userId} allowed to read threads` },
+  );
+}
+
+export function allowUserToResolveGate(userId: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchActionTypeAny("gate.resolve"),
+    { allowed: true, reason: `User ${userId} allowed to resolve gates` },
+  );
+}
+
+export function allowUserToDeliverSignal(userId: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchActionTypeAny("thread.signal"),
+    { allowed: true, reason: `User ${userId} allowed to deliver signals` },
+  );
+}
+
+export function allowUserToCancelThread(userId: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchActionTypeAny("thread.cancel"),
+    { allowed: true, reason: `User ${userId} allowed to cancel threads` },
+  );
+}
+
+export function allowUserToReadArtifacts(userId: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchActionTypeAny("artifact.read"),
+    { allowed: true, reason: `User ${userId} allowed to read artifacts` },
+  );
+}
+
+export function allowGroupToReadThreads(group: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchActionTypeAny("thread.read"),
+    { allowed: true, reason: `Group ${group} allowed to read threads` },
+  );
+}
+
+export function allowGroupToResolveGate(group: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchActionTypeAny("gate.resolve"),
+    { allowed: true, reason: `Group ${group} allowed to resolve gates` },
+  );
+}
+
+export function allowGroupToDeliverSignal(group: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchActionTypeAny("thread.signal"),
+    { allowed: true, reason: `Group ${group} allowed to deliver signals` },
+  );
+}
+
+export function allowGroupToCancelThread(group: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchActionTypeAny("thread.cancel"),
+    { allowed: true, reason: `Group ${group} allowed to cancel threads` },
+  );
+}
+
+export function allowGroupToReadArtifacts(group: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchActionTypeAny("artifact.read"),
+    { allowed: true, reason: `Group ${group} allowed to read artifacts` },
+  );
+}
+
+export function allowRole(role: string) {
+  return {
+    toStartAgent(agentName: string): AccessRule {
+      return buildRule(
+        matchAccessRole(role),
+        matchActionTypeAndAgentName("thread.start", agentName),
+        { allowed: true, reason: `Role ${role} allowed to start agent ${agentName}` },
+      );
+    },
+    toStartAnyAgent(): AccessRule {
+      return buildRule(
+        matchAccessRole(role),
+        matchActionType("thread.start"),
+        { allowed: true, reason: `Role ${role} allowed to start threads` },
+      );
+    },
+    toResolveGate(): AccessRule {
+      return buildRule(
+        matchAccessRole(role),
+        matchActionTypeAny("gate.resolve"),
+        { allowed: true, reason: `Role ${role} allowed to resolve gates` },
+      );
+    },
+    toReadThreads(): AccessRule {
+      return buildRule(
+        matchAccessRole(role),
+        matchActionTypeAny("thread.read"),
+        { allowed: true, reason: `Role ${role} allowed to read threads` },
+      );
+    },
+  };
+}
+
+export function allowScope(scope: string) {
+  return {
+    toStartAgent(agentName: string): AccessRule {
+      return buildRule(
+        matchAccessScope(scope),
+        matchActionTypeAndAgentName("thread.start", agentName),
+        { allowed: true, reason: `Scope ${scope} allowed to start agent ${agentName}` },
+      );
+    },
+    toStartAnyAgent(): AccessRule {
+      return buildRule(
+        matchAccessScope(scope),
+        matchActionType("thread.start"),
+        { allowed: true, reason: `Scope ${scope} allowed to start threads` },
+      );
+    },
+  };
+}
+
+export function allowTenant(tenantId: string): AccessRule {
+  return buildRule(
+    matchTenant(tenantId),
+    matchActionType("thread.start"),
+    { allowed: true, reason: `Tenant ${tenantId} allowed to start threads` },
+  );
+}
+
+export function allowOrganization(organizationId: string): AccessRule {
+  return buildRule(
+    matchOrganization(organizationId),
+    matchActionType("thread.start"),
+    { allowed: true, reason: `Organization ${organizationId} allowed to start threads` },
+  );
+}
+
+export function allowServiceToReadThreads(serviceName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(serviceName),
+    matchActionTypeAny("thread.read"),
+    { allowed: true, reason: `Service ${serviceName} allowed to read threads` },
+  );
+}
+
+export function allowServiceToResolveGate(serviceName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(serviceName),
+    matchActionTypeAny("gate.resolve"),
+    { allowed: true, reason: `Service ${serviceName} allowed to resolve gates` },
+  );
+}
+
+export function allowServiceToDeliverSignal(serviceName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(serviceName),
+    matchActionTypeAny("thread.signal"),
+    { allowed: true, reason: `Service ${serviceName} allowed to deliver signals` },
+  );
+}
+
+export function allowServiceToCancelThread(serviceName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(serviceName),
+    matchActionTypeAny("thread.cancel"),
+    { allowed: true, reason: `Service ${serviceName} allowed to cancel threads` },
+  );
+}
+
+export function allowServiceToReadArtifacts(serviceName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(serviceName),
+    matchActionTypeAny("artifact.read"),
+    { allowed: true, reason: `Service ${serviceName} allowed to read artifacts` },
+  );
+}
+
+function matchIntegrationName(integrationName: string): RuleActionMatcher {
+  return (action: WeaveAction) => {
+    if (action.type !== "integration.trigger") {
+      return false;
+    }
+    return action.integrationName === integrationName;
+  };
+}
+
+function matchIntegrationNameAndTrigger(integrationName: string, triggerName: string): RuleActionMatcher {
+  return (action: WeaveAction) => {
+    if (action.type !== "integration.trigger") {
+      return false;
+    }
+    return action.integrationName === integrationName && action.triggerName === triggerName;
+  };
+}
+
+export function allowIntegrationToTrigger(integrationName: string): AccessRule {
+  return buildRule(
+    matchAll(),
+    matchIntegrationName(integrationName),
+    { allowed: true, reason: `Integration ${integrationName} allowed to trigger` },
+  );
+}
+
+export function allowUserToTriggerIntegration(userId: string, integrationName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchIntegrationName(integrationName),
+    { allowed: true, reason: `User ${userId} allowed to trigger integration ${integrationName}` },
+  );
+}
+
+export function allowGroupToTriggerIntegration(group: string, integrationName: string): AccessRule {
+  return buildRule(
+    matchPrincipalGroup(group),
+    matchIntegrationName(integrationName),
+    { allowed: true, reason: `Group ${group} allowed to trigger integration ${integrationName}` },
+  );
+}
+
+export function allowUserToTriggerIntegrationAction(userId: string, integrationName: string, triggerName: string): AccessRule {
+  return buildRule(
+    matchPrincipalId(userId),
+    matchIntegrationNameAndTrigger(integrationName, triggerName),
+    { allowed: true, reason: `User ${userId} allowed to trigger ${triggerName} on integration ${integrationName}` },
+  );
 }
 
 export function toAuthSummary(context: AuthContext): AuthSummary {

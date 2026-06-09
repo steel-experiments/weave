@@ -111,7 +111,9 @@ The auth gateway sits between HTTP ingress and the thread service. It is a compo
 
 The first protected HTTP path is `POST /threads`. When an `AuthGateway` is configured on the API server, `thread.start` requests are authenticated and authorized before any session is created. Denied requests return 401 or 403 without appending events. Accepted requests record a safe auth summary (`principalId`, `provider`, `source`) in `session.started.payload.metadata.auth`. No raw access tokens, raw ID tokens, refresh tokens, or full provider claims are stored by default.
 
-When no auth gateway is configured, the API server preserves the existing unauthenticated local behavior. Provider-specific SDKs (Better Auth, Clerk, Okta, OpenAuth, etc.) live outside core and adapt to the `IdentityProvider` interface.
+When no auth gateway is configured, the API server preserves the existing unauthenticated local behavior. Provider-specific SDKs (Better Auth, Clerk, Okta, OpenAuth, etc.) live outside core and adapt to the `IdentityProvider` interface via the `AuthProviderAdapter` contract. See `docs/auth-provider-adapters.md` for the adapter boundary specification.
+
+The `Principal` carries normalized identity fields: `id`, `provider`, `aliases`, `groups`, `roles`, `scopes`, `tenantId`, `organizationId`, and `displayName`. The `AuthContext` includes an optional `AccessContext` that mirrors these for authorization rule matching. Emails and usernames are aliases, not preferred immutable identifiers. Core provides a dependency-light `jwtAuth()` adapter (HS256 via Node `crypto`) and reusable adapter contract tests.
 
 ## Core Primitives
 

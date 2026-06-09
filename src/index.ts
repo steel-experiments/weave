@@ -4,6 +4,7 @@ export * from "./app-contract.js";
 export * from "./api-server.js";
 export * from "./artifacts.js";
 export * from "./auth-gateway.js";
+export * from "./auth-audit.js";
 export * from "./capability-contract.js";
 export * from "./contracts.js";
 export * from "./daemons.js";
