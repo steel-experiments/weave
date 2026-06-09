@@ -42,7 +42,7 @@ Protect thread reads, signal delivery, gate resolution, cancellation, and artifa
 ### Expected Touchpoints
 
 - `src/api-server.ts`
-- `src/auth.ts`
+- `src/auth-gateway.ts`
 - `src/thread-service.ts`
 - `src/tests/auth-gateway.test.ts`
 - `docs/declarative-api.md`
@@ -78,7 +78,7 @@ Prove that an integration can authenticate a stable external principal, authoriz
 ### Expected Touchpoints
 
 - `src/integrations.ts`
-- `src/auth.ts`
+- `src/auth-gateway.ts`
 - `src/thread-service.ts`
 - `src/tests/auth-gateway.test.ts`
 - `docs/integrations.md`
@@ -114,7 +114,8 @@ Make thread history sufficient for an operator to inspect who was authenticated,
 ### Expected Touchpoints
 
 - `src/events.ts`
-- `src/auth.ts`
+- `src/auth-audit.ts`
+- `src/auth-gateway.ts`
 - `src/api-server.ts`
 - `src/tests/auth-gateway.test.ts`
 - `docs/event-taxonomy.md`
@@ -148,7 +149,9 @@ Give app authors and third-party packages a clear identity adapter contract whil
 
 ### Expected Touchpoints
 
-- `src/auth.ts`
+- `src/auth-provider-adapter.ts`
+- `src/auth-entry.ts`
+- `src/auth-gateway.ts`
 - `src/tests/auth-gateway.test.ts`
 - `src/tests/public-api-exports.test.ts`
 - `docs/declarative-api.md`

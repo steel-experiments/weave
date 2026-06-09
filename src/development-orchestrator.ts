@@ -1279,9 +1279,54 @@ export function createGitLocalMergeFinalizationRunner(): LocalMergeFinalizationR
         });
       }
 
-      const dirtyFiles = parseGitStatusChangedFiles(await git(input.repoRoot, ["status", "--porcelain", "--untracked-files=all"]));
-      const currentBranch = (await git(input.repoRoot, ["branch", "--show-current"])).trim() || "DETACHED_HEAD";
-      const beforeSha = (await git(input.repoRoot, ["rev-parse", input.baseBranch])).trim();
+      let dirtyFiles: string[];
+      try {
+        dirtyFiles = parseGitStatusChangedFiles(await git(input.repoRoot, ["status", "--porcelain", "--untracked-files=all"]));
+      } catch (error) {
+        return FinalizationResultSchema.parse({
+          status: "blocked",
+          mode: "local-merge",
+          repoRoot: input.repoRoot,
+          baseBranch: input.baseBranch,
+          branch: input.branch,
+          strategy: input.strategy,
+          reason: `Could not inspect repository status: ${errorToMessage(error)}.`,
+          summary: "Local merge blocked during Git preflight.",
+        });
+      }
+
+      let currentBranch: string;
+      try {
+        currentBranch = (await git(input.repoRoot, ["branch", "--show-current"])).trim() || "DETACHED_HEAD";
+      } catch (error) {
+        return FinalizationResultSchema.parse({
+          status: "blocked",
+          mode: "local-merge",
+          repoRoot: input.repoRoot,
+          baseBranch: input.baseBranch,
+          branch: input.branch,
+          strategy: input.strategy,
+          reason: `Could not determine current branch: ${errorToMessage(error)}.`,
+          summary: "Local merge blocked during Git preflight.",
+        });
+      }
+
+      let beforeSha: string;
+      try {
+        beforeSha = (await git(input.repoRoot, ["rev-parse", input.baseBranch])).trim();
+      } catch (error) {
+        return FinalizationResultSchema.parse({
+          status: "blocked",
+          mode: "local-merge",
+          repoRoot: input.repoRoot,
+          baseBranch: input.baseBranch,
+          branch: input.branch,
+          strategy: input.strategy,
+          reason: `Could not resolve base branch ${input.baseBranch}: ${errorToMessage(error)}.`,
+          currentBranch,
+          summary: "Local merge blocked during Git preflight.",
+        });
+      }
       if (dirtyFiles.length > 0) {
         return FinalizationResultSchema.parse({
           status: "blocked",
