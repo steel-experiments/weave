@@ -726,8 +726,6 @@ const DevPrReadyForReviewEventSchema = EventEnvelopeBaseSchema.extend({
   payload: DevPrReadyForReviewPayloadSchema,
 });
 
-<<<<<<< HEAD
-=======
 const DevSourceCheckpointProposedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("dev.source_checkpoint.proposed"),
   payload: DevSourceCheckpointProposedPayloadSchema,
@@ -753,7 +751,6 @@ const AuthDecisionRecordedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: AuthDecisionRecordedPayloadSchema,
 });
 
->>>>>>> c0ba0a3 (feat: complete Auth Decision Audit Trail)
 export const ThreadEventSchema = z.discriminatedUnion("type", [
   SessionStartedEventSchema,
   PromptReceivedEventSchema,
