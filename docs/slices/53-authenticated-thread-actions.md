@@ -4,7 +4,7 @@
 
 - Vertical: `weave-core`
 - Status: `Shipped`
-- Last updated: `2026-06-05`
+- Last updated: `2026-06-09`
 - Owner: `weave-core`
 
 ## Goal
@@ -97,6 +97,6 @@ Shipped as slice 01-authenticated-thread-actions.
 ## Docs To Update On Completion
 
 - [x] this slice document
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/architecture.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/architecture.md`

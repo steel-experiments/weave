@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
-- Last updated: `2026-06-03`
+- Status: `Shipped`
+- Last updated: `2026-06-09`
 - Owner: `weave-core`
 
 ## Goal
@@ -25,26 +25,22 @@ As an operator, I can inspect a thread and answer who was authenticated, which W
 
 ## Event Shape
 
-Add thread-scoped event types:
+Add a thread-scoped event type:
 
-- `auth.authenticated`
-- `auth.authorized`
-- `auth.denied`
+- `auth.decision.recorded`
 
 Payloads should be safe summaries:
 
 ```ts
-export interface AuthDecisionPayload {
+export interface AuthDecisionRecordedPayload {
   principalId: string;
-  principalKind: "user" | "service" | "bot" | "anonymous";
+  principalKind: string;
   provider: string;
-  providerSubjectHash?: string;
-  action: WeaveAction;
-  resourceType?: string;
-  resourceName?: string;
-  resourceId?: string;
-  decision: "allow" | "deny";
+  action: string;
+  resource?: string;
+  decision: "allowed" | "denied";
   reason?: string;
+  subjectHash?: string;
 }
 ```
 
@@ -59,11 +55,11 @@ export interface AuthDecisionPayload {
 
 ## Implementation Plan
 
-1. Add typed event schemas for `auth.authenticated`, `auth.authorized`, and `auth.denied`.
+1. Add typed event schema for `auth.decision.recorded`.
 2. Add a helper to redact/hash provider subjects and omit sensitive claims.
-3. Append `auth.authorized` before successful thread-scoped mutations such as signal delivery and gate resolution.
-4. Append `auth.denied` only when a safe thread-scoped denial event can be recorded without mutating protected state in a confusing way.
-5. Add `auth.authenticated` only where it provides useful thread-scoped evidence and does not duplicate every route read.
+3. Append `auth.decision.recorded` before successful thread-scoped mutations such as signal delivery and gate resolution.
+4. Append denied `auth.decision.recorded` decisions only when safe thread-scoped denial evidence can be recorded without mutating protected state in a confusing way.
+5. Avoid recording route-level authentication-only events where they duplicate every route read.
 6. Document that denied `thread.start` currently has no thread event and needs a later global audit/log sink if durable pre-thread audit is required.
 
 ## Test Plan
@@ -78,27 +74,27 @@ export interface AuthDecisionPayload {
 
 ## Acceptance Criteria
 
-- [ ] Auth audit event types are part of the typed event taxonomy.
-- [ ] Thread-scoped auth decisions can be inspected from thread history.
-- [ ] Safe payloads include principal id, principal kind, provider, action, resource, decision, and reason.
-- [ ] Provider subject is omitted or hashed where appropriate.
-- [ ] Raw tokens and full provider claims are not stored.
-- [ ] Pre-thread denial limitations are documented explicitly.
+- [x] Auth audit event types are part of the typed event taxonomy.
+- [x] Thread-scoped auth decisions can be inspected from thread history.
+- [x] Safe payloads include principal id, principal kind, provider, action, resource, decision, and reason.
+- [x] Provider subject is omitted or hashed where appropriate.
+- [x] Raw tokens and full provider claims are not stored.
+- [x] Pre-thread denial limitations are documented explicitly.
 
 ## Progress
 
-- [ ] Event taxonomy updates.
-- [ ] Redaction/hash helper.
-- [ ] Thread-scoped append points.
-- [ ] Tests.
-- [ ] Docs updates.
+- [x] Event taxonomy updates.
+- [x] Redaction/hash helper.
+- [x] Thread-scoped append points.
+- [x] Tests.
+- [x] Docs updates.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+Shipped 2026-06-09. Added `auth.decision.recorded` as the durable thread-scoped audit event, plus `auth-audit` helpers for resource summaries and provider subject hashing. API authorization paths record safe auth decision evidence without raw tokens, full provider claims, or unhashed provider subjects. Pre-thread denial limitations are documented in the event taxonomy.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/architecture.md`
+- [x] this slice document
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/architecture.md`

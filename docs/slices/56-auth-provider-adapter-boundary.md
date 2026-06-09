@@ -3,7 +3,7 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Completed`
+- Status: `Shipped`
 - Last updated: `2026-06-09`
 - Owner: `weave-core`
 

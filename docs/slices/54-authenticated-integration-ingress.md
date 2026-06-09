@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
-- Last updated: `2026-06-03`
+- Status: `Shipped`
+- Last updated: `2026-06-09`
 - Owner: `weave-core`
 
 ## Goal
@@ -79,29 +79,29 @@ The normalized principal should use stable provider subject data:
 
 ## Acceptance Criteria
 
-- [ ] Integration route authors can access the configured auth gateway.
-- [ ] `integration.trigger` is a supported Weave authorization action.
-- [ ] A Slack-shaped ingress path uses stable workspace id plus user id as provider subject.
-- [ ] Slack username/display name is never used as the primary access key.
-- [ ] Trigger authorization and thread-start authorization are separate decisions.
-- [ ] Auth context from integration ingress reaches runtime capability policy checks.
+- [x] Integration route authors can access the configured auth gateway.
+- [x] `integration.trigger` is a supported Weave authorization action.
+- [x] A Slack-shaped ingress path uses stable workspace id plus user id as provider subject.
+- [x] Slack username/display name is never used as the primary access key.
+- [x] Trigger authorization and thread-start authorization are separate decisions.
+- [x] Auth context from integration ingress reaches runtime capability policy checks.
 
 ## Progress
 
-- [ ] Integration auth route context.
-- [ ] Slack-shaped test integration.
-- [ ] `integration.trigger` action.
-- [ ] Two-stage authorization tests.
-- [ ] Runtime policy propagation test.
-- [ ] Docs updates.
+- [x] Integration auth route context.
+- [x] Slack-shaped test integration.
+- [x] `integration.trigger` action.
+- [x] Two-stage authorization tests.
+- [x] Runtime policy propagation test.
+- [x] Docs updates.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+Shipped 2026-06-09. Added `integration.trigger` to `WeaveAction`, integration access-policy helpers, and a Slack-shaped authenticated ingress contract test. The test path verifies fake Slack signatures, resolves stable workspace id plus user id subjects, keeps usernames/display names as aliases, authorizes `integration.trigger` separately from `thread.start`, and proves the resulting auth context reaches runtime capability policy checks.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
+- [x] this slice document
 - [ ] `docs/integrations.md`
-- [ ] `docs/declarative-api.md`
-- [ ] `docs/architecture.md`
+- [x] `docs/declarative-api.md`
+- [x] `docs/architecture.md`
