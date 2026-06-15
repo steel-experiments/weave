@@ -230,6 +230,10 @@ export const AgentResponseProducedPayloadSchema = z.object({
   message: z.string().min(1),
 });
 
+export const AgentReplyProducedPayloadSchema = z.object({
+  message: z.string().min(1),
+});
+
 export const AgentOutputCompletedPayloadSchema = z.object({
   output: z.unknown(),
   summary: z.string().min(1).optional(),
@@ -660,6 +664,11 @@ const AgentResponseProducedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: AgentResponseProducedPayloadSchema,
 });
 
+const AgentReplyProducedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("agent.reply.produced"),
+  payload: AgentReplyProducedPayloadSchema,
+});
+
 const AgentOutputCompletedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("agent.output.completed"),
   payload: AgentOutputCompletedPayloadSchema,
@@ -848,6 +857,7 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   GateResolvedEventSchema,
   RunnerResumedEventSchema,
   AgentResponseProducedEventSchema,
+  AgentReplyProducedEventSchema,
   AgentOutputCompletedEventSchema,
   AgentFindingProducedEventSchema,
   AgentRemediationProposedEventSchema,

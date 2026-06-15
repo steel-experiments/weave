@@ -540,6 +540,7 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       case "agent.finding.produced":
       case "agent.remediation.proposed":
       case "agent.incident_report.produced":
+      case "agent.reply.produced":
         return currentStatus;
     }
   }
@@ -620,6 +621,7 @@ function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
     case "tool.failed":
     case "gate.created":
     case "agent.response.produced":
+    case "agent.reply.produced":
     case "agent.output.completed":
     case "agent.finding.produced":
     case "agent.remediation.proposed":

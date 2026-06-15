@@ -24,7 +24,7 @@ export function buildThreadSummary(projection: ThreadProjection, events: ThreadE
       continue;
     }
 
-    if (event.type === "agent.response.produced") {
+    if (event.type === "agent.response.produced" || event.type === "agent.reply.produced") {
       finalMessage = event.payload.message;
       continue;
     }

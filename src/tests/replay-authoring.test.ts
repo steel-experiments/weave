@@ -860,6 +860,84 @@ async function testSignalDeliveryResumesAgentAndIsIdempotent(): Promise<void> {
   );
 }
 
+async function testReplyProducedIsNonTerminalAcrossTurns(): Promise<void> {
+  const looper = agent({
+    name: "reply-loop-agent",
+    input: inputSchema,
+    output: z.object({ turns: z.number() }),
+    async run(ctx) {
+      for (let turn = 0; ; turn += 1) {
+        await ctx.emit(`reply:${turn}`, {
+          type: "agent.reply.produced",
+          payload: { message: `reply ${turn}` },
+        });
+        const next = await ctx.waitForSignal(`prompt:${turn + 1}`, {
+          signal: "blade.prompt",
+          schema: z.object({ close: z.boolean().default(false) }),
+        });
+        if (next.close) {
+          return { turns: turn + 1 };
+        }
+      }
+    },
+  });
+
+  const threadId = "reply-loop";
+  const engine = new MemoryThreadEngine(initialHistory(threadId));
+  const runner = new ThreadRunner(engine, engine, createAgentPlanner(looper), "reply-runner");
+  const service = new ThreadService(engine);
+
+  const openWaiting = (events: readonly ThreadEvent[]) =>
+    events.find(
+      (event): event is Extract<ThreadEvent, { type: "signal.waiting" }> =>
+        event.type === "signal.waiting" &&
+        event.payload.signalName === "blade.prompt" &&
+        !events.some(
+          (other) => other.type === "signal.received" && other.payload.waitId === event.payload.waitId,
+        ),
+    );
+
+  const firstRun = await runner.runOnce(threadId);
+  assert.equal(firstRun.acted, true);
+  let events = await engine.read(threadId);
+  assert.equal(events.filter((event) => event.type === "agent.reply.produced").length, 1);
+  assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+  assert.notEqual((await engine.getProjection(threadId))?.status, "completed");
+
+  for (let turn = 1; turn <= 2; turn += 1) {
+    const waiting = openWaiting(events);
+    assert(waiting);
+    await service.deliverSignal({
+      threadId,
+      waitId: waiting.payload.waitId,
+      signal: "blade.prompt",
+      payload: { close: false },
+    });
+    const resumed = await runner.runOnce(threadId);
+    assert.equal(resumed.acted, true);
+    assert.equal(resumed.reason, "signal-received");
+    events = await engine.read(threadId);
+    assert.equal(events.filter((event) => event.type === "agent.reply.produced").length, turn + 1);
+    assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+    assert.notEqual((await engine.getProjection(threadId))?.status, "completed");
+  }
+
+  const lastWaiting = openWaiting(events);
+  assert(lastWaiting);
+  await service.deliverSignal({
+    threadId,
+    waitId: lastWaiting.payload.waitId,
+    signal: "blade.prompt",
+    payload: { close: true },
+  });
+  const finalRun = await runner.runOnce(threadId);
+  assert.equal(finalRun.acted, true);
+  events = await engine.read(threadId);
+  assert.equal(events.filter((event) => event.type === "agent.reply.produced").length, 3);
+  assert.equal(events.filter((event) => event.type === "agent.response.produced").length, 1);
+  assert.equal((await engine.getProjection(threadId))?.status, "completed");
+}
+
 async function testSignalWaitSignalMismatch(): Promise<void> {
   const firstWaiter = agent({
     name: "signal-mismatch-agent",
@@ -3652,6 +3730,7 @@ await testSleepFiredResumesAgent();
 await testSleepTargetMismatch();
 await testSignalWaitSchedulesAndPendingReplayDoesNotDuplicate();
 await testSignalDeliveryResumesAgentAndIsIdempotent();
+await testReplyProducedIsNonTerminalAcrossTurns();
 await testSignalWaitSignalMismatch();
 await testSignalPayloadSchemaMismatch();
 await testCompletedRunFirstAgentIsTerminal();
