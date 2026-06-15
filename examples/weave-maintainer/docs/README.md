@@ -92,6 +92,10 @@ Implements a single bounded slice on the working branch. Receives slice objectiv
 
 OpenCode output is a claim, not the source of truth. Weave verifies it independently.
 
+The maintainer-local OpenCode CLI runner now requires an explicit `maintainer-bounded` permission profile. The runner launches OpenCode with validated profile flags, strips child process environment variables to an allowlist, rejects unsafe session/remote/command flags, captures Git changed files before and after the process exits, and blocks implementation or repair runs when actual changed files escape the workspace root or slice `allowedFiles`.
+
+Residual trust assumption: this is defense in depth around the local CLI, not an OS sandbox. The host still trusts the installed OpenCode binary and local user account to honor its own permission behavior; credentials stored in host config files, symlink targets, network egress, and arbitrary behavior inside the binary are outside this slice-local adapter boundary.
+
 ### Verification Agent
 
 Runs deterministic checks such as `npm test`, `npm run typecheck`, `git diff --check`, and targeted examples. Emits structured command results and parsed failures.
@@ -200,7 +204,7 @@ Defaults:
 - `workspaceRoot`: `/tmp/weave-development-workspaces`
 - `workspaceMode`: initiative-scoped git worktree
 - `cleanupOnSuccess`: false, so the workspace is preserved for inspection
-- OpenCode command: `opencode run --format json --dir <workspace> <prompt>`
+- OpenCode command: `opencode run --format json --pure --dir <workspace> <prompt>` through the explicit `maintainer-bounded` profile
 - `github`: disabled; the PR agent creates a local draft summary and stops at `pr-review-approval`
 - required reviewers: `security-reviewer`, `replay-safety-reviewer`, `compatibility-reviewer`, `docs-reviewer`
 
@@ -214,7 +218,7 @@ The script prints the root thread id, child thread tree, pending gate ids, works
 
 During long-running tools, the script also prints selected live events such as `tool.started`, `tool.progress`, `tool.failed`, child-thread terminal events, gates, and development workflow events. OpenCode CLI runs emit start, heartbeat, stderr, and completion progress through durable `tool.progress` events.
 
-If OpenCode auto-rejects a permission request or exceeds the configured output bound, the runner returns a structured blocked result instead of `tool.failed`, and the slice runner stops at the `repair-stop` human gate for operator action.
+If OpenCode auto-rejects a permission request, asks for a permission outside the configured profile, changes files outside `allowedFiles`, changes files outside the workspace root, times out, or exceeds the configured output bound, the runner returns a structured blocked result instead of `tool.failed`, and the slice runner stops at the `repair-stop` human gate for operator action.
 
 The dry run wires `PostgresObservabilitySink`, so runner/tool spans and logs are persisted in `weave.observability_span` and `weave.observability_log` for runs started after this wiring was added.
 

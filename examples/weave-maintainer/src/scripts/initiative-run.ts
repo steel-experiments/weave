@@ -20,7 +20,7 @@ import {
 } from "../development-orchestrator.js";
 import { buildInitiativeRunInput, formatInitiativeRunResumeCommand, parseInitiativeRunOptions } from "../development-initiative-runner.js";
 import { formatInitiativeStatus, getInitiativeStatus } from "../development-operator.js";
-import { createOpenCodeCliImplementationRunner, createOpenCodeCliRepairRunner } from "../opencode-runner.js";
+import { createMaintainerOpenCodePermissionProfile, createOpenCodeCliImplementationRunner, createOpenCodeCliRepairRunner } from "../opencode-runner.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
@@ -123,10 +123,12 @@ try {
 }
 
 function createInitiativeRunApp(workspaceProvider: WorkspaceProvider, observability: PostgresObservabilitySink) {
+  const openCodePermissionProfile = createMaintainerOpenCodePermissionProfile();
   const implementationAgent = createOpenCodeImplementerAgent({
     runner: createOpenCodeCliImplementationRunner({
       command: options.openCodeCommand ?? process.env.WEAVE_INITIATIVE_OPENCODE_COMMAND ?? "opencode",
       ...(options.openCodeArgs ? { args: options.openCodeArgs } : {}),
+      permissionProfile: openCodePermissionProfile,
       timeoutMs,
       maxOutputBytes: 2_000_000,
     }),
@@ -135,6 +137,7 @@ function createInitiativeRunApp(workspaceProvider: WorkspaceProvider, observabil
     runner: createOpenCodeCliRepairRunner({
       command: options.openCodeCommand ?? process.env.WEAVE_INITIATIVE_OPENCODE_COMMAND ?? "opencode",
       ...(options.openCodeArgs ? { args: options.openCodeArgs } : {}),
+      permissionProfile: openCodePermissionProfile,
       timeoutMs,
       maxOutputBytes: 2_000_000,
     }),

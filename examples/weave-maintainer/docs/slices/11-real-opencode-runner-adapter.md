@@ -46,6 +46,10 @@ As a maintainer, I can replace fake implementation and repair runners with real 
 - No secret access through this runner.
 - Verification and review required after every implementation or repair run.
 
+Slice `58-maintainer-opencode-security-hardening.md` later strengthened this adapter in place. The runner now requires an explicit `maintainer-bounded` permission profile, appends validated profile flags such as `--pure`, sanitizes the child environment through an allowlist, rejects unsafe OpenCode session/remote/command flags, captures actual Git changed files before and after execution, and blocks implementation or repair outputs when actual changes escape the workspace root or slice `allowedFiles`.
+
+The remaining trust boundary is host-level: the adapter is not an OS sandbox and still depends on the installed OpenCode binary, local filesystem permissions, and the host account honoring the CLI permission behavior.
+
 ## Runner Inputs
 
 Implementation runner receives existing `OpenCodeImplementerInput`:
@@ -136,6 +140,7 @@ Repair runner receives existing `RepairAgentInput`:
 - Added public API export coverage and updated `docs/agent-adapters.md` with configuration and constraints.
 - Commands run: `npm exec -- tsx src/tests/opencode-runner.test.ts`, `npm exec -- tsx src/tests/public-api-exports.test.ts`, `npm exec -- tsx src/tests/development-orchestrator-contracts.test.ts`, `npm test`, `npm run typecheck`, `git diff --check`.
 - Known gap: the next step is not unattended auth execution. Start with a one-slice dry run of `../../slices/51-auth-gateway-thread-start.md` using the orchestrator path.
+- Post-hardening update from slice 58: `examples/weave-maintainer/src/opencode-runner.ts` now enforces explicit permission profiles, sanitized env, validated CLI flags, and actual Git changed-file checks before returning implementation or repair results.
 
 ## Docs To Update On Completion
 

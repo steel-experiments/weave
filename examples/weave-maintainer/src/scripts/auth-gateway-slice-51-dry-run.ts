@@ -19,7 +19,7 @@ import {
   type VerificationAgentInput,
   type VerificationResult,
 } from "../development-orchestrator.js";
-import { createOpenCodeCliImplementationRunner, createOpenCodeCliRepairRunner } from "../opencode-runner.js";
+import { createMaintainerOpenCodePermissionProfile, createOpenCodeCliImplementationRunner, createOpenCodeCliRepairRunner } from "../opencode-runner.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
@@ -172,10 +172,12 @@ try {
 }
 
 function createAuthGatewayDryRunApp(workspaceProvider: WorkspaceProvider, observability: PostgresObservabilitySink) {
+  const openCodePermissionProfile = createMaintainerOpenCodePermissionProfile();
   const implementationAgent = createOpenCodeImplementerAgent({
     runner: createOpenCodeCliImplementationRunner({
       command: options.openCodeCommand ?? process.env.WEAVE_DRY_RUN_OPENCODE_COMMAND ?? "opencode",
       ...(options.openCodeArgs ? { args: options.openCodeArgs } : {}),
+      permissionProfile: openCodePermissionProfile,
       timeoutMs,
       maxOutputBytes: 2_000_000,
     }),
@@ -184,6 +186,7 @@ function createAuthGatewayDryRunApp(workspaceProvider: WorkspaceProvider, observ
     runner: createOpenCodeCliRepairRunner({
       command: options.openCodeCommand ?? process.env.WEAVE_DRY_RUN_OPENCODE_COMMAND ?? "opencode",
       ...(options.openCodeArgs ? { args: options.openCodeArgs } : {}),
+      permissionProfile: openCodePermissionProfile,
       timeoutMs,
       maxOutputBytes: 2_000_000,
     }),

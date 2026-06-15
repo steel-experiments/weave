@@ -226,13 +226,18 @@ The development orchestrator also exposes a configurable CLI runner module for r
 - `createOpenCodeCliImplementationRunner(...)` satisfies `OpenCodeImplementationRunner`
 - `createOpenCodeCliRepairRunner(...)` satisfies `RepairRunner`
 - `buildOpenCodeImplementationPrompt(...)` and `buildOpenCodeRepairPrompt(...)` construct bounded prompts from typed slice inputs
-- `runOpenCodeCliCommand(...)` shells out with explicit `cwd`, timeout, and bounded output capture
-- `OpenCodeCliRunnerConfigSchema` defaults to `opencode run --format json --dir <workspace> <prompt>`, but tests and deployments can override command, args, workspace directory argument, and prompt delivery
+- `OpenCodeCliRunnerConfigSchema` requires an explicit `OpenCodePermissionProfileSchema`; the maintainer path uses `createMaintainerOpenCodePermissionProfile()`
+- `runOpenCodeCliCommand(...)` shells out with explicit `cwd`, timeout, bounded output capture, sanitized child env, validated command/profile flags, and Git changed-file capture before and after execution
+- the maintainer profile launches `opencode run --format json --pure --dir <workspace> <prompt>` by default and rejects unsafe session, remote attach, file attachment, shell-command, and `--dangerously-skip-permissions` flags
 - stdout must be strict JSON matching the implementation summary or repair result schema
 - branch mismatches are refused before the OpenCode process starts
 - reported implementation files outside `allowedFiles` fail the runner before Weave treats the output as complete
+- actual Git changed files outside `allowedFiles` or outside the configured workspace root become structured blocked results, even if OpenCode reports an in-scope summary
+- permission requests outside the configured profile become structured blocked results instead of crashes
 
-The runner executes inside `WorkspaceRef.path` and still returns claims only. The slice runner must rerun verification and reviewer children after every implementation or repair run.
+The runner executes inside `WorkspaceRef.path` and still returns claims only. It now cross-checks those claims against Git status, but the slice runner must rerun verification and reviewer children after every implementation or repair run.
+
+Residual trust assumption: this maintainer-local runner is not an OS sandbox. It strips env and checks Git results after execution, but host-level safety still depends on the installed OpenCode binary honoring its permission flags, the local user account, filesystem permissions, and any credentials available through host config files.
 
 Example configuration:
 
@@ -240,6 +245,7 @@ Example configuration:
 const implementationRunner = createOpenCodeCliImplementationRunner({
   command: "opencode",
   args: ["run", "--format", "json"],
+  permissionProfile: createMaintainerOpenCodePermissionProfile(),
   timeoutMs: 600_000,
   maxOutputBytes: 256_000,
 });

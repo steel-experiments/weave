@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
-- Last updated: `2026-06-10`
+- Status: `Shipped`
+- Last updated: `2026-06-15`
 - Owner: `weave-maintainer`
 
 ## Goal
@@ -69,31 +69,42 @@ The maintainer adapter must enforce defense in depth:
 
 ## Acceptance Criteria
 
-- [ ] OpenCode runner config requires an explicit permission profile or a named unsafe test override.
-- [ ] The spawned OpenCode process receives a bounded tool/permission profile.
-- [ ] Child process env is deny-by-default with an explicit allowlist.
-- [ ] Actual Git diff after the run is checked against `allowedFiles` and workspace root.
-- [ ] Out-of-scope actual file changes fail even when OpenCode reports an in-scope summary.
-- [ ] Permission requests outside the profile become structured blocked results.
-- [ ] Existing maintainer implementation and repair happy paths still work under the hardened profile.
-- [ ] Documentation clearly states remaining host-level trust assumptions.
+- [x] OpenCode runner config requires an explicit permission profile or a named unsafe test override.
+- [x] The spawned OpenCode process receives a bounded tool/permission profile.
+- [x] Child process env is deny-by-default with an explicit allowlist.
+- [x] Actual Git diff after the run is checked against `allowedFiles` and workspace root.
+- [x] Out-of-scope actual file changes fail even when OpenCode reports an in-scope summary.
+- [x] Permission requests outside the profile become structured blocked results.
+- [x] Existing maintainer implementation and repair happy paths still work under the hardened profile.
+- [x] Documentation clearly states remaining host-level trust assumptions.
 
 ## Progress
 
-- [ ] Define permission profile schema.
-- [ ] Wire OpenCode CLI permission/tool flags.
-- [ ] Add env sanitization.
-- [ ] Add actual Git diff enforcement.
-- [ ] Add fake executable security tests.
-- [ ] Update maintainer docs.
+- [x] Define permission profile schema.
+- [x] Wire OpenCode CLI permission/tool flags.
+- [x] Add env sanitization.
+- [x] Add actual Git diff enforcement.
+- [x] Add fake executable security tests.
+- [x] Update maintainer docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Implemented `OpenCodePermissionProfileSchema` in `examples/weave-maintainer/src/opencode-runner.ts` with a required `maintainer-bounded` profile and an explicitly named `test-only-unsafe` override.
+- Added `createMaintainerOpenCodePermissionProfile(...)`, `createTestOnlyUnsafeOpenCodePermissionProfile(...)`, and `buildOpenCodeChildEnv(...)`.
+- Runner config now fails closed when no safe profile is supplied, when maintainer profiles allow unsafe authority, or when command/profile flags include forbidden session, remote, file attachment, shell-command, or `--dangerously-skip-permissions` authority.
+- Spawned OpenCode runs receive profile-controlled CLI flags. The bounded maintainer profile includes `--pure`; optional tool narrowing can be supplied through validated `cliToolFlags` such as `--agent <name>`.
+- Child process env is deny-by-default from `envAllowlist`; common secret-shaped env keys are rejected in the maintainer profile and omitted unless using the literal `test-only-unsafe` profile.
+- `runOpenCodeCliCommand(...)` captures Git changed files before and after successful process exits using `git status --porcelain=v1 -z --untracked-files=all` and records `gitChangedFilesBefore`, `gitChangedFilesAfter`, and workspace-escape fields in `OpenCodeCommandResultSchema`.
+- Implementation and repair runners check actual Git changed files against `allowedFiles` and block with `DevelopmentBlockedRunnerError` when changes escape scope, even if OpenCode reports only allowed files.
+- Branch mismatches, timeouts, max-output overflow, reported out-of-scope files, actual out-of-scope files, and permission requests outside the profile now fail closed as blocked runner errors where the maintainer tool boundary can return structured blocked outputs.
+- `examples/weave-maintainer/src/scripts/initiative-run.ts` and `examples/weave-maintainer/src/scripts/auth-gateway-slice-51-dry-run.ts` now pass the explicit bounded profile to implementation and repair runners.
+- `examples/weave-maintainer/src/tests/opencode-runner.test.ts` now uses Git-backed fake workspaces and covers profile parsing, bounded profile flags, env sanitization, branch preflight before launch, actual out-of-scope file changes, unsupported permission requests, structured tool-level blocked output, timeout, max-output, and forbidden flags.
+- Validation commands run and passed: `npm --workspace weave-maintainer run test`, `npm --workspace weave-maintainer run typecheck`, `npm test`, `npm run typecheck`, `git diff --check`.
+- Known gaps: this slice does not implement the public `weave/opencode` adapter from slices 59 or 60. Host-level security still depends on the installed OpenCode binary honoring its CLI permission behavior and on the host OS/user account; this adapter strips env and validates Git results after execution, but it is not an OS sandbox for network, filesystem symlink targets, local credential files, or arbitrary behavior inside the OpenCode binary.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `examples/weave-maintainer/docs/README.md`
-- [ ] `examples/weave-maintainer/docs/slices/11-real-opencode-runner-adapter.md`
-- [ ] `docs/agent-adapters.md`
+- [x] this slice document
+- [x] `examples/weave-maintainer/docs/README.md`
+- [x] `examples/weave-maintainer/docs/slices/11-real-opencode-runner-adapter.md`
+- [x] `docs/agent-adapters.md`
