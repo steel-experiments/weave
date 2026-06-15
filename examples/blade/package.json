@@ -1,0 +1,15 @@
+{
+  "name": "weave-blade",
+  "version": "0.0.0",
+  "description": "Minimal Blade GitHub PR review vertical on Weave.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx src/blade.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "weave": "file:../..",
+    "zod": "^4.1.13"
+  }
+}

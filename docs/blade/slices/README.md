@@ -8,7 +8,7 @@ Each slice should prove one useful product capability while strengthening, not b
 
 | Slice | Status | Document | Primary outcome |
 | --- | --- | --- | --- |
-| 1. GitHub PR Review | Planned | `01-github-pr-review.md` | Blade can review a PR through a durable Weave thread and publish only through a gated path. |
+| 1. GitHub PR Review | Shipped | `01-github-pr-review.md` | Blade can review a PR through a durable Weave thread and publish only through a gated path. |
 | 2. Slack Engineering Help | Proposed | _to create_ | Blade can answer internal engineering questions from Slack with source-backed artifacts. |
 | 3. Support And Discord Triage | Proposed | _to create_ | Blade can draft safe support responses and clean escalations. |
 | 4. SRE Investigation | Proposed | _to create_ | Blade can investigate alerts in read-only mode with observability evidence and gates for risky actions. |
@@ -17,7 +17,7 @@ Each slice should prove one useful product capability while strengthening, not b
 
 ## Current Recommendation
 
-Start with GitHub PR Review.
+GitHub PR Review is the first shipped Blade slice.
 
 Why:
 
@@ -26,6 +26,7 @@ Why:
 - easy human review loop
 - strong fit for threads, tools, artifacts, gates, and idempotency
 - validates whether Blade product workflows can run on Weave without forking the primitives
+- ships as `examples/blade` with fake GitHub boundaries and root verification wiring
 
 ## Slice Creation Rule
 

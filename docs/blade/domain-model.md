@@ -43,7 +43,7 @@ Fields:
 - actor who created the work
 - idempotency key when event-driven
 
-A work item should be durable in the thread start metadata or a future `blade.work_item.created` event.
+For the shipped GitHub PR review slice, the work item is durable in `session.started.payload.metadata`. The metadata deliberately uses a stable PR/reviewer idempotency key instead of a per-delivery webhook id so redeliveries can reuse the same thread.
 
 ## Session
 
@@ -110,6 +110,9 @@ An artifact is a durable thing a human can inspect.
 Initial artifact kinds:
 
 - PR review
+- PR metadata snapshot
+- raw PR diff
+- PR diff summary
 - inline finding
 - patch
 - branch
@@ -142,7 +145,7 @@ Suggested fields:
 - suggested fix
 - whether human action is required
 
-Findings can start as structured artifact data or generic `agent.finding.produced` events. Add Blade-specific finding events only after repeated query and UI needs are clear.
+Findings currently start as structured PR review artifacts plus compact generic `agent.finding.produced` events. Add Blade-specific finding events only after repeated query and UI needs are clear.
 
 ## Gate
 
@@ -159,7 +162,7 @@ Initial gate types:
 - perform production write
 - trigger rollback or remediation
 
-Blade policy should default risky action gates to required until a slice explicitly relaxes them for an internal allowlist.
+Blade policy defaults risky external writes to gates. The shipped GitHub PR review slice requires a `pr-review-approval` gate before `github.publishReview`, even for comment-only reviews.
 
 ## Terms To Avoid For Now
 

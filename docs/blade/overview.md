@@ -12,7 +12,7 @@ This document is the first Blade product/spec overview.
 
 It should guide implementation without prematurely locking the runtime, UI, or infrastructure details.
 
-Implementation slices now live in `slices/`. The current first planned slice is `slices/01-github-pr-review.md`.
+Implementation slices now live in `slices/`. The first shipped slice is `slices/01-github-pr-review.md`.
 
 ## Product Claim
 
@@ -998,7 +998,7 @@ Quality metrics:
 
 ## MVP Recommendation
 
-The first Blade slice should be GitHub PR review on top of Weave.
+The first Blade slice shipped GitHub PR review on top of Weave in `examples/blade`.
 
 Why:
 
@@ -1010,31 +1010,41 @@ Why:
 - can reuse code-reviewer specialist prompt from `steel-dev/blade`
 - produces measurable outcomes quickly
 
-MVP flow:
+Shipped slice 1 flow:
 
 ```txt
-GitHub PR event or `@blade review`
-  -> create Weave thread
-  -> prepare read-only sandbox or repo checkout
-  -> inspect diff and relevant files
-  -> run focused checks when cheap and relevant
-  -> emit structured findings as artifacts
-  -> require gate before publishing review
-  -> post review summary to GitHub
+GitHub `pull_request.review_requested` where Blade is requested
+  -> verify signature, reviewer, and repository allowlist
+  -> create or resume one Weave thread with normalized work item metadata
+  -> inspect PR metadata and diff through `github.inspectPullRequest`
+  -> store PR metadata, raw diff, and diff summary as artifacts
+  -> synthesize structured findings and review summary artifacts
+  -> require `pr-review-approval` gate
+  -> publish through idempotent `github.publishReview` only when approved
 ```
 
-MVP tools:
+Shipped slice 1 tools:
 
 - `github.inspectPullRequest`
+- `blade.synthesizePullRequestReview`
+- `github.publishReview`
+
+Deferred PR review tools:
+
 - `runtime.prepareWorkspace`
 - `runtime.runCommand`
 - `runtime.captureDiff`
-- `github.publishReview`
 
-MVP artifacts:
+Shipped slice 1 artifacts:
 
+- PR metadata snapshot
+- raw diff
+- diff summary
 - review summary
 - structured findings
+
+Deferred artifacts:
+
 - command output summaries
 - test report when checks run
 
@@ -1094,7 +1104,7 @@ Primary outcome:
 ## Open Questions
 
 - Should Blade's first runtime be Steel computers, Docker, Modal, or a pluggable abstraction with local/Docker first?
-- Should GitHub review publishing be gated in the MVP, or can internal allowlisted repos publish automatically?
+- Should GitHub review publishing ever become automatic for internal allowlisted repos? Slice 1 gates all publishing, including comment-only publishing.
 - Should Blade use OpenCode as the first coding runtime, or should Weave support multiple adapters from the start?
 - How much of `steel-dev/blade` should be ported versus treated as a reference implementation?
 - Should the `steel-experiments/blade` domain model become the Blade product vocabulary inside Weave docs?
@@ -1106,8 +1116,8 @@ Primary outcome:
 
 ## Immediate Next Steps
 
-- Use PR review as the first implementation slice unless a stronger near-term Steel workflow replaces it.
-- Keep `docs/blade/slices/01-github-pr-review.md` updated with concrete GitHub event handling, tools, events, gates, tests, and completion notes.
+- Treat shipped PR review as the baseline for later GitHub, Slack, and support slices.
+- Keep `examples/blade` and `docs/blade/slices/01-github-pr-review.md` updated as the PR review workflow gains real GitHub credentials, richer review models, or workspace checks.
 - Keep `docs/blade/domain-model.md` updated as Work Item, Session, Run, Step, Artifact, Finding, and Weave Thread terminology changes.
 - Draft `docs/blade/runtime.md` to compare Steel computer, Docker, Modal, and local runtime providers.
 - Identify the smallest reusable code or prompts to lift from `steel-dev/blade` and `steel-experiments/blade`.
