@@ -178,6 +178,17 @@ interface ApprovalPolicy<Input> {
   evaluate(input: Input): GateRequest | undefined;
 }
 
+interface PolicyAuthContext {
+  principalId: string;
+  provider: string;
+  source: string;
+  groups: readonly string[];
+  roles: readonly string[];
+  scopes: readonly string[];
+  tenantId?: string;
+  organizationId?: string;
+}
+
 interface ApprovalPolicyDefinition<Input> {
   name: string;
   description?: string;
@@ -195,6 +206,7 @@ interface ToolPolicyRequest<Input = unknown> {
   input: Input;
   options?: ToolCallOptions;
   capabilities: readonly CapabilityDeclaration[];
+  auth?: PolicyAuthContext;
 }
 
 type PolicyRequest = ToolPolicyRequest;

@@ -109,7 +109,7 @@ The auth gateway sits between HTTP ingress and the thread service. It is a compo
 - **Identity provider**: authenticates a request and produces a normalized `Principal` and `AuthContext`.
 - **Access controller**: authorizes a `WeaveAction` (starting with `thread.start` and `agent.run`) for the authenticated context.
 
-The first protected HTTP path is `POST /threads`. When an `AuthGateway` is configured on the API server, `thread.start` requests are authenticated and authorized before any session is created. Denied requests return 401 or 403 without appending events. Accepted requests record a safe auth summary (`principalId`, `provider`, `source`) in `session.started.payload.metadata.auth`. No raw access tokens, raw ID tokens, refresh tokens, or full provider claims are stored by default.
+The first protected HTTP path is `POST /threads`. When an `AuthGateway` is configured on the API server, `thread.start` requests are authenticated and authorized before any session is created. Denied requests return 401 or 403 without appending events. Accepted requests record a safe auth summary (`principalId`, `provider`, `source`, and optional groups, roles, scopes, tenant, and organization fields) in `session.started.payload.metadata.auth`. No raw access tokens, raw ID tokens, refresh tokens, provider secrets, aliases, display names, or full provider claims are stored by default.
 
 When no auth gateway is configured, the API server preserves the existing unauthenticated local behavior. Provider-specific SDKs (Better Auth, Clerk, Okta, OpenAuth, etc.) live outside core and adapt to the `IdentityProvider` interface via the `AuthProviderAdapter` contract. See `docs/auth-provider-adapters.md` for the adapter boundary specification.
 
@@ -163,7 +163,7 @@ Workspace lifecycle operations should happen through normal tools such as `works
 
 ### Policy
 
-A runtime request rule that can allow, deny, or require approval before a supported durable request is recorded. Current enforcement happens at the `ctx.tool` planning boundary and records `policy.evaluated` audit evidence.
+A runtime request rule that can allow, deny, or require approval before a supported durable request is recorded. Current enforcement happens at the `ctx.tool` planning boundary and records `policy.evaluated` audit evidence. When the thread was started with safe auth metadata, tool policy requests include `request.auth` with the durable principal id, provider/source, groups, roles, scopes, tenant, and organization values available from `session.started`.
 
 Policies run in `app.policies` order. `allow` records evidence and continues. `deny` and `approval_required` short-circuit later policies. Once recorded, policy decisions replay from the event log rather than re-running current policy code for the same durable request.
 

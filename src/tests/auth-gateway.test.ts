@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { request as httpRequest, type IncomingMessage, type Server } from "node:http";
+import { z } from "zod";
+import { agent } from "../agent-contract.js";
+import { createAgentPlanner } from "../agent-runner.js";
 import {
   allowEveryone,
   allowGroup,
@@ -32,9 +35,12 @@ import {
   type Principal,
 } from "../auth-gateway.js";
 import { createApiServer } from "../api-server.js";
+import { capability } from "../capability-contract.js";
 import type { AppendOptions, AppendResult, CreateThreadOptions, FollowCursor, ReadOptions, ThreadEngine } from "../contracts.js";
 import { nowIso, ThreadProjectionSchema, type ThreadEvent, type ThreadProjection } from "../events.js";
+import { policy, type PolicyAuthContext } from "../policy-contract.js";
 import { ThreadService } from "../thread-service.js";
+import { tool } from "../tool-contract.js";
 
 async function testAuthGatewayDelegatesToIdentityAndAccess(): Promise<void> {
   const principal: Principal = { id: "user-1", provider: "test", aliases: [], groups: [] };
@@ -245,6 +251,10 @@ async function testToAuthSummaryExcludesTokens(): Promise<void> {
       provider: "okta",
       aliases: [{ provider: "okta", subject: "sub-123" }],
       groups: ["eng"],
+      roles: ["maintainer"],
+      scopes: ["repo:read"],
+      tenantId: "tenant-1",
+      organizationId: "org-1",
       displayName: "Test User",
     },
     source: "bearer-token",
@@ -255,8 +265,13 @@ async function testToAuthSummaryExcludesTokens(): Promise<void> {
   assert.equal(summary.principalId, "user-1");
   assert.equal(summary.provider, "okta");
   assert.equal(summary.source, "bearer-token");
+  assert.deepEqual(summary.groups, ["eng"]);
+  assert.deepEqual(summary.roles, ["maintainer"]);
+  assert.deepEqual(summary.scopes, ["repo:read"]);
+  assert.equal(summary.tenantId, "tenant-1");
+  assert.equal(summary.organizationId, "org-1");
   const keys = Object.keys(summary);
-  assert.deepEqual(keys.sort(), ["principalId", "provider", "source"]);
+  assert.deepEqual(keys.sort(), ["groups", "organizationId", "principalId", "provider", "roles", "scopes", "source", "tenantId"]);
 }
 
 async function testAuthRequestFromIncoming(): Promise<void> {
@@ -380,7 +395,16 @@ function createRequest(
 async function testApiAuthAcceptedRecordsMetadata(): Promise<void> {
   const engine = new MinimalEngine();
   const service = new ThreadService(engine);
-  const principal: Principal = { id: "ci-bot", provider: "ci", aliases: [], groups: [] };
+  const principal: Principal = {
+    id: "ci-bot",
+    provider: "ci",
+    aliases: [],
+    groups: ["bots"],
+    roles: ["reviewer"],
+    scopes: ["repo:read"],
+    tenantId: "tenant-ci",
+    organizationId: "org-ci",
+  };
   const auth = authGateway({
     identity: bearerTokenAuth({
       async verify(token: string) {
@@ -408,14 +432,122 @@ async function testApiAuthAcceptedRecordsMetadata(): Promise<void> {
     if (sessionStarted && sessionStarted.type === "session.started") {
       const metadata = sessionStarted.payload.metadata;
       assert.ok(metadata);
-      const authMeta = (metadata as Record<string, unknown>)["auth"] as Record<string, string>;
+      const authMeta = (metadata as Record<string, unknown>)["auth"] as Record<string, unknown>;
       assert.equal(authMeta.principalId, "ci-bot");
       assert.equal(authMeta.provider, "ci");
       assert.equal(authMeta.source, "bearer-token");
+      assert.deepEqual(authMeta.groups, ["bots"]);
+      assert.deepEqual(authMeta.roles, ["reviewer"]);
+      assert.deepEqual(authMeta.scopes, ["repo:read"]);
+      assert.equal(authMeta.tenantId, "tenant-ci");
+      assert.equal(authMeta.organizationId, "org-ci");
       assert.equal(authMeta["accessToken"], undefined);
       assert.equal(authMeta["refreshToken"], undefined);
       assert.equal(authMeta["claims"], undefined);
     }
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function testApiAuthContextReachesRuntimePolicyAndCanDenyTool(): Promise<void> {
+  const engine = new MinimalEngine();
+  const service = new ThreadService(engine);
+  const principal: Principal = {
+    id: "user-1",
+    provider: "okta",
+    aliases: [],
+    groups: ["eng"],
+    roles: ["starter"],
+    scopes: ["thread:start"],
+    tenantId: "tenant-1",
+    organizationId: "org-1",
+  };
+  let verifyCount = 0;
+  const auth = authGateway({
+    identity: bearerTokenAuth({
+      async verify(token: string) {
+        verifyCount++;
+        return token === "good-token" ? principal : null;
+      },
+    }),
+    access: weaveAccessPolicy({
+      rules: [allowUser("user-1").toStartAgent("auth-policy-agent")],
+    }),
+  });
+
+  const protectedCapability = capability({
+    name: "github.repo.write",
+    description: "Write to a GitHub repository.",
+  });
+  const protectedTool = tool({
+    name: "test.authPolicyProtectedTool",
+    description: "Tool protected by runtime policy.",
+    input: z.object({ query: z.string().min(1) }),
+    output: z.object({ ok: z.boolean() }),
+    capabilities: [protectedCapability],
+    run() {
+      return { ok: true };
+    },
+  });
+  const authPolicyAgent = agent({
+    name: "auth-policy-agent",
+    input: z.object({ query: z.string().min(1) }),
+    tools: [protectedTool],
+    async run(ctx, input) {
+      return ctx.tool("protected-tool", protectedTool, input);
+    },
+  });
+
+  let capturedAuth: PolicyAuthContext | undefined;
+  const denyUserTool = policy({
+    name: "test.deny-user-tool",
+    evaluate(request) {
+      capturedAuth = request.auth;
+      if (request.auth?.principalId === "user-1" && request.capabilities.some((item) => item.name === "github.repo.write")) {
+        return { outcome: "deny", reason: "user-1 can start threads but cannot write repos" };
+      }
+      return { outcome: "allow" };
+    },
+  });
+
+  const server = createApiServer(engine, service, { auth });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const response = await makeRequest(server, "POST", "/threads", {
+      prompt: "review the code",
+      agentName: "auth-policy-agent",
+      metadata: { query: "hello" },
+    }, { authorization: "Bearer good-token" });
+
+    assert.equal(response.status, 201);
+    assert.equal(verifyCount, 1);
+    const body = response.body as Record<string, unknown>;
+    assert.equal(typeof body.threadId, "string");
+    const threadId = String(body.threadId);
+    const history = engine.getAllEvents().filter((event) => event.threadId === threadId);
+    const plan = await createAgentPlanner(authPolicyAgent, authPolicyAgent.name, { policies: [denyUserTool] }).plan(threadId, history);
+
+    assert(plan);
+    assert.equal(verifyCount, 1);
+    assert.deepEqual(capturedAuth, {
+      principalId: "user-1",
+      provider: "okta",
+      source: "bearer-token",
+      groups: ["eng"],
+      roles: ["starter"],
+      scopes: ["thread:start"],
+      tenantId: "tenant-1",
+      organizationId: "org-1",
+    });
+    assert.equal((capturedAuth as Record<string, unknown>)["accessToken"], undefined);
+    assert.equal((capturedAuth as Record<string, unknown>)["claims"], undefined);
+    assert.equal(plan.events[0]?.type, "policy.evaluated");
+    assert.equal(plan.events[0]?.payload.outcome, "denied");
+    assert.equal(plan.events[1]?.type, "agent.failed");
+    assert.equal(plan.events[1]?.payload.errorCode, "POLICY_DENIED");
+    assert(!plan.events.some((event) => event.type === "tool.requested"));
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
@@ -517,6 +649,7 @@ await testAccessPolicyAnonymousPrincipalDenied();
 await testToAuthSummaryExcludesTokens();
 await testAuthRequestFromIncoming();
 await testApiAuthAcceptedRecordsMetadata();
+await testApiAuthContextReachesRuntimePolicyAndCanDenyTool();
 await testApiAuthDeniedDoesNotCreateSession();
 await testApiAuthForbiddenDoesNotCreateSession();
 await testApiNoAuthAllowsUnauthenticated();

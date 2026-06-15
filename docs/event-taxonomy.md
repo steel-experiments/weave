@@ -182,10 +182,15 @@ When an auth gateway is configured and the `thread.start` request is accepted, `
   principalId: string;
   provider: string;
   source: string;
+  groups?: readonly string[];
+  roles?: readonly string[];
+  scopes?: readonly string[];
+  tenantId?: string;
+  organizationId?: string;
 }
 ```
 
-No raw access tokens, raw ID tokens, refresh tokens, or full provider claims are stored in session metadata by default.
+Runtime policies reconstruct `request.auth` from this summary. No raw access tokens, raw ID tokens, refresh tokens, provider secrets, aliases, display names, or full provider claims are stored in session metadata by default.
 
 ### Prompt received
 

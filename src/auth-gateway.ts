@@ -78,6 +78,11 @@ export type AuthSummary = {
   principalId: string;
   provider: string;
   source: string;
+  groups?: readonly string[];
+  roles?: readonly string[];
+  scopes?: readonly string[];
+  tenantId?: string;
+  organizationId?: string;
 };
 
 export type AuthGatewayOptions = {
@@ -588,11 +593,27 @@ export function allowUserToTriggerIntegrationAction(userId: string, integrationN
 }
 
 export function toAuthSummary(context: AuthContext): AuthSummary {
-  return {
+  const groups = compactStrings([...(context.access?.groups ?? []), ...context.principal.groups]);
+  const roles = compactStrings([...(context.access?.roles ?? []), ...(context.principal.roles ?? [])]);
+  const scopes = compactStrings([...(context.access?.scopes ?? []), ...(context.principal.scopes ?? [])]);
+  const tenantId = context.access?.tenantId ?? context.principal.tenantId;
+  const organizationId = context.access?.organizationId ?? context.principal.organizationId;
+  const summary: AuthSummary = {
     principalId: context.principal.id,
     provider: context.principal.provider,
     source: context.source,
   };
+
+  if (groups.length > 0) summary.groups = groups;
+  if (roles.length > 0) summary.roles = roles;
+  if (scopes.length > 0) summary.scopes = scopes;
+  if (tenantId) summary.tenantId = tenantId;
+  if (organizationId) summary.organizationId = organizationId;
+  return summary;
+}
+
+function compactStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 export function authRequestFromIncoming(request: IncomingMessage): AuthRequest {

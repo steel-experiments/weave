@@ -71,7 +71,7 @@ The slice document should stay alive after implementation. It becomes the compac
 - `49-model-backed-workflow-compiler.md`: shipped slice adding a model-backed compiler boundary that emits schema-validated `WorkflowPlan` data only.
 - `50-full-opencode-adapter.md`: shipped slice adapting the example-local harness into a bounded OpenCode adapter with real read-only repo tools, mediated tool calls, policy gates, and replay-safe structured output.
 - `51-auth-gateway-thread-start.md`: shipped slice adding the first auth gateway path for protected HTTP thread start and safe auth metadata.
-- `52-auth-context-runtime-policy.md`: proposed slice flowing thread auth context into runtime policy and capability authorization.
+- `52-auth-context-runtime-policy.md`: shipped slice flowing safe thread auth context into runtime policy and capability/tool authorization.
 - `53-authenticated-thread-actions.md`: shipped slice applying the auth gateway to existing HTTP thread actions such as read, signal delivery, gate resolution, cancellation, and artifacts.
 - `54-authenticated-integration-ingress.md`: shipped slice proving integration ingress auth with a Slack-shaped stable-principal flow.
 - `55-auth-decision-audit-trail.md`: shipped slice adding safe thread-scoped auth audit events without storing raw tokens or full claims.

@@ -3,17 +3,17 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Proposed`
-- Last updated: `2026-06-03`
+- Status: `Shipped`
+- Last updated: `2026-06-15`
 - Owner: `weave-core`
 
 ## Goal
 
-Flow the auth context from session start into runtime policy checks so capability and tool decisions can answer who initiated the work.
+Flow safe auth context from session start into runtime policy checks so capability and tool decisions can answer who initiated the work.
 
 ## User Outcome
 
-As an app author, I can allow a principal to start an agent but deny specific capabilities during execution based on the same principal.
+As an app author, I can allow a principal to start an agent but deny specific capabilities during execution based on the same recorded principal context.
 
 ## Non-goals
 
@@ -21,93 +21,98 @@ As an app author, I can allow a principal to start an agent but deny specific ca
 - Do not replace existing runtime request policies.
 - Do not make tool workers re-run auth checks.
 - Do not add a full principal or organization database.
-- Do not expand HTTP route coverage beyond what is needed for the runtime test path.
+- Do not persist raw provider tokens or full provider claims.
+- Do not re-authenticate ingress requests during replay.
 
 ## Runtime Flow
 
-The intended path is:
+The shipped path is:
 
 ```txt
-POST /threads
+POST /threads or integration route
   -> AuthGateway.authenticate
-  -> AuthGateway.authorize(thread.start)
-  -> ThreadService.startSession(auth context)
+  -> AuthGateway.authorize(thread.start or integration.trigger)
+  -> ThreadService.startSession(metadata.auth = safe summary)
   -> agent.run
   -> ctx.tool / capability request
-  -> runtime policy sees auth principal
+  -> runtime policy sees request.auth
   -> allow, deny, or approval_required
 ```
 
-Capability authorization should use the same Weave action model:
+`request.auth` is reconstructed only from durable `session.started.payload.metadata.auth`. Replay does not call the identity provider again.
+
+Runtime policy receives this safe shape when a thread has auth metadata:
 
 ```ts
-authorize({
-  auth: thread.auth,
-  action: "capability.request",
-  resource: {
-    type: "capability",
-    name: "github.repo.read",
-  },
-  input: {
-    params,
-    toolName,
-    threadId,
-  },
-});
+type PolicyAuthContext = {
+  principalId: string;
+  provider: string;
+  source: string;
+  groups: readonly string[];
+  roles: readonly string[];
+  scopes: readonly string[];
+  tenantId?: string;
+  organizationId?: string;
+};
 ```
+
+Raw access tokens, refresh tokens, ID tokens, provider secrets, aliases, display names, and full provider claims are not copied into policy requests.
 
 ## Architecture Impact
 
-- Extends thread state reconstruction to expose the safe `AuthContext` for the current thread.
-- Extends runtime policy context with the thread auth context.
-- Extends capability request policy evaluation to support auth-aware decisions.
-- Keeps the runtime policy layer as the durable execution guardrail; Auth Gateway feeds it rather than replacing it.
+- Extends the safe auth summary stored in `session.started.payload.metadata.auth` to include optional groups, roles, scopes, tenant, and organization fields.
+- Extends `PolicyRequest` / `ToolPolicyRequest` with optional `auth?: PolicyAuthContext`.
+- Reconstructs policy auth context in the agent runner from durable session metadata only.
+- Includes safe auth context in the current policy request hash while accepting the previous no-auth hash for existing policy evidence.
+- Keeps runtime policy as the durable execution guardrail; Auth Gateway feeds it rather than replacing it.
 - Keeps tool workers unaware of raw provider tokens and provider claims.
 
-## Implementation Plan
+## Implementation Notes
 
-1. Persist enough safe auth context in `session.started` metadata to reconstruct principal, source, and access summary.
-2. Add a typed accessor on reconstructed thread/session state for `auth`.
-3. Pass auth context into agent runner request policy evaluation.
-4. Pass auth context into capability request evaluation for tools that declare or request capabilities.
-5. Add access policy helpers for `toUseCapability(...)` and any minimal resource shape needed by tests.
-6. Add a demo policy where the same principal can start an agent but cannot request `github.repo.write`.
-7. Ensure replay uses recorded policy decisions and recorded auth metadata rather than re-authenticating ingress requests.
-
-## Test Plan
-
-- Integration test a bearer-authenticated principal starts a thread and the agent requests an allowed capability.
-- Integration test a bearer-authenticated principal starts a thread and the agent is denied a disallowed capability.
-- Replay test denied and allowed capability decisions do not re-run ingress authentication.
-- Unit test runtime policy context includes `auth.principal`, `auth.source`, groups, roles, and scopes where present.
-- Unit test missing auth context is represented explicitly as anonymous or system according to the configured path.
-- Run `npm test` and `npm run typecheck`.
+- `toAuthSummary(...)` now whitelists `principalId`, `provider`, `source`, and safe access fields only.
+- `createApiServer` continues to merge the safe summary into `metadata.auth` for authenticated HTTP thread starts.
+- Integration authors can use `toAuthSummary(...)`; the Slack-shaped integration test now does this before starting a thread.
+- `agent-runner` reconstructs `PolicyAuthContext` from `session.started` metadata and attaches it to runtime policy requests.
+- The runner ignores unknown auth metadata keys, so raw tokens or full claims in metadata are not surfaced to policy code.
 
 ## Acceptance Criteria
 
-- [ ] Thread state reconstruction exposes safe auth context from `session.started`.
-- [ ] Runtime policy checks receive auth context.
-- [ ] Capability request authorization can inspect principal id, kind, provider, groups, roles, scopes, and source.
-- [ ] A principal can be allowed for `thread.start` while denied for a later `capability.request`.
-- [ ] Replay remains deterministic and does not call identity providers again.
-- [ ] Raw tokens and full provider claims are not persisted.
+- [x] Thread state reconstruction exposes safe auth context from `session.started`.
+- [x] Runtime policy checks receive auth context.
+- [x] Capability/tool request authorization can inspect principal id, provider, source, groups, roles, scopes, tenant, and organization where present.
+- [x] A principal can be allowed for `thread.start` while denied for a later capability/tool request.
+- [x] Replay remains deterministic and does not call identity providers again.
+- [x] Raw tokens and full provider claims are not persisted by auth helpers or exposed on policy requests.
 
 ## Progress
 
-- [ ] Reconstruct safe auth context.
-- [ ] Thread auth into runner state.
-- [ ] Runtime policy context wiring.
-- [ ] Capability authorization helper coverage.
-- [ ] Replay tests.
-- [ ] Docs updates.
+- [x] Reconstruct safe auth context.
+- [x] Thread auth into runner state.
+- [x] Runtime policy context wiring.
+- [x] Capability/tool authorization coverage.
+- [x] Replay/no-reauth coverage.
+- [x] Docs updates.
+
+## Test Evidence
+
+- `src/tests/auth-gateway.test.ts`: HTTP-authenticated thread start records safe auth metadata, runtime policy receives it, and an allowed starter is denied for a later protected tool/capability request without another bearer verification call.
+- `src/tests/authenticated-integration-ingress.test.ts`: Slack-shaped integration ingress records safe auth metadata with groups, roles, scopes, tenant, and organization, then runtime policy receives it for the started thread.
+- `npm run typecheck`: passed on `2026-06-15`.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+Slice 52 is shipped. The repo now matches later Auth Gateway PRDs that treat auth context propagation to runtime policy as existing behavior.
 
-## Docs To Update On Completion
+## Remaining Gaps
 
-- [ ] this slice document
-- [ ] `docs/architecture.md`
-- [ ] `docs/event-taxonomy.md`
-- [ ] `docs/declarative-api.md`
+- Runtime policy currently covers the existing `ctx.tool` boundary; it does not add a separate Auth Gateway `capability.request` action.
+- Threads without `metadata.auth` produce no `request.auth`; there is no synthetic anonymous context at the runner layer.
+- Child-thread auth inheritance remains app/service-specific and was not expanded in this slice.
+
+## Docs Updated On Completion
+
+- [x] this slice document
+- [x] `docs/slices/README.md`
+- [x] `docs/architecture.md`
+- [x] `docs/event-taxonomy.md`
+- [x] `docs/declarative-api.md`

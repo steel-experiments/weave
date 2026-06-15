@@ -37,7 +37,7 @@ import { isCapabilityRequest, normalizeCapabilityDeclarations, type CapabilityDe
 import type { AgentPlan, AgentPlanner } from "./runner.js";
 import type { ThreadService } from "./thread-service.js";
 import type { ToolContract } from "./tool-contract.js";
-import type { AnyPolicyRule, PolicyDecision, PolicyRequest } from "./policy-contract.js";
+import type { AnyPolicyRule, PolicyAuthContext, PolicyDecision, PolicyRequest } from "./policy-contract.js";
 
 type AgentRunFailure = {
   type: "agent_run_failed";
@@ -733,7 +733,8 @@ class ReplayAgentContext implements AgentContext {
     input: Input,
     options: ToolCallOptions,
   ): void {
-    const requestIdentity = this.policyRequestIdentity(key, tool, input, options);
+    const auth = policyAuthContextFromEvents(this.options.events);
+    const requestIdentity = this.policyRequestIdentity(key, tool, input, options, auth);
     const capabilities = resolveToolCapabilities(tool, input);
     const existing = this.findPolicyEvaluations(key);
     if (existing.length > 0) {
@@ -760,6 +761,7 @@ class ReplayAgentContext implements AgentContext {
       input,
       options,
       capabilities,
+      ...(auth ? { auth } : {}),
     };
 
     for (const policy of policies) {
@@ -861,6 +863,10 @@ class ReplayAgentContext implements AgentContext {
         requestKind: identity.requestKind,
         requestHash: identity.requestHash,
       };
+      const expectedLegacy = {
+        ...expected,
+        requestHash: identity.legacyRequestHash,
+      };
       const actual = {
         scopeKey: event.payload.scopeKey,
         stepKey: event.payload.stepKey,
@@ -870,7 +876,8 @@ class ReplayAgentContext implements AgentContext {
         requestHash: event.payload.requestHash,
       };
 
-      if (canonicalJson(actual) !== canonicalJson(expected)) {
+      const actualJson = canonicalJson(actual);
+      if (actualJson !== canonicalJson(expected) && actualJson !== canonicalJson(expectedLegacy)) {
         throw new ReplayMismatchError("Durable policy evaluation key was previously used with different request input", {
           scopeKey: this.scopeKey,
           stepKey: identity.stepKey,
@@ -957,11 +964,12 @@ class ReplayAgentContext implements AgentContext {
     tool: ToolContract<string, Input, Output>,
     input: Input,
     options: ToolCallOptions,
+    auth: PolicyAuthContext | undefined,
   ): PolicyRequestIdentity {
     const capabilityDescriptions = capabilityDescriptors(resolveToolCapabilities(tool, input));
     const capabilityNames = capabilityDescriptions.map((capability) => capability.name);
     const requestKind = "tool.requested";
-    const requestHash = stableJsonHash({
+    const requestHashInput = {
       requestKind,
       scopeKey: this.scopeKey,
       stepKey: key,
@@ -969,10 +977,15 @@ class ReplayAgentContext implements AgentContext {
       input,
       options,
       capabilities: capabilityDescriptions,
+    };
+    const requestHash = stableJsonHash({
+      ...requestHashInput,
+      ...(auth ? { auth } : {}),
     });
     return {
       requestKind,
       requestHash,
+      legacyRequestHash: stableJsonHash(requestHashInput),
       inputHash: stableJsonHash(input),
       scopeKey: this.scopeKey,
       stepKey: key,
@@ -1337,6 +1350,7 @@ function policyOutcome(decision: PolicyDecision): "allowed" | "denied" | "approv
 type PolicyRequestIdentity = {
   requestKind: "tool.requested";
   requestHash: string;
+  legacyRequestHash: string;
   inputHash: string;
   scopeKey: string;
   stepKey: string;
@@ -1345,6 +1359,54 @@ type PolicyRequestIdentity = {
   capabilityNames: string[];
   policyStepKey(policyName: string): string;
 };
+
+function policyAuthContextFromEvents(events: readonly ThreadEvent[]): PolicyAuthContext | undefined {
+  const sessionStarted = events.find((event): event is Extract<ThreadEvent, { type: "session.started" }> => {
+    return event.type === "session.started";
+  });
+  return policyAuthContextFromMetadata(sessionStarted?.payload.metadata?.auth);
+}
+
+function policyAuthContextFromMetadata(value: unknown): PolicyAuthContext | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const principalId = readString(value.principalId);
+  const provider = readString(value.provider);
+  const source = readString(value.source);
+  const tenantId = readString(value.tenantId);
+  const organizationId = readString(value.organizationId);
+  if (!principalId || !provider || !source) {
+    return undefined;
+  }
+
+  return {
+    principalId,
+    provider,
+    source,
+    groups: readStringArray(value.groups),
+    roles: readStringArray(value.roles),
+    scopes: readStringArray(value.scopes),
+    ...(tenantId ? { tenantId } : {}),
+    ...(organizationId ? { organizationId } : {}),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string" && item.length > 0);
+}
 
 function resolveToolCapabilities<Input, Output>(
   tool: ToolContract<string, Input, Output>,

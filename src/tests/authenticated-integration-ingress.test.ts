@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { request as httpRequest, type IncomingMessage, type Server } from "node:http";
 import { createHash } from "node:crypto";
+import { z } from "zod";
+import { agent } from "../agent-contract.js";
+import { createAgentPlanner } from "../agent-runner.js";
 import {
   allowEveryone,
   allowUser,
@@ -10,6 +13,7 @@ import {
   authGateway,
   bearerTokenAuth,
   denyEveryone,
+  toAuthSummary,
   weaveAccessPolicy,
   type AuthContext,
   type AuthRequest,
@@ -20,11 +24,14 @@ import {
   type Principal,
 } from "../auth-gateway.js";
 import { createApiServer, type ApiRouteHandler } from "../api-server.js";
+import { capability } from "../capability-contract.js";
 import { defineIntegration, type IntegrationRuntimeContext } from "../integration-contract.js";
 import { weave } from "../app-contract.js";
 import type { AppendOptions, AppendResult, CreateThreadOptions, FollowCursor, ReadOptions, ThreadEngine } from "../contracts.js";
 import { nowIso, ThreadProjectionSchema, type ThreadEvent, type ThreadProjection } from "../events.js";
+import { policy, type PolicyAuthContext } from "../policy-contract.js";
 import { ThreadService } from "../thread-service.js";
+import { tool } from "../tool-contract.js";
 
 class MinimalEngine implements ThreadEngine {
   private readonly threads = new Map<string, CreateThreadOptions & { rootThreadId: string }>();
@@ -168,7 +175,11 @@ function slackIdentityProvider(options: {
         aliases: [
           { provider: "slack", subject },
         ],
-        groups: [],
+        groups: ["slack-users"],
+        roles: ["requester"],
+        scopes: ["slack:trigger"],
+        tenantId: payload.team_id,
+        organizationId: options.workspaceId,
         displayName: payload.user_display_name,
       };
 
@@ -460,11 +471,7 @@ async function testAuthContextReachesRuntimeCapabilityPolicyChecks(): Promise<vo
             actor: { type: "user", id: authResult.context.principal.id },
             metadata: {
               integration: context.integrationName,
-              auth: {
-                principalId: authResult.context.principal.id,
-                provider: authResult.context.principal.provider,
-                source: authResult.context.source,
-              },
+              auth: toAuthSummary(authResult.context),
             },
           });
 
@@ -485,6 +492,36 @@ async function testAuthContextReachesRuntimeCapabilityPolicyChecks(): Promise<vo
     name: "slack-app",
     agents: [],
     integrations: [slackIntegration],
+  });
+
+  const slackCapability = capability({
+    name: "slack.thread.respond",
+    description: "Respond to a Slack-started thread.",
+  });
+  const slackTool = tool({
+    name: "test.slackRuntimePolicyTool",
+    description: "Tool used by the Slack runtime policy test.",
+    input: z.object({ task: z.string().min(1) }),
+    output: z.object({ ok: z.boolean() }),
+    capabilities: [slackCapability],
+    run() {
+      return { ok: true };
+    },
+  });
+  const slackAgent = agent({
+    name: "slack-runtime-agent",
+    tools: [slackTool],
+    async run(ctx) {
+      return ctx.tool("slack-runtime-policy", slackTool, { task: "respond" });
+    },
+  });
+  let capturedPolicyAuth: PolicyAuthContext | undefined;
+  const allowSlackPolicy = policy({
+    name: "test.allow-slack-runtime-policy",
+    evaluate(request) {
+      capturedPolicyAuth = request.auth;
+      return request.auth?.principalId === expectedSubject ? { outcome: "allow" } : { outcome: "deny", reason: "missing Slack auth" };
+    },
   });
 
   const server = createApiServer(engine, service, { app, auth });
@@ -516,6 +553,8 @@ async function testAuthContextReachesRuntimeCapabilityPolicyChecks(): Promise<vo
     const body = response.body as Record<string, unknown>;
     assert.equal(body.principalId, expectedSubject);
     assert.equal(body.provider, "slack");
+    assert.equal(typeof body.threadId, "string");
+    const threadId = String(body.threadId);
 
     assert.ok(capturedAuthContext !== undefined);
     assert.equal(capturedAuthContext.principal.id, expectedSubject);
@@ -528,11 +567,34 @@ async function testAuthContextReachesRuntimeCapabilityPolicyChecks(): Promise<vo
     if (sessionStarted && sessionStarted.type === "session.started") {
       const metadata = sessionStarted.payload.metadata;
       assert.ok(metadata);
-      const authMeta = (metadata as Record<string, unknown>)["auth"] as Record<string, string>;
+      const authMeta = (metadata as Record<string, unknown>)["auth"] as Record<string, unknown>;
       assert.equal(authMeta.principalId, expectedSubject);
       assert.equal(authMeta.provider, "slack");
       assert.equal(authMeta.source, "slack-ingress");
+      assert.deepEqual(authMeta.groups, ["slack-users"]);
+      assert.deepEqual(authMeta.roles, ["requester"]);
+      assert.deepEqual(authMeta.scopes, ["slack:trigger"]);
+      assert.equal(authMeta.tenantId, workspaceId);
+      assert.equal(authMeta.organizationId, workspaceId);
     }
+
+    const history = events.filter((event) => event.threadId === threadId);
+    const plan = await createAgentPlanner(slackAgent, slackAgent.name, { policies: [allowSlackPolicy] }).plan(threadId, history);
+
+    assert(plan);
+    assert.deepEqual(capturedPolicyAuth, {
+      principalId: expectedSubject,
+      provider: "slack",
+      source: "slack-ingress",
+      groups: ["slack-users"],
+      roles: ["requester"],
+      scopes: ["slack:trigger"],
+      tenantId: workspaceId,
+      organizationId: workspaceId,
+    });
+    assert.equal(plan.events[0]?.type, "policy.evaluated");
+    assert.equal(plan.events[0]?.payload.outcome, "allowed");
+    assert.equal(plan.events[1]?.type, "tool.requested");
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

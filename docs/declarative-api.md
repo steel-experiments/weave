@@ -533,6 +533,23 @@ Approval policy helpers are useful for naming and reusing approval rules inside 
 
 `policy({...})` declares runtime policy rules for durable tool requests. Policies are evaluated during `ctx.tool` planning, before a `tool.requested` event is recorded and before any worker can execute the tool.
 
+If the thread was started with safe auth metadata, tool policy requests include `request.auth`:
+
+```ts
+type PolicyAuthContext = {
+  principalId: string;
+  provider: string;
+  source: string;
+  groups: readonly string[];
+  roles: readonly string[];
+  scopes: readonly string[];
+  tenantId?: string;
+  organizationId?: string;
+};
+```
+
+`request.auth` is reconstructed from `session.started.payload.metadata.auth`; runtime replay does not re-authenticate the original ingress request.
+
 ```ts
 const productionToolPolicy = policy({
   name: "production-tool-policy",
@@ -543,6 +560,10 @@ const productionToolPolicy = policy({
     }
 
     if (request.capabilities.some((capability) => capability.name === "github.write")) {
+      if (request.auth?.roles.includes("repo-writer")) {
+        return { outcome: "allow", reason: "Repo writers may use GitHub writes." };
+      }
+
       return {
         outcome: "approval_required",
         reason: "GitHub writes require approval.",
@@ -582,11 +603,12 @@ Replay semantics:
 
 - a recorded policy decision is replayed instead of re-evaluating current policy code
 - policy-relevant request identity includes scope key, step key, tool call ID, tool name, request kind, request hash, and capability names
-- request hash includes tool name, parsed input, relevant options, scope key, step key, and capability declarations
-- changing policy-relevant request input or capability declarations after a `policy.evaluated` event raises `ReplayMismatchError`
+- request hash includes tool name, parsed input, relevant options, scope key, step key, capability declarations, and safe auth context when present
+- changing policy-relevant request input, capability declarations, or safe auth context after a current `policy.evaluated` event raises `ReplayMismatchError`
 - `policyVersion` is recorded for audit, but current policy version changes do not fail replay of already-recorded decisions
 - approval-required policy gates derive stable identity from the tool step key and policy name
 - existing tool requests without policy evidence remain compatible and are not retroactively blocked
+- legacy policy evidence whose request hash did not include auth context remains accepted during replay
 
 Current boundary:
 
@@ -594,6 +616,7 @@ Current boundary:
 - tool workers do not re-evaluate policies in this slice
 - explicit `ctx.gate` calls remain agent-authored approval flows
 - credential resolution remains separate from policy evaluation
+- `request.auth` is a safe summary only; raw tokens, provider secrets, aliases, display names, and full provider claims are not exposed to policies
 
 ## Capability Contracts And Requests
 

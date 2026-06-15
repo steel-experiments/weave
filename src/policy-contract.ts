@@ -29,6 +29,17 @@ export function defineApprovalPolicy<Input>(definition: ApprovalPolicyDefinition
 
 export const approvalPolicy = defineApprovalPolicy;
 
+export type PolicyAuthContext = {
+  principalId: string;
+  provider: string;
+  source: string;
+  groups: readonly string[];
+  roles: readonly string[];
+  scopes: readonly string[];
+  tenantId?: string;
+  organizationId?: string;
+};
+
 export type ToolPolicyRequest<Input = unknown> = {
   type: "tool";
   threadId: string;
@@ -39,6 +50,7 @@ export type ToolPolicyRequest<Input = unknown> = {
   input: Input;
   options?: ToolCallOptions;
   capabilities: readonly CapabilityDeclaration[];
+  auth?: PolicyAuthContext;
 };
 
 export type PolicyRequest = ToolPolicyRequest;
