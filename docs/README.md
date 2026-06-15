@@ -40,7 +40,7 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 - Product north star: `blade/overview.md`
 - Blade domain vocabulary: `blade/domain-model.md`
 - Current Blade slices: `blade/slices/README.md`
-- Current first Blade implementation slice: `blade/slices/01-github-pr-review.md`
+- First shipped Blade implementation slice: `blade/slices/01-github-pr-review.md`
 - Docs sync focused app: `docs-sync/README.md`
 - Docs sync slice progress: `docs-sync/slices/README.md`
 - Shared slice template: `slices/template.md`
@@ -64,12 +64,13 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 
 - `north-star-sre-demo.md`: original SRE agent harness north-star demo, now best understood as a Blade SRE slice input
 - `steel-docs-sync-example.md`: product-shaped docs sync example
+- `blade/slices/01-github-pr-review.md`: shipped Blade PR review vertical implemented in `examples/blade`
 - `steel-docs-sync-missing-work.md`: original docs sync missing-work rollup, now split into `docs-sync/slices/`
 - `mvp.md`: smallest useful end-to-end Weave primitive definition
 - `poc-scope.md`: fixed decisions and success criteria for the first proof of concept
 - `poc-components-and-flow.md`: detailed component plan and end-to-end demo flow
 - `slices/47-prompt-driven-workflow-example.md`: shipped prompt-driven dynamic workflow example using Weave child agents and a conservative repo-read harness
-- `slices/01-replay-authoring-api.md`: planned first slice for `agent.run` and replay-based `ctx.tool`
+- `slices/01-replay-authoring-api.md`: shipped first slice for `agent.run` and replay-based `ctx.tool`
 - `roadmap.md`: original phase roadmap; should be reconciled with the slice model over time
 
 ## Existing Research And Positioning Docs
