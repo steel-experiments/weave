@@ -78,5 +78,5 @@ The slice document should stay alive after implementation. It becomes the compac
 - `56-auth-provider-adapter-boundary.md`: shipped slice stabilizing provider-neutral identity adapter boundaries and optional dependency-light token adapters.
 - `57-workspace-provider-boundary.md`: shipped slice defining provider-neutral workspace allocation with Git worktree first and future Rift/CoW/Firecracker providers.
 - `58-maintainer-opencode-security-hardening.md`: shipped slice hardening the current maintainer OpenCode adapter with explicit permission profiles, env sanitization, and actual diff enforcement.
-- `59-hardened-weave-opencode-adapter.md`: planned slice adding a reusable `weave/opencode` adapter with deny-by-default capability and permission profiles.
-- `60-maintainer-adopts-weave-opencode.md`: planned slice migrating Weave Maintainer onto the reusable `weave/opencode` adapter and explicit maintainer app policy.
+- `59-hardened-weave-opencode-adapter.md`: shipped slice adding a reusable `weave/opencode` adapter with deny-by-default capability and permission profiles.
+- `60-maintainer-adopts-weave-opencode.md`: shipped slice migrating Weave Maintainer onto the reusable `weave/opencode` adapter and explicit maintainer app policy.

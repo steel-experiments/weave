@@ -44,6 +44,7 @@ The runtime turns durable operations into thread events, worker work, resumable 
 | package subpaths | Current runtime boundary |
 | `authGateway` | Current auth composition helper |
 | `weave/auth` subpath | Current auth gateway package boundary |
+| `weave/opencode` subpath | Current hardened OpenCode CLI adapter boundary |
 | `jwtAuth` | Current dependency-light HS256 JWT identity adapter |
 | `createAuthProviderAdapter` | Current third-party adapter contract factory |
 | `createIdentityAdapterContractTests` | Current reusable adapter contract test suite |
@@ -1012,8 +1013,9 @@ Package subpaths separate authoring from runtime binding:
 - `weave/server`: HTTP API server helpers and server-facing types.
 - `weave/testing`: mock agent and mock tool worker utilities.
 - `weave/auth`: auth gateway interfaces, identity providers, access controllers, and safe auth summary helpers.
+- `weave/opencode`: hardened OpenCode CLI adapter, permission profiles, capability mapping, env sanitization, bounded execution, schema parsing, and actual Git diff enforcement.
 
-The root export remains backward-compatible for now, but examples should use subpaths for runtime, storage, and server concerns.
+The root export remains backward-compatible for now, but examples should use subpaths for runtime, storage, server, auth, and adapter concerns.
 
 ## Migration Notes
 
@@ -1050,6 +1052,7 @@ Migrate one durable operation at a time. Do not try to rewrite the entire planne
 - Legacy tool outputs using `ToolCompletionOutput` are still supported for compatibility, but new tools should return domain-shaped outputs.
 - capability contracts are tool metadata; runtime request policies can inspect them for `ctx.tool` enforcement.
 - Package subpaths are available, but root exports still include runtime internals for compatibility.
+- `weave/opencode` is a process-launch and post-run enforcement adapter, not an OS sandbox.
 - `agent.run` is replay-based. Weave suspends the thread, not the JavaScript continuation.
 - External side effects must not happen directly inside `agent.run`.
 - Parallel durable effects are explicitly unsupported and throw `PARALLEL_DURABLE_EFFECT` when detected.

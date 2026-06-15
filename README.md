@@ -13,6 +13,7 @@ The project is currently a working proof of concept, not a published npm package
 - Runtime request policies that can allow, deny, or require approval before supported durable requests are recorded.
 - A Postgres-backed engine, inbox-based runner/tool daemons, and an HTTP API for local service mode.
 - Auth gateway primitives for protecting API ingress with pluggable identity providers and access rules.
+- A hardened `weave/opencode` adapter for bounded OpenCode CLI execution with explicit permission profiles, schema-validated output, sanitized env, and actual workspace diff enforcement.
 
 Weave does not persist JavaScript continuations. When a durable operation is pending, the runner exits. A later event wakes the thread, and Weave replays `agent.run` from the beginning, returning recorded results for completed durable effects.
 
@@ -129,6 +130,7 @@ The repository currently exposes these local workspace subpaths:
 - `weave/server`: HTTP API server helpers.
 - `weave/testing`: deterministic mock utilities.
 - `weave/auth`: auth gateway, access rules, JWT helper, and identity adapter contract tests.
+- `weave/opencode`: hardened OpenCode CLI adapter, permission profiles, capability mapping, bounded execution, env sanitization, JSON output validation, and actual Git diff enforcement.
 
 These boundaries are the intended public shape, but the package still needs a compiled `dist` build and a narrowed publish manifest before npm publication.
 
@@ -244,6 +246,7 @@ The server also exposes the raw Weave thread API at `/threads`, `/threads/<threa
 - `src/auth-gateway.ts`: HTTP ingress auth gateway composition.
 - `src/policy-contract.ts`: request policy rules and approval policy helpers.
 - `src/workspace-provider.ts`: provider-neutral workspace abstraction and git worktree provider.
+- `src/opencode-adapter.ts`: reusable hardened OpenCode CLI adapter exported through `weave/opencode`.
 
 ## Docs
 

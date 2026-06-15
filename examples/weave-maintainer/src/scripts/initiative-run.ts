@@ -20,7 +20,13 @@ import {
 } from "../development-orchestrator.js";
 import { buildInitiativeRunInput, formatInitiativeRunResumeCommand, parseInitiativeRunOptions } from "../development-initiative-runner.js";
 import { formatInitiativeStatus, getInitiativeStatus } from "../development-operator.js";
-import { createMaintainerOpenCodePermissionProfile, createOpenCodeCliImplementationRunner, createOpenCodeCliRepairRunner } from "../opencode-runner.js";
+import {
+  createMaintainerOpenCodeImplementationPermissionProfile,
+  createMaintainerOpenCodePolicy,
+  createMaintainerOpenCodeRepairPermissionProfile,
+  createOpenCodeCliImplementationRunner,
+  createOpenCodeCliRepairRunner,
+} from "../opencode-runner.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
@@ -123,12 +129,13 @@ try {
 }
 
 function createInitiativeRunApp(workspaceProvider: WorkspaceProvider, observability: PostgresObservabilitySink) {
-  const openCodePermissionProfile = createMaintainerOpenCodePermissionProfile();
+  const implementationOpenCodeProfile = createMaintainerOpenCodeImplementationPermissionProfile();
+  const repairOpenCodeProfile = createMaintainerOpenCodeRepairPermissionProfile();
   const implementationAgent = createOpenCodeImplementerAgent({
     runner: createOpenCodeCliImplementationRunner({
       command: options.openCodeCommand ?? process.env.WEAVE_INITIATIVE_OPENCODE_COMMAND ?? "opencode",
       ...(options.openCodeArgs ? { args: options.openCodeArgs } : {}),
-      permissionProfile: openCodePermissionProfile,
+      permissionProfile: implementationOpenCodeProfile,
       timeoutMs,
       maxOutputBytes: 2_000_000,
     }),
@@ -137,7 +144,7 @@ function createInitiativeRunApp(workspaceProvider: WorkspaceProvider, observabil
     runner: createOpenCodeCliRepairRunner({
       command: options.openCodeCommand ?? process.env.WEAVE_INITIATIVE_OPENCODE_COMMAND ?? "opencode",
       ...(options.openCodeArgs ? { args: options.openCodeArgs } : {}),
-      permissionProfile: openCodePermissionProfile,
+      permissionProfile: repairOpenCodeProfile,
       timeoutMs,
       maxOutputBytes: 2_000_000,
     }),
@@ -159,6 +166,12 @@ function createInitiativeRunApp(workspaceProvider: WorkspaceProvider, observabil
     name: "initiative-run",
     credentialProvider: new InitiativeRunCredentialProvider(),
     observability,
+    policies: [
+      createMaintainerOpenCodePolicy({
+        implementationProfile: implementationOpenCodeProfile,
+        repairProfile: repairOpenCodeProfile,
+      }),
+    ],
     agents: [maintainerAgent, sliceRunnerAgent, implementationAgent, verificationAgent, repairAgent, ...Object.values(reviewerAgents), prAgent],
   });
 }

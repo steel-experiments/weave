@@ -185,11 +185,57 @@ so that the agent can continue without depending on hidden live memory.
 - the process assumes it stays alive forever
 - progress and interrupts are not surfaced cleanly
 
+## Public `weave/opencode` CLI Adapter
+
+Core now exposes a reusable hardened OpenCode CLI adapter through `weave/opencode`.
+
+It is for app authors who want to run `opencode run --format json` from a bounded workspace while keeping app-specific prompts, schemas, and orchestration outside core.
+
+```ts
+import { createOpenCodeCliAdapter, opencodePermissionProfile } from "weave/opencode";
+import { z } from "zod";
+
+const adapter = createOpenCodeCliAdapter({
+  profile: opencodePermissionProfile({
+    workspace: workspaceRef,
+    tools: {
+      readFiles: true,
+      writeFiles: { allowedPaths: ["src/**", "docs/**"] },
+      shell: { commands: ["npm test", "npm run typecheck"] },
+      network: false,
+      secrets: false,
+      git: { allowCommit: false, allowBranchSwitch: false, allowPush: false },
+    },
+  }),
+  output: z.object({ summary: z.string().min(1), filesChanged: z.array(z.string()).default([]) }),
+});
+
+const result = await adapter.run({
+  workspace: workspaceRef,
+  prompt: "Make the bounded change and return JSON only.",
+  allowedPaths: ["src/**", "docs/**"],
+});
+```
+
+The adapter provides:
+
+- deny-by-default permission profiles via `opencodePermissionProfile()` and `opencodeDenyAllPermissionProfile()`
+- built-in Weave capability requests for `opencode.run`, workspace read/write, bounded shell, network, secrets, and Git write authority
+- extension seams for app-defined OpenCode-exposed tools, rejected unless every exposed tool declares corresponding Weave capabilities
+- validated CLI command, args, profile flags, env allowlist, workspace root, timeout, and output byte limits
+- sanitized child process env that rejects explicit keys outside the profile allowlist and rejects secret-shaped keys unless secrets are enabled
+- schema-validated JSON output through the app-provided Zod schema
+- actual Git changed-file enforcement against allowed paths, independent of any model-reported `filesChanged` field
+
+Default profiles do not expose writes, shell commands, network, secrets, Git commits, branch switching, pushes, broad shell executables, unsafe session/file/remote flags, or `--dangerously-skip-permissions`.
+
+Residual trust assumption: `weave/opencode` hardens process launch, env propagation, output parsing, and post-run Git diff enforcement. It is not an OS sandbox. Host-level safety still depends on the installed OpenCode binary honoring its permission flags, the local user account, filesystem permissions, symlink/host config exposure, and credentials available outside the sanitized process env.
+
 ## Example-local OpenCode adapter
 
 The prompt workflow review example includes an example-local bounded adapter in `examples/prompt-workflow-review/src/opencode-adapter.ts`.
 
-It is intentionally not a public `weave/opencode` export yet.
+It predates the public CLI adapter and remains useful as a read-only thread-backed tool harness example.
 
 The adapter shape is:
 
@@ -219,33 +265,34 @@ The development orchestrator adds a separate implementation boundary for coding 
 
 This boundary is intentionally not a full autonomous coding loop. It is the patching component that the slice runner can spawn after workspace allocation and before independent verification/review.
 
-## OpenCode CLI runner adapter
+## Weave Maintainer OpenCode Usage
 
-The development orchestrator also exposes a configurable CLI runner module for real OpenCode execution:
+The development orchestrator consumes the public `weave/opencode` adapter rather than owning a standalone OpenCode CLI implementation:
 
-- `createOpenCodeCliImplementationRunner(...)` satisfies `OpenCodeImplementationRunner`
-- `createOpenCodeCliRepairRunner(...)` satisfies `RepairRunner`
-- `buildOpenCodeImplementationPrompt(...)` and `buildOpenCodeRepairPrompt(...)` construct bounded prompts from typed slice inputs
-- `OpenCodeCliRunnerConfigSchema` requires an explicit `OpenCodePermissionProfileSchema`; the maintainer path uses `createMaintainerOpenCodePermissionProfile()`
-- `runOpenCodeCliCommand(...)` shells out with explicit `cwd`, timeout, bounded output capture, sanitized child env, validated command/profile flags, and Git changed-file capture before and after execution
-- the maintainer profile launches `opencode run --format json --pure --dir <workspace> <prompt>` by default and rejects unsafe session, remote attach, file attachment, shell-command, and `--dangerously-skip-permissions` flags
-- stdout must be strict JSON matching the implementation summary or repair result schema
-- branch mismatches are refused before the OpenCode process starts
-- reported implementation files outside `allowedFiles` fail the runner before Weave treats the output as complete
-- actual Git changed files outside `allowedFiles` or outside the configured workspace root become structured blocked results, even if OpenCode reports an in-scope summary
-- permission requests outside the configured profile become structured blocked results instead of crashes
+- `examples/weave-maintainer/src/opencode-runner.ts` keeps maintainer prompt builders and schema/result mapping only.
+- `createOpenCodeCliImplementationRunner(...)` wraps `createOpenCodeCliAdapter(...)` for `ImplementationSummarySchema`.
+- `createOpenCodeCliRepairRunner(...)` wraps `createOpenCodeCliAdapter(...)` for `RepairResultSchema`.
+- `buildOpenCodeImplementationRunInput(...)` and `buildOpenCodeRepairRunInput(...)` map maintainer inputs to generic `OpenCodeRunInput` with `workspace`, `prompt`, and per-slice `allowedPaths`.
+- `createMaintainerOpenCodeImplementationPermissionProfile(...)` and `createMaintainerOpenCodeRepairPermissionProfile(...)` define distinct explicit profiles using `opencodePermissionProfile(...)`.
+- `createMaintainerOpenCodePolicy(...)` denies unexpected `opencode.*` capability requests at the maintainer app boundary.
+- Adapter errors for permission denial, out-of-scope actual diffs, invalid JSON/schema, timeout, max output, non-zero exit, and invalid workspace become maintainer structured blocked results.
+- Branch mismatches are refused before OpenCode starts.
+- Reported implementation files outside `allowedFiles` still fail before Weave treats the output as complete.
+- Actual Git changed-file enforcement against `allowedFiles` is provided by `weave/opencode`, independent of model-reported `filesChanged`.
 
-The runner executes inside `WorkspaceRef.path` and still returns claims only. It now cross-checks those claims against Git status, but the slice runner must rerun verification and reviewer children after every implementation or repair run.
+The runner executes inside `WorkspaceRef.path` and still returns claims only. The slice runner must rerun verification and reviewer children after every implementation or repair run, and source checkpoint/finalization gates remain outside OpenCode.
 
-Residual trust assumption: this maintainer-local runner is not an OS sandbox. It strips env and checks Git results after execution, but host-level safety still depends on the installed OpenCode binary honoring its permission flags, the local user account, filesystem permissions, and any credentials available through host config files.
+Residual trust assumption: the maintainer now inherits the `weave/opencode` security model. The adapter hardens launch, env, output parsing, and post-run Git diff enforcement, but it is not an OS sandbox. Host-level safety still depends on the installed OpenCode binary honoring its permission flags, the local user account, filesystem permissions, symlink/host config exposure, and credentials available outside the sanitized process environment.
 
 Example configuration:
 
 ```ts
+const implementationProfile = createMaintainerOpenCodeImplementationPermissionProfile();
+
 const implementationRunner = createOpenCodeCliImplementationRunner({
   command: "opencode",
   args: ["run", "--format", "json"],
-  permissionProfile: createMaintainerOpenCodePermissionProfile(),
+  permissionProfile: implementationProfile,
   timeoutMs: 600_000,
   maxOutputBytes: 256_000,
 });

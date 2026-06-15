@@ -26,6 +26,7 @@ import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } f
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
 import { createApiServer } from "weave/server";
 import { DeterministicMockAgent, MockAsyncToolWorker } from "weave/testing";
+import { createOpenCodeCliAdapter, opencodePermissionProfile } from "weave/opencode";
 import {
   authGateway,
   anonymousAuth,
@@ -216,6 +217,9 @@ assert.equal(typeof createIdentityAdapterContractTests, "function");
 
 assert.equal(typeof DeterministicMockAgent, "function");
 assert.equal(typeof MockAsyncToolWorker, "function");
+
+assert.equal(typeof createOpenCodeCliAdapter, "function");
+assert.equal(opencodePermissionProfile().type, "weave-opencode");
 
 assert.equal(echoApp.agents[0]?.name, "public-api.agent");
 assert.equal(echoApp.integrations?.[0]?.name, "public-api.integration");

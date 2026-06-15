@@ -19,7 +19,13 @@ import {
   type VerificationAgentInput,
   type VerificationResult,
 } from "../development-orchestrator.js";
-import { createMaintainerOpenCodePermissionProfile, createOpenCodeCliImplementationRunner, createOpenCodeCliRepairRunner } from "../opencode-runner.js";
+import {
+  createMaintainerOpenCodeImplementationPermissionProfile,
+  createMaintainerOpenCodePolicy,
+  createMaintainerOpenCodeRepairPermissionProfile,
+  createOpenCodeCliImplementationRunner,
+  createOpenCodeCliRepairRunner,
+} from "../opencode-runner.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
@@ -172,12 +178,13 @@ try {
 }
 
 function createAuthGatewayDryRunApp(workspaceProvider: WorkspaceProvider, observability: PostgresObservabilitySink) {
-  const openCodePermissionProfile = createMaintainerOpenCodePermissionProfile();
+  const implementationOpenCodeProfile = createMaintainerOpenCodeImplementationPermissionProfile();
+  const repairOpenCodeProfile = createMaintainerOpenCodeRepairPermissionProfile();
   const implementationAgent = createOpenCodeImplementerAgent({
     runner: createOpenCodeCliImplementationRunner({
       command: options.openCodeCommand ?? process.env.WEAVE_DRY_RUN_OPENCODE_COMMAND ?? "opencode",
       ...(options.openCodeArgs ? { args: options.openCodeArgs } : {}),
-      permissionProfile: openCodePermissionProfile,
+      permissionProfile: implementationOpenCodeProfile,
       timeoutMs,
       maxOutputBytes: 2_000_000,
     }),
@@ -186,7 +193,7 @@ function createAuthGatewayDryRunApp(workspaceProvider: WorkspaceProvider, observ
     runner: createOpenCodeCliRepairRunner({
       command: options.openCodeCommand ?? process.env.WEAVE_DRY_RUN_OPENCODE_COMMAND ?? "opencode",
       ...(options.openCodeArgs ? { args: options.openCodeArgs } : {}),
-      permissionProfile: openCodePermissionProfile,
+      permissionProfile: repairOpenCodeProfile,
       timeoutMs,
       maxOutputBytes: 2_000_000,
     }),
@@ -214,6 +221,12 @@ function createAuthGatewayDryRunApp(workspaceProvider: WorkspaceProvider, observ
     name: "auth-gateway-slice-51-dry-run",
     credentialProvider: new LocalDryRunCredentialProvider(),
     observability,
+    policies: [
+      createMaintainerOpenCodePolicy({
+        implementationProfile: implementationOpenCodeProfile,
+        repairProfile: repairOpenCodeProfile,
+      }),
+    ],
     agents: [
       maintainerAgent,
       sliceRunnerAgent,

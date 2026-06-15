@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { agent, capability, event, tool, type AgentContext, type AgentContract, type ToolProgressUpdate } from "weave";
+import { agent, capability, event, tool, type AgentContext, type AgentContract, type CapabilityDeclaration, type ToolProgressUpdate } from "weave";
 import {
   DevImplementationCompletedPayloadSchema,
   DevImplementationStartedPayloadSchema,
@@ -449,6 +449,7 @@ export class DevelopmentBlockedRunnerError extends Error {
 }
 
 export type OpenCodeImplementationRunner = {
+  capabilities?: readonly CapabilityDeclaration[];
   run(input: OpenCodeImplementerInput, context?: DevelopmentRunnerContext): Promise<ImplementationSummary> | ImplementationSummary;
 };
 
@@ -563,6 +564,7 @@ export const RepairLoopDecisionSchema = z.discriminatedUnion("status", [
 export type RepairLoopDecision = z.infer<typeof RepairLoopDecisionSchema>;
 
 export type RepairRunner = {
+  capabilities?: readonly CapabilityDeclaration[];
   run(input: z.infer<typeof RepairAgentInputSchema>, context?: DevelopmentRunnerContext): Promise<RepairResult> | RepairResult;
 };
 
@@ -1077,6 +1079,7 @@ export async function createGitSourceCheckpoint(rawInput: SourceCheckpointCreate
 }
 
 export function createOpenCodeImplementationTool(runner: OpenCodeImplementationRunner) {
+  const adapterCapabilities = runner.capabilities ?? [];
   return tool({
     name: "dev.opencode.implement",
     description: "Run OpenCode to implement one bounded development slice inside a configured workspace.",
@@ -1092,6 +1095,7 @@ export function createOpenCodeImplementationTool(runner: OpenCodeImplementationR
         }),
         opencodeRunCapability.request({ workspaceId: context.input.workspaceRef.workspaceId, agentRole: "implementer" }),
         boundedShellCapability.request({ workspaceId: context.input.workspaceRef.workspaceId, purpose: "implementation" }),
+        ...adapterCapabilities,
       ];
     },
     summarize(output) {
@@ -1170,6 +1174,7 @@ export function createReviewerTool(runner: ReviewerRunner) {
 }
 
 export function createRepairTool(runner: RepairRunner) {
+  const adapterCapabilities = runner.capabilities ?? [];
   return tool({
     name: "dev.opencode.repair",
     description: "Run OpenCode to repair only supplied verification failures and reviewer findings.",
@@ -1185,6 +1190,7 @@ export function createRepairTool(runner: RepairRunner) {
         }),
         opencodeRunCapability.request({ workspaceId: context.input.workspaceRef.workspaceId, agentRole: "repair" }),
         boundedShellCapability.request({ workspaceId: context.input.workspaceRef.workspaceId, purpose: "repair" }),
+        ...adapterCapabilities,
       ];
     },
     summarize(output) {

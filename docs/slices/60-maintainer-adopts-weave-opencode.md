@@ -3,8 +3,8 @@
 ## Status
 
 - Vertical: `weave-core`
-- Status: `Planned`
-- Last updated: `2026-06-10`
+- Status: `Shipped`
+- Last updated: `2026-06-15`
 - Owner: `weave-maintainer`
 
 ## Goal
@@ -53,29 +53,37 @@ As a maintainer operator, I can keep using `npm run initiative:run`, but OpenCod
 
 ## Acceptance Criteria
 
-- [ ] Maintainer OpenCode execution uses `weave/opencode`.
-- [ ] Maintainer no longer owns a standalone security-sensitive OpenCode CLI implementation.
-- [ ] Implementation and repair roles have distinct explicit permission profiles.
-- [ ] Maintainer app policy denies unexpected OpenCode capabilities.
-- [ ] Existing maintainer commands continue to work.
-- [ ] Existing maintainer verification/review gates remain mandatory after OpenCode runs.
-- [ ] Tests prove the maintainer cannot regress to prompt-only enforcement.
+- [x] Maintainer OpenCode execution uses `weave/opencode`.
+- [x] Maintainer no longer owns a standalone security-sensitive OpenCode CLI implementation.
+- [x] Implementation and repair roles have distinct explicit permission profiles.
+- [x] Maintainer app policy denies unexpected OpenCode capabilities.
+- [x] Existing maintainer commands continue to work.
+- [x] Existing maintainer verification/review gates remain mandatory after OpenCode runs.
+- [x] Tests prove the maintainer cannot regress to prompt-only enforcement.
 
 ## Progress
 
-- [ ] Wrap or replace local OpenCode runner.
-- [ ] Define implementation permission profile.
-- [ ] Define repair permission profile.
-- [ ] Add maintainer app policy.
-- [ ] Update tests and docs.
+- [x] Wrap or replace local OpenCode runner.
+- [x] Define implementation permission profile.
+- [x] Define repair permission profile.
+- [x] Add maintainer app policy.
+- [x] Update tests and docs.
 
 ## Completion Notes
 
-Fill this in when the slice ships.
+- Replaced the security-sensitive internals of `examples/weave-maintainer/src/opencode-runner.ts` with a thin wrapper around `createOpenCodeCliAdapter(...)`, `runOpenCodeCliCommand(...)`, and permission profiles from `weave/opencode`.
+- Kept maintainer-owned prompt builders, `ImplementationSummarySchema`, `RepairResultSchema`, branch preflight, reported-file claim mapping, and `DevelopmentBlockedRunnerError` result mapping in the maintainer app.
+- Added `buildOpenCodeImplementationRunInput(...)` and `buildOpenCodeRepairRunInput(...)` to map maintainer inputs to generic `OpenCodeRunInput` with `workspace`, `prompt`, and per-slice `allowedPaths`.
+- Added distinct `weave-maintainer-implementation` and `weave-maintainer-repair` profiles through `opencodePermissionProfile(...)`. Both deny network, secrets, Git commit/branch-switch/push, and rely on framework actual-diff enforcement for per-run `allowedFiles`.
+- Added `createMaintainerOpenCodePolicy(...)`, and wired it into `initiative:run` and `auth:dry-run`, so unexpected `opencode.*` capability requests are denied at app policy evaluation.
+- Exposed adapter profile capabilities through `dev.opencode.implement` and `dev.opencode.repair` tool capability declarations, without moving prompts, schemas, slice orchestration, verification, review, checkpointing, or finalization into core.
+- Updated `examples/weave-maintainer/src/tests/opencode-runner.test.ts` to cover implementation and repair prompt-to-adapter input mapping, distinct profiles, policy denial of unexpected OpenCode capabilities, fake executable implementation and repair success, permission denial, out-of-scope actual changes, reported out-of-scope claims, invalid JSON, invalid schema output, timeout, max-output, repair blocked output, and a static guard that `opencode-runner.ts` imports `weave/opencode` and does not import `node:child_process`, call `spawn`/`execFile`, or carry Git status parsing.
+- Validation commands run and passed: `npm --workspace weave-maintainer exec -- tsx src/tests/opencode-runner.test.ts`, `npm --workspace weave-maintainer run typecheck`, `npm --workspace weave-maintainer run test`, `npm test`, `npm run typecheck`, and `git diff --check`.
+- Known gap: `weave/opencode` is still a hardened process wrapper, not an OS sandbox. Host/OpenCode binary trust assumptions remain inherited from `weave/opencode`: the installed binary, host user account, filesystem permissions, symlink/config exposure, and credentials outside the sanitized process environment must still be trusted.
 
 ## Docs To Update On Completion
 
-- [ ] this slice document
-- [ ] `examples/weave-maintainer/docs/README.md`
-- [ ] `examples/weave-maintainer/docs/slices/11-real-opencode-runner-adapter.md`
-- [ ] `docs/agent-adapters.md`
+- [x] this slice document
+- [x] `examples/weave-maintainer/docs/README.md`
+- [x] `examples/weave-maintainer/docs/slices/11-real-opencode-runner-adapter.md`
+- [x] `docs/agent-adapters.md`
