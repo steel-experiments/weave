@@ -310,6 +310,22 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
     );
   }
 
+  async heartbeatInbox(ids: number[], ownerId: string, ttlMs: number): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+
+    await this.pool.query(
+      `update weave.thread_inbox
+       set claimed_until = now() + ($3 * interval '1 millisecond'),
+           updated_at = now()
+       where id = any($1::bigint[])
+         and claimed_by = $2
+         and state = 'claimed'`,
+      [ids, ownerId, ttlMs],
+    );
+  }
+
   async deadLetterInbox(
     ids: number[],
     ownerId: string,
