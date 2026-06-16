@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { domainEvent } from "weave";
+import { domainEvent } from "weave/runtime";
 
 export const DevReviewVerdictSchema = z.enum(["pass", "needs-fixes", "blocked"]);
 export type DevReviewVerdict = z.infer<typeof DevReviewVerdictSchema>;

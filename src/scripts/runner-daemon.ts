@@ -1,8 +1,8 @@
-import { RunnerDaemon } from "../daemons.js";
+import { RunnerDaemon } from "../runtime/daemons.js";
 import { createPool } from "../db.js";
 import { migrate } from "../migrate.js";
 import { PostgresThreadEngine } from "../postgres-engine.js";
-import { ThreadRunner } from "../runner.js";
+import { ThreadRunner } from "../runtime/runner.js";
 
 const pool = createPool();
 await migrate(pool);

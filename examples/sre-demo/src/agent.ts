@@ -1,4 +1,4 @@
-import { agent, approvalPolicy, domainEvent, event } from "weave";
+import { agent, approvalPolicy, domainEvent, event } from "weave/runtime";
 import { z } from "zod";
 import {
   FINDING_PRODUCED,

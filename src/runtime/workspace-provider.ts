@@ -4,7 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { capability } from "./capability-contract.js";
-import { deterministicUuid } from "./events.js";
+import { deterministicUuid } from "../events.js";
 import { tool } from "./tool-contract.js";
 
 const execFileAsync = promisify(execFile);

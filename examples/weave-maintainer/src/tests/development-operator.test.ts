@@ -14,7 +14,7 @@ import {
   OperatorSourceCheckpointRestoreResultSchema,
   OperatorSourceCheckpointSummarySchema,
 } from "../development-operator.js";
-import { newEventId, nowIso } from "weave";
+import { newEventId, nowIso } from "weave/runtime";
 
 const gate = OperatorGateSummarySchema.parse({
   gateId: "11111111-1111-4111-8111-111111111111",

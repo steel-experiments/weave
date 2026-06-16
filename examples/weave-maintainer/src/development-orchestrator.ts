@@ -3,8 +3,8 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { agent, capability, tool, type AgentContext, type AgentContract, type CapabilityDeclaration, type ToolProgressUpdate } from "weave";
-import { deterministicUuid } from "weave";
+import { agent, capability, tool, type AgentContext, type AgentContract, type CapabilityDeclaration, type ToolProgressUpdate } from "weave/runtime";
+import { deterministicUuid } from "weave/runtime";
 import {
   DevCommandResultSchema,
   DevReviewFindingSchema,
@@ -28,7 +28,7 @@ import {
   type WorkspaceProvider,
   type WorkspaceRef,
   type WorkspaceRemovalResult,
-} from "weave";
+} from "weave/runtime";
 
 const NonEmptyStringSchema = z.string().min(1);
 const execFileAsync = promisify(execFile);

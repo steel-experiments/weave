@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ThreadEngine } from "./contracts.js";
-import type { ThreadRef } from "./agent-contract.js";
+import type { ThreadRef } from "./thread-ref.js";
 import { ReplayMismatchError } from "./errors.js";
 import {
   deterministicUuid,

@@ -1,7 +1,7 @@
-import { ToolWorkerDaemon } from "../daemons.js";
+import { ToolWorkerDaemon } from "../runtime/daemons.js";
 import { createPool } from "../db.js";
 import { migrate } from "../migrate.js";
-import { MockAsyncToolWorker } from "../mock-tool-worker.js";
+import { MockAsyncToolWorker } from "../runtime/mock-tool-worker.js";
 import { PostgresThreadEngine } from "../postgres-engine.js";
 
 const pool = createPool();

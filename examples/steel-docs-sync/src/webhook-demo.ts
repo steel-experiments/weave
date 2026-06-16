@@ -7,7 +7,7 @@ import {
   type ThreadEvent,
   type ThreadProjection,
   type ThreadSummary,
-} from "weave";
+} from "weave/runtime";
 import { ContractToolWorker, ThreadRunner, ThreadService, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadArtifactStore, PostgresThreadEngine, ThreadArtifactSchema, createPool, migrate } from "weave/postgres";
 import { z } from "zod";

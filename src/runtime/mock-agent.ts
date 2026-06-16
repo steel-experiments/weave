@@ -3,7 +3,7 @@ import {
   eventKey,
   nowIso,
   type ThreadEvent,
-} from "./events.js";
+} from "../events.js";
 import { isLegacyToolCompletionOutput } from "./tool-contract.js";
 
 type PromptReceivedEvent = Extract<ThreadEvent, { type: "prompt.received" }>;

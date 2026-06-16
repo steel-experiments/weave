@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
-import { createApiServer } from "../api-server.js";
-import { RunnerDaemon, ToolWorkerDaemon } from "../daemons.js";
+import { createApiServer } from "../runtime/api-server.js";
+import { RunnerDaemon, ToolWorkerDaemon } from "../runtime/daemons.js";
 import { createPool } from "../db.js";
 import { migrate } from "../migrate.js";
 import { ThreadService } from "../thread-service.js";
-import { MockAsyncToolWorker } from "../mock-tool-worker.js";
+import { MockAsyncToolWorker } from "../runtime/mock-tool-worker.js";
 import { PostgresThreadEngine } from "../postgres-engine.js";
-import { ThreadRunner } from "../runner.js";
+import { ThreadRunner } from "../runtime/runner.js";
 import { toMermaidTimeline, toTextTimeline } from "../timeline.js";
 import type { ThreadEvent, ThreadProjection } from "../events.js";
 

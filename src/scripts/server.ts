@@ -1,4 +1,4 @@
-import { createApiServer } from "../api-server.js";
+import { createApiServer } from "../runtime/api-server.js";
 import { createPool } from "../db.js";
 import { ThreadService } from "../thread-service.js";
 import { migrate } from "../migrate.js";

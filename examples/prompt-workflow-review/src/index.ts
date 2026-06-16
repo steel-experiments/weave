@@ -1,4 +1,4 @@
-import { toTextTimeline } from "weave";
+import { toTextTimeline } from "weave/runtime";
 import { runPromptWorkflowReviewDemo } from "./workflow.js";
 
 const result = await runPromptWorkflowReviewDemo();

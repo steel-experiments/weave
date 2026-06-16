@@ -1,9 +1,10 @@
 import type { z } from "zod";
-import type { Actor, SessionMetadata, SessionSource, ThreadEvent, ThreadStatus } from "./events.js";
-import { WeaveError } from "./errors.js";
+import type { Actor, SessionMetadata, SessionSource, ThreadEvent, ThreadStatus } from "../events.js";
+import { WeaveError } from "../errors.js";
 import type { AgentPlanner } from "./runner.js";
 import type { AnyToolContract, ToolContract } from "./tool-contract.js";
-import type { MaybePromise } from "./types.js";
+import type { ThreadRef } from "../thread-ref.js";
+import type { MaybePromise } from "../types.js";
 
 export type ToolCallOptions = Record<string, unknown>;
 
@@ -19,17 +20,7 @@ export type GateRequest = {
 
 export type GateResolution = GateResolvedPayload;
 
-export type ThreadRef<Output = unknown> = {
-  threadId: string;
-  agentName: string;
-  parentThreadId?: string;
-  rootThreadId?: string;
-  parentScopeKey?: string;
-  parentStepKey?: string;
-  status?: ThreadStatus;
-  outputSchema?: z.ZodType<Output>;
-  output?: Output;
-};
+export type { ThreadRef };
 
 export type SpawnOptions = {
   prompt?: string;

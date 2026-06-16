@@ -1,8 +1,8 @@
 import type { AnyAgentContract } from "./agent-contract.js";
-import type { ThreadArtifactStore } from "./artifacts.js";
+import type { ThreadArtifactStore } from "../artifacts.js";
 import type { CredentialProvider } from "./credentials.js";
 import type { AnyIntegrationContract } from "./integration-contract.js";
-import type { ObservabilitySink } from "./observability.js";
+import type { ObservabilitySink } from "../observability.js";
 import type { AnyPolicyRule } from "./policy-contract.js";
 import type { AnyToolContract } from "./tool-contract.js";
 

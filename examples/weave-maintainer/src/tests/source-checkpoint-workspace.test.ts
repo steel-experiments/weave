@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
-import { GitWorktreeWorkspaceProvider, workspaceIdFor, workspacePathFor } from "weave";
+import { GitWorktreeWorkspaceProvider, workspaceIdFor, workspacePathFor } from "weave/runtime";
 import { createGitLocalMergeFinalizationRunner, createGitSourceCheckpoint } from "../development-orchestrator.js";
 import { restoreSourceCheckpointWorktree } from "../development-operator.js";
 

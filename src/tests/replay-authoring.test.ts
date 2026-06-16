@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { agent, domainEvent, event } from "../agent-contract.js";
-import { createAgentPlanner } from "../agent-runner.js";
-import { createApiServer } from "../api-server.js";
-import { weave } from "../app-contract.js";
-import { capability, isCapabilityRequest } from "../capability-contract.js";
-import type { CredentialProvider, CredentialRequest, CredentialResolution, CredentialResolutionContext } from "../credentials.js";
+import { agent, domainEvent, event } from "../runtime/agent-contract.js";
+import { createAgentPlanner } from "../runtime/agent-runner.js";
+import { createApiServer } from "../runtime/api-server.js";
+import { weave } from "../runtime/app-contract.js";
+import { capability, isCapabilityRequest } from "../runtime/capability-contract.js";
+import type { CredentialProvider, CredentialRequest, CredentialResolution, CredentialResolutionContext } from "../runtime/credentials.js";
 import type {
   AppendOptions,
   AppendResult,
@@ -28,15 +28,15 @@ import {
   type ThreadProjection,
   type ThreadEvent,
 } from "../events.js";
-import { approvalPolicy, policy } from "../policy-contract.js";
-import { ThreadRunner } from "../runner.js";
-import { createRuntimeAgentPlanner, createWeaveRuntime } from "../runtime.js";
+import { approvalPolicy, policy } from "../runtime/policy-contract.js";
+import { ThreadRunner } from "../runtime/runner.js";
+import { createRuntimeAgentPlanner, createWeaveRuntime } from "../runtime/runtime.js";
 import { buildThreadSummary } from "../summary.js";
 import { ThreadService } from "../thread-service.js";
 import { toMermaidTimeline, toTextTimeline } from "../timeline.js";
-import { RetryableToolError, tool, type AnyToolContract } from "../tool-contract.js";
-import { ContractToolWorker } from "../tool-worker.js";
-import { integrationEvent } from "../integration-contract.js";
+import { RetryableToolError, tool, type AnyToolContract } from "../runtime/tool-contract.js";
+import { ContractToolWorker } from "../runtime/tool-worker.js";
+import { integrationEvent } from "../runtime/integration-contract.js";
 
 const inputSchema = z.object({ query: z.string().min(1) });
 const outputSchema = z.object({

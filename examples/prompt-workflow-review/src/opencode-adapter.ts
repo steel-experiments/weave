@@ -2,7 +2,7 @@ import { lstat, readdir, readFile, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agent, capability, stableJsonHash, tool, type AnyToolContract } from "weave";
+import { agent, capability, stableJsonHash, tool, type AnyToolContract } from "weave/runtime";
 import { z } from "zod";
 
 export const repoReadCapability = capability({

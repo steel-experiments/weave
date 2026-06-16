@@ -21,7 +21,7 @@ import {
   resourceFromAction,
   type AuthDecisionRecordedData,
 } from "../auth-audit.js";
-import { createApiServer } from "../api-server.js";
+import { createApiServer } from "../runtime/api-server.js";
 import type { AppendOptions, AppendResult, CreateThreadOptions, ReadOptions, ThreadEngine } from "../contracts.js";
 import { isDomainEvent, nowIso, ThreadEventSchema, ThreadProjectionSchema, type ThreadEvent, type ThreadProjection } from "../events.js";
 import { ThreadService } from "../thread-service.js";

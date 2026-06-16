@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Pool } from "pg";
 import { dashboardHtml, createLocalDashboardServer } from "../development-dashboard.js";
 import { buildDashboardState } from "../development-dashboard.js";
-import { newEventId, nowIso, type ThreadEvent } from "weave";
+import { newEventId, nowIso, type ThreadEvent } from "weave/runtime";
 import { migrate, PostgresThreadEngine } from "weave/postgres";
 
 const html = dashboardHtml();

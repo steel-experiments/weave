@@ -1,7 +1,7 @@
-import type { PostgresThreadEngine } from "./postgres-engine.js";
+import type { PostgresThreadEngine } from "../postgres-engine.js";
 import { ThreadRunner } from "./runner.js";
 import { MockAsyncToolWorker } from "./mock-tool-worker.js";
-import type { InboxConsumer } from "./contracts.js";
+import type { InboxConsumer } from "../contracts.js";
 
 type ToolWorker = {
   processOnce(threadId: string): Promise<{ acted: boolean; eventType?: string; errorCode?: string; errorMessage?: string }>;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { isDomainEvent } from "weave";
+import { isDomainEvent } from "weave/runtime";
 import { FINDING_PRODUCED } from "./events.js";
 import {
   RepoListFilesInputSchema,

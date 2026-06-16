@@ -24,7 +24,7 @@ import {
   type ClaimNormalizer,
   type NormalizedClaims,
 } from "../auth-provider-adapter.js";
-import { createApiServer } from "../api-server.js";
+import { createApiServer } from "../runtime/api-server.js";
 import { ThreadService } from "../thread-service.js";
 import type { AppendOptions, AppendResult, CreateThreadOptions, FollowCursor, ReadOptions, ThreadEngine } from "../contracts.js";
 import { nowIso, ThreadProjectionSchema, type ThreadEvent, type ThreadProjection } from "../events.js";

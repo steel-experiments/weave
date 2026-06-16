@@ -7,7 +7,7 @@ import {
   toTextTimeline,
   type ThreadEvent,
   type ThreadProjection,
-} from "weave";
+} from "weave/runtime";
 import {
   FINDING_PRODUCED,
   FindingProducedSchema,

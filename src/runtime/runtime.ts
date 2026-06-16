@@ -1,16 +1,16 @@
 import type { WeaveAppDefinition } from "./app-contract.js";
 import { createAgentPlanner } from "./agent-runner.js";
 import { RunnerDaemon, ToolWorkerDaemon } from "./daemons.js";
-import type { ThreadService } from "./thread-service.js";
-import type { PostgresThreadEngine } from "./postgres-engine.js";
+import type { ThreadService } from "../thread-service.js";
+import type { PostgresThreadEngine } from "../postgres-engine.js";
 import { ThreadRunner } from "./runner.js";
 import { ContractToolWorker } from "./tool-worker.js";
 import { collectIntegrationTools } from "./integration-contract.js";
 import type { AgentPlanner } from "./runner.js";
-import type { ThreadEvent } from "./events.js";
+import type { ThreadEvent } from "../events.js";
 import type { AnyToolContract } from "./tool-contract.js";
 import type { AnyAgentContract } from "./agent-contract.js";
-import { WeaveError } from "./errors.js";
+import { WeaveError } from "../errors.js";
 
 export type WeaveRuntimeOptions<Agents extends readonly { name: string }[] = readonly { name: string }[]> = {
   app: WeaveAppDefinition<any>;

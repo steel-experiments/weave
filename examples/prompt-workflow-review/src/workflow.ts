@@ -18,7 +18,7 @@ import {
   type ThreadEvent,
   type ThreadLeaseStore,
   type ThreadProjection,
-} from "weave";
+} from "weave/runtime";
 import { ContractToolWorker, ThreadRunner, ThreadService, createRuntimeAgentPlanner } from "weave/runtime";
 import {
   ClaimCheckInputSchema,

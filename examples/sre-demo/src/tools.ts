@@ -1,4 +1,4 @@
-import { tool } from "weave";
+import { tool } from "weave/runtime";
 import { z } from "zod";
 
 const environment = z.enum(["staging", "production"]);

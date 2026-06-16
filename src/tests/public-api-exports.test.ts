@@ -21,8 +21,11 @@ import {
   GitWorktreeWorkspaceProvider,
   WorkspaceRefSchema,
   createWorkspaceAllocateTool,
-} from "weave";
-import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } from "weave/runtime";
+  ThreadService,
+  ContractToolWorker,
+  ThreadRunner,
+  createWeaveRuntime,
+} from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
 import { createApiServer } from "weave/server";
 import { DeterministicMockAgent, MockAsyncToolWorker } from "weave/testing";
@@ -238,8 +241,18 @@ for (const infra of [
   "DeterministicMockAgent",
   "authGateway",
   "createOpenCodeCliAdapter",
+  "agent",
+  "tool",
+  "weave",
+  "defineWeaveApp",
+  "capability",
+  "policy",
+  "defineEvent",
+  "integration",
+  "ThreadRunner",
+  "GitWorktreeWorkspaceProvider",
 ]) {
-  assert.equal(rootExports[infra], undefined, `weave root (".") must not expose infra symbol: ${infra}`);
+  assert.equal(rootExports[infra], undefined, `weave root (".") must not expose runtime/infra symbol: ${infra}`);
 }
 
 console.log("Public API export smoke test passed");

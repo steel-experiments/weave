@@ -63,7 +63,7 @@ import {
   weaveMaintainer,
   weaveSliceRunner,
 } from "../development-orchestrator.js";
-import { isDomainEvent, ThreadEventSchema, deterministicUuid, eventKey, nowIso, stableJsonHash, type ThreadEvent, type WorkspaceProvider } from "weave";
+import { isDomainEvent, ThreadEventSchema, deterministicUuid, eventKey, nowIso, stableJsonHash, type ThreadEvent, type WorkspaceProvider } from "weave/runtime";
 import { createAgentPlanner } from "weave/runtime";
 
 const validSlice = {

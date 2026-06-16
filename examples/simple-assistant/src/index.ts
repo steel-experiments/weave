@@ -1,6 +1,6 @@
 import { ThreadService, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
-import type { ThreadEvent } from "weave";
+import type { ThreadEvent } from "weave/runtime";
 import { simpleAssistantApp } from "./app.js";
 
 const prompt = process.argv.slice(2).join(" ") || "Summarize what a minimal Weave assistant does in one sentence.";

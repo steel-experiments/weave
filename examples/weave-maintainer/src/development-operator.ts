@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { DevelopmentCheckpointKeys, InitiativePlanSchema, SourceCheckpointRestoredSchema, SourceCheckpointSchema, developmentEvents } from "./development-orchestrator.js";
-import { ThreadEventSchema, isDomainEvent, newEventId, nowIso, type ThreadEvent } from "weave";
+import { ThreadEventSchema, isDomainEvent, newEventId, nowIso, type ThreadEvent } from "weave/runtime";
 import { PostgresThreadEngine } from "weave/postgres";
 import { ThreadService } from "weave/runtime";
 

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { StaticCredentialProvider, weave } from "weave";
+import { StaticCredentialProvider, weave } from "weave/runtime";
 import { assistantAgent } from "./agent.js";
 
 loadExampleEnv();

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { RetryableToolError, tool } from "weave";
+import { RetryableToolError, tool } from "weave/runtime";
 import { ThreadArtifactSchema } from "weave/postgres";
 import { z } from "zod";
 

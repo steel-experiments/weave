@@ -1,4 +1,4 @@
-import { agent, domainEvent, event } from "weave";
+import { agent, domainEvent, event } from "weave/runtime";
 import { z } from "zod";
 import { FINDING_PRODUCED, FindingProducedSchema } from "./events.js";
 import {
