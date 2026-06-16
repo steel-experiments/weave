@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import {
-  ThreadArtifactSchema,
   getAgent,
   isDomainEvent,
   type ThreadEvent,
@@ -9,7 +8,7 @@ import {
   type ThreadSummary,
 } from "weave";
 import { ContractToolWorker, ThreadRunner, ThreadService, createWeaveRuntime } from "weave/runtime";
-import { PostgresThreadArtifactStore, PostgresThreadEngine, createPool, migrate } from "weave/postgres";
+import { PostgresThreadArtifactStore, PostgresThreadEngine, ThreadArtifactSchema, createPool, migrate } from "weave/postgres";
 import { createApiServer } from "weave/server";
 import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";

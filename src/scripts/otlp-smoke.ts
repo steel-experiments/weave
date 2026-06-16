@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import { AddressInfo } from "node:net";
-import { OtlpHttpObservabilitySink, newSpanId, newTraceId } from "../index.js";
+import { OtlpHttpObservabilitySink, newSpanId, newTraceId } from "../runtime-entry.js";
 
 const configuredEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 const receiver = configuredEndpoint ? null : await startMockOtlpReceiver();

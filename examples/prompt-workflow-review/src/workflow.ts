@@ -1,5 +1,4 @@
 import {
-  ThreadService,
   agent,
   deterministicUuid,
   domainEvent,
@@ -20,7 +19,7 @@ import {
   type ThreadLeaseStore,
   type ThreadProjection,
 } from "weave";
-import { ContractToolWorker, ThreadRunner, createRuntimeAgentPlanner } from "weave/runtime";
+import { ContractToolWorker, ThreadRunner, ThreadService, createRuntimeAgentPlanner } from "weave/runtime";
 import {
   ClaimCheckInputSchema,
   ClaimCheckOutputSchema,
