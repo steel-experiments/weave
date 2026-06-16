@@ -143,19 +143,25 @@ Read these files before making significant architectural changes:
 - `docs/research/README.md`: grouped comparison and research index
 - `README.md`: local setup, commands, and current implementation summary
 
-Code landmarks:
+Code landmarks. The tree is split into a kernel (`src/`, the durable thread/record/coordination core) and a runtime (`src/runtime/`, the replay/agent layer). A `kernel → runtime` import is forbidden and enforced by `npm run lint:boundaries`.
 
-- `src/events.ts`: typed event schemas and payload contracts
+Kernel (`src/`):
+
+- `src/events.ts`: closed kernel event union and payload contracts, plus the open `domain.event` extension point
+- `src/contracts.ts`: `ThreadEngine`/`ThreadLeaseStore` interfaces and append/read options (`expectedTailSeq` fencing)
 - `src/postgres-engine.ts`: durable event log, projections, inbox, leases, and gates
-- `src/thread-service.ts`: session and gate operations
-- `src/runner.ts`: bounded thread step execution
-- `src/daemons.ts`: inbox-claim-driven background processing
-- `src/tool-contract.ts`: `defineTool` and tool lifecycle contract
-- `src/agent-contract.ts`: `defineAgent`
-- `src/app-contract.ts`: `defineWeaveApp`
-- `src/credentials.ts`: scoped credential resolution model
+- `src/thread-service.ts`: session, gate, and read operations
 - `src/observability.ts`, `src/postgres-observability.ts`, `src/otlp-observability.ts`: observability sinks
-- `src/api-server.ts`: minimal HTTP surface for the PoC and demo flows
+
+Runtime (`src/runtime/`):
+
+- `src/runtime/runner.ts`: bounded thread step execution
+- `src/runtime/daemons.ts`: inbox-claim-driven background processing
+- `src/runtime/tool-contract.ts`: `defineTool` and tool lifecycle contract
+- `src/runtime/agent-contract.ts`: `defineAgent`
+- `src/runtime/app-contract.ts`: `defineWeaveApp`
+- `src/runtime/credentials.ts`: scoped credential resolution model
+- `src/runtime/api-server.ts`: minimal HTTP surface for the PoC and demo flows
 
 ## How To Make Good Changes Here
 

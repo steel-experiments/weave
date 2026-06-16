@@ -13,7 +13,7 @@ An integration can contribute three things:
 - event handlers that react to thread events and call the external system
 
 ```ts
-import { integration } from "weave";
+import { integration } from "weave/runtime";
 
 export function createSlackIntegration(config: SlackIntegrationConfig) {
   return integration({
@@ -28,7 +28,7 @@ export function createSlackIntegration(config: SlackIntegrationConfig) {
 ## App Usage
 
 ```ts
-import { agent, weave } from "weave";
+import { agent, weave } from "weave/runtime";
 import { createSlackIntegration } from "@acme/weave-slack";
 import { supportRun } from "./agent.js";
 

@@ -21,7 +21,7 @@ Weave does not persist JavaScript continuations. When a durable operation is pen
 
 - Runtime status: usable local proof of concept.
 - Storage status: Postgres-backed implementation using a dedicated `weave` schema.
-- Authoring API: current preferred API is `agent`, `tool`, `weave`, `event`, `capability`, `policy`, and durable `ctx.*` operations.
+- Authoring API: current preferred API is `agent`, `tool`, `weave`, `event`, `capability`, `policy`, and durable `ctx.*` operations, exported from `weave/runtime` (the bare `weave` entry is the kernel).
 - Compatibility: older planner-style agents and legacy tool output envelopes are still supported as migration paths.
 - Packaging status: not npm-publish-ready yet. `package.json` remains `private: true` and exports TypeScript source for local workspace use.
 - Release status: see `docs/release-readiness.md` for remaining open-source blockers.
@@ -61,8 +61,10 @@ npm run db:migrate
 
 ## Minimal Authoring Example
 
+Authoring primitives (`agent`, `tool`, `weave`, `event`, `capability`, `policy`) live in `weave/runtime`. The bare `weave` entry is the kernel — durable thread, event, and coordination contracts only — so a host can build on the log without pulling in the replay/agent layer.
+
 ```ts
-import { agent, tool, weave } from "weave";
+import { agent, tool, weave } from "weave/runtime";
 import { z } from "zod";
 
 const echo = tool({
@@ -122,15 +124,19 @@ runtime.toolDaemon.start();
 
 ## Package Boundaries
 
-The repository currently exposes these local workspace subpaths:
+Weave is split into a **kernel** and a **runtime**. The kernel is the durable thread/record/coordination core: events, the engine contract, projections, leases, the inbox, gates, lineage, and the read-only `ThreadService`. It carries no agent-authoring or replay machinery, so a host can build directly on the log — this is how Blade consumes Weave. The runtime is the replay/agent layer on top: `agent`/`tool`/`weave` authoring, the durable `ctx.*` API, runners, daemons, and tool workers.
 
-- `weave`: authoring primitives plus compatibility exports.
-- `weave/runtime`: runners, daemons, workers, thread service, credentials, and observability helpers.
-- `weave/postgres`: Postgres engine, pool, migrations, artifact store, and observability store.
-- `weave/server`: HTTP API server helpers.
-- `weave/testing`: deterministic mock utilities.
-- `weave/auth`: auth gateway, access rules, JWT helper, and identity adapter contract tests.
-- `weave/opencode`: hardened OpenCode CLI adapter, permission profiles, capability mapping, bounded execution, env sanitization, JSON output validation, and actual Git diff enforcement.
+A `kernel → runtime` import is forbidden and enforced statically by `npm run lint:boundaries` (dependency-cruiser). Only the runtime-facing entry barrels may re-export the runtime.
+
+Local workspace subpaths:
+
+- `weave`: **kernel** — durable thread, event, projection, timeline, and coordination contracts plus shared errors and observability types. No agent-authoring or replay code.
+- `weave/runtime`: **runtime** — authoring primitives (`agent`, `tool`, `weave`, `event`, `capability`, `policy`, `integration`), the durable `ctx.*` context, runners, daemons, tool workers, workspace providers, and `ThreadService`. Re-exports the kernel, so it is a strict superset.
+- `weave/postgres`: Postgres engine, pool, migrations, artifact store, `ThreadService`, and observability store. Kernel-only — no runtime dependency.
+- `weave/server`: HTTP API server helpers (runtime).
+- `weave/testing`: deterministic mock agent and tool worker (runtime).
+- `weave/auth`: auth gateway, access rules, JWT helper, and identity adapter contract tests. Kernel-only.
+- `weave/opencode`: hardened OpenCode CLI adapter, permission profiles, capability mapping, bounded execution, env sanitization, JSON output validation, and actual Git diff enforcement (runtime).
 
 These boundaries are the intended public shape, but the package still needs a compiled `dist` build and a narrowed publish manifest before npm publication.
 
@@ -233,20 +239,28 @@ The server also exposes the raw Weave thread API at `/threads`, `/threads/<threa
 
 ## Implementation Map
 
-- `src/agent-contract.ts`: run-first agent authoring contracts and durable context API.
-- `src/tool-contract.ts`: typed tool contracts, output summaries, credentials, capabilities, and gates.
-- `src/app-contract.ts`: `weave` app registry.
-- `src/agent-runner.ts`: replay adapter for `agent.run`, durable effects, gates, checkpoints, timers, signals, and child threads.
+Kernel (`src/`, exported from `weave`, `weave/postgres`, `weave/auth`):
+
+- `src/events.ts`: closed kernel event union, payload contracts, and the open `domain.event` extension point.
+- `src/contracts.ts`: `ThreadEngine` and `ThreadLeaseStore` interfaces, append/read options (including `expectedTailSeq` fencing), and inbox contracts.
 - `src/postgres-engine.ts`: Postgres event log, projection, leases, lineage, gates, signals, timers, and inbox persistence.
-- `src/thread-service.ts`: session start, child session, gate resolution, signal delivery, child listing, and child cancellation service.
-- `src/runner.ts`: one-step thread runner with durable agent failure events.
-- `src/tool-worker.ts`: contract tool worker with credentials, artifacts, progress, retries, policy evidence, and output summaries.
-- `src/daemons.ts`: runner and tool worker daemons backed by explicit inbox claims.
-- `src/api-server.ts`: HTTP API for thread sessions, events, projections, summaries, streams, diagnostics, gates, and signals.
+- `src/thread-service.ts`: session start, child session, gate resolution, signal delivery, child listing, child cancellation, and read APIs.
+- `src/timeline.ts`, `src/summary.ts`: read-model projection and summary helpers.
 - `src/auth-gateway.ts`: HTTP ingress auth gateway composition.
-- `src/policy-contract.ts`: request policy rules and approval policy helpers.
-- `src/workspace-provider.ts`: provider-neutral workspace abstraction and git worktree provider.
-- `src/opencode-adapter.ts`: reusable hardened OpenCode CLI adapter exported through `weave/opencode`.
+
+Runtime (`src/runtime/`, exported from `weave/runtime`, `weave/server`, `weave/testing`, `weave/opencode`):
+
+- `src/runtime/agent-contract.ts`: run-first agent authoring contracts and durable context API.
+- `src/runtime/tool-contract.ts`: typed tool contracts, output summaries, credentials, capabilities, and gates.
+- `src/runtime/app-contract.ts`: `weave` app registry.
+- `src/runtime/agent-runner.ts`: replay adapter for `agent.run`, durable effects, gates, checkpoints, timers, signals, and child threads.
+- `src/runtime/runner.ts`: one-step thread runner with durable agent failure events.
+- `src/runtime/tool-worker.ts`: contract tool worker with credentials, artifacts, progress, retries, policy evidence, and output summaries.
+- `src/runtime/daemons.ts`: runner and tool worker daemons backed by explicit inbox claims.
+- `src/runtime/api-server.ts`: HTTP API for thread sessions, events, projections, summaries, streams, diagnostics, gates, and signals.
+- `src/runtime/policy-contract.ts`: request policy rules and approval policy helpers.
+- `src/runtime/workspace-provider.ts`: provider-neutral workspace abstraction and git worktree provider.
+- `src/runtime/opencode-adapter.ts`: reusable hardened OpenCode CLI adapter exported through `weave/opencode`.
 
 ## Docs
 

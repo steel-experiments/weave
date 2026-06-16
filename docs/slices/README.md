@@ -80,3 +80,4 @@ The slice document should stay alive after implementation. It becomes the compac
 - `58-maintainer-opencode-security-hardening.md`: shipped slice hardening the current maintainer OpenCode adapter with explicit permission profiles, env sanitization, and actual diff enforcement.
 - `59-hardened-weave-opencode-adapter.md`: shipped slice adding a reusable `weave/opencode` adapter with deny-by-default capability and permission profiles.
 - `60-maintainer-adopts-weave-opencode.md`: shipped slice migrating Weave Maintainer onto the reusable `weave/opencode` adapter and explicit maintainer app policy.
+- `61-kernel-runtime-split.md`: shipped slice splitting the replay/agent layer into `src/runtime/` behind `weave/runtime`, leaving a kernel-only `weave` entry with a dependency-cruiser-enforced `core-no-runtime` boundary.

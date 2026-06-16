@@ -1,5 +1,13 @@
 # Glossary
 
+## Weave Kernel
+
+The durable thread/record/coordination substrate, published as `weave`, `weave/postgres`, and `weave/auth`. It owns the event log and closed event union, the `ThreadEngine`/`ThreadLeaseStore` contracts and Postgres engine, projections, the inbox, gates, timers, signals, lineage, the auth gateway, and the read-only `ThreadService`. The kernel has no agent-authoring or replay code and depends on nothing in the runtime, so a host can build directly on the log. The boundary is enforced by `npm run lint:boundaries`. The `weave-core` slice vertical, the `core-no-runtime` boundary rule, and references to the "Core entry" all name this same kernel.
+
+## Weave Runtime
+
+The replay/agent layer on top of the kernel, published as `weave/runtime` (with `weave/server`, `weave/testing`, and `weave/opencode`). It owns `agent`/`tool`/`weave` authoring, the durable `ctx.*` context, the replay runner, daemons, and tool workers. The runtime re-exports the kernel, so it is a strict superset.
+
 ## Agent
 
 The reasoning system that decides what to do next. It may run in different environments and should not be the durable source of truth.
@@ -163,3 +171,7 @@ A runtime-assigned namespace for step keys within a thread. The first authoring 
 ## Ephemeral Compute
 
 The assumption that runtimes and runners may stop at any time without losing the durable source of truth.
+
+## Append Fencing
+
+Optimistic single-writer protection at the engine boundary. `append` accepts an optional `expectedTailSeq` that must equal the thread's current tail — a compare-and-swap under a row lock. Combined with the per-thread unique index on `eventId` and `idempotencyKey`, it lets a writer guarantee it is extending the exact log state it read, so a stale runner that lost its lease cannot double-write or silently advance the log.
