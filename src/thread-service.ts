@@ -108,6 +108,16 @@ export type DeliverSignalResult = {
   waitId: string;
 };
 
+export type OpenGate = {
+  gateId: string;
+  gateType: "manual-approval";
+  reason: string;
+  proposedAction?: string;
+  scopeKey?: string;
+  stepKey?: string;
+  occurredAt: string;
+};
+
 export class ThreadService {
   constructor(private readonly engine: ThreadEngine) {}
 
@@ -478,6 +488,41 @@ export class ThreadService {
     }
 
     return refs;
+  }
+
+  async getSessionMetadata(threadId: string): Promise<SessionMetadata | null> {
+    const events = await this.engine.read(threadId);
+    const started = events.find(
+      (event): event is Extract<ThreadEvent, { type: "session.started" }> =>
+        event.type === "session.started",
+    );
+    return started?.payload.metadata ?? null;
+  }
+
+  async listOpenGates(threadId: string): Promise<readonly OpenGate[]> {
+    const events = await this.engine.read(threadId);
+    const resolved = new Set<string>();
+    for (const event of events) {
+      if (event.type === "gate.resolved") {
+        resolved.add(event.payload.gateId);
+      }
+    }
+    const open: OpenGate[] = [];
+    for (const event of events) {
+      if (event.type !== "gate.created" || resolved.has(event.payload.gateId)) {
+        continue;
+      }
+      open.push({
+        gateId: event.payload.gateId,
+        gateType: event.payload.gateType,
+        reason: event.payload.reason,
+        proposedAction: event.payload.proposedAction,
+        scopeKey: event.scopeKey,
+        stepKey: event.stepKey,
+        occurredAt: event.occurredAt,
+      });
+    }
+    return open;
   }
 
   async resolveGate(
