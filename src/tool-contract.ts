@@ -18,7 +18,7 @@ export type ToolProgressUpdate = {
 
 export type ManualToolGate = {
   type: "manual-approval";
-  reason: "tool-result-requires-approval" | "risky-remediation";
+  reason: string;
   message?: string;
   proposedAction?: string;
 };

@@ -7,7 +7,7 @@ export const ActorSchema = z.object({
 });
 export type Actor = z.infer<typeof ActorSchema>;
 
-export const SessionSourceSchema = z.enum(["api", "test", "system", "github-action"]);
+export const SessionSourceSchema = z.string().min(1);
 export type SessionSource = z.infer<typeof SessionSourceSchema>;
 
 export const SessionMetadataSchema = z.record(z.string(), z.unknown());
@@ -43,22 +43,13 @@ export const AgentStepStartedPayloadSchema = z.object({
 
 export const AgentStepCompletedPayloadSchema = z.object({
   stepId: z.string().uuid(),
-  outcome: z.enum([
-    "requested-tool",
-    "created-gate",
-    "produced-finding",
-    "proposed-remediation",
-    "produced-response",
-    "no-op",
-  ]),
+  outcome: z.enum(["requested-tool", "created-gate", "produced-response", "no-op"]),
 });
 
 export const AgentFailedPayloadSchema = z.object({
   errorCode: z.string().min(1),
   message: z.string().min(1),
 });
-
-export const EnvironmentSchema = z.enum(["staging", "production"]);
 
 export const ToolNameSchema = z.string().min(1);
 
