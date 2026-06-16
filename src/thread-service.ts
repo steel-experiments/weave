@@ -108,6 +108,12 @@ export type DeliverSignalResult = {
   waitId: string;
 };
 
+export type LatestReply = {
+  message: string;
+  eventId: string;
+  occurredAt: string;
+};
+
 export type OpenGate = {
   gateId: string;
   gateType: "manual-approval";
@@ -497,6 +503,39 @@ export class ThreadService {
         event.type === "session.started",
     );
     return started?.payload.metadata ?? null;
+  }
+
+  async getEvents(
+    threadId: string,
+    options: {
+      type?: ThreadEvent["type"] | readonly ThreadEvent["type"][];
+      fromSeq?: number;
+      limit?: number;
+    } = {},
+  ): Promise<readonly ThreadEvent[]> {
+    const events = await this.engine.read(
+      threadId,
+      options.fromSeq !== undefined ? { fromSeq: options.fromSeq } : undefined,
+    );
+    const types =
+      options.type === undefined
+        ? undefined
+        : Array.isArray(options.type)
+          ? options.type
+          : [options.type];
+    const filtered = types ? events.filter((event) => types.includes(event.type)) : events;
+    return options.limit !== undefined ? filtered.slice(0, options.limit) : filtered;
+  }
+
+  async getLatestReply(threadId: string): Promise<LatestReply | null> {
+    const events = await this.engine.read(threadId);
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event && (event.type === "agent.reply.produced" || event.type === "agent.response.produced")) {
+        return { message: event.payload.message, eventId: event.eventId, occurredAt: event.occurredAt };
+      }
+    }
+    return null;
   }
 
   async listOpenGates(threadId: string): Promise<readonly OpenGate[]> {

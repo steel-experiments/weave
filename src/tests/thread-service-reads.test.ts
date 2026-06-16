@@ -36,6 +36,57 @@ test("getSessionMetadata returns null for an unknown thread", async () => {
   assert.equal(meta, null);
 });
 
+async function appendReply(
+  engine: PostgresThreadEngine,
+  threadId: string,
+  type: "agent.reply.produced" | "agent.response.produced",
+  message: string,
+): Promise<void> {
+  await engine.append([
+    {
+      eventId: newEventId(),
+      threadId,
+      type,
+      occurredAt: nowIso(),
+      correlationId: randomUUID(),
+      actor: { type: "system", id: "test" },
+      payload: { message },
+    },
+  ]);
+}
+
+test("getEvents filters by type and preserves order", async () => {
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  await appendReply(engine, threadId, "agent.reply.produced", "first");
+  await appendReply(engine, threadId, "agent.reply.produced", "second");
+
+  const all = await service.getEvents(threadId);
+  assert.ok(all.length >= 4);
+
+  const replies = await service.getEvents(threadId, { type: "agent.reply.produced" });
+  assert.deepEqual(
+    replies.map((event) => (event.type === "agent.reply.produced" ? event.payload.message : null)),
+    ["first", "second"],
+  );
+
+  const limited = await service.getEvents(threadId, { type: "agent.reply.produced", limit: 1 });
+  assert.equal(limited.length, 1);
+  assert.equal(limited[0]?.type, "agent.reply.produced");
+});
+
+test("getLatestReply returns the newest reply or response message", async () => {
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  assert.equal(await service.getLatestReply(threadId), null);
+
+  await appendReply(engine, threadId, "agent.reply.produced", "turn-1");
+  await appendReply(engine, threadId, "agent.response.produced", "final");
+
+  const latest = await service.getLatestReply(threadId);
+  assert.equal(latest?.message, "final");
+  assert.ok(latest?.eventId);
+  assert.ok(latest?.occurredAt);
+});
+
 test("listOpenGates returns open gates and excludes resolved ones", async () => {
   const { threadId } = await service.startSession({
     prompt: "p",
