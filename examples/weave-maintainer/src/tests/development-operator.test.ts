@@ -117,10 +117,10 @@ const projectedStatus = await getInitiativeStatus({
         eventId: newEventId(),
         threadId: "initiative-thread",
         seq: 10,
-        type: "dev.slice.approved",
+        type: "domain.event",
         occurredAt: nowIso(),
         actor: { type: "agent", id: "weave.maintainer" },
-        payload: { sliceId: "02-authenticated-integration-ingress", title: "Authenticated Integration Ingress", approvedBy: "maintainer" },
+        payload: { kind: "dev.slice.approved", data: { sliceId: "02-authenticated-integration-ingress", title: "Authenticated Integration Ingress", approvedBy: "maintainer" } },
       } }] });
     }
     throw new Error(`Unexpected query: ${sql}`);

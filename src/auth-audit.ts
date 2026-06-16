@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import type { AuthContext, AuthorizationDecision, Principal, WeaveAction } from "./auth-gateway.js";
 import type { ThreadEngine } from "./contracts.js";
 import { deterministicUuid, nowIso, type Actor, type ThreadEvent } from "./events.js";
@@ -52,7 +53,21 @@ function firstSubjectHash(principal: Principal): string | undefined {
   return hashProviderSubject(alias.provider, alias.subject);
 }
 
-export function buildAuthDecisionEvent(input: AuthDecisionAuditInput): Extract<ThreadEvent, { type: "auth.decision.recorded" }> {
+export const AUTH_DECISION_RECORDED = "auth.decision.recorded";
+
+export const AuthDecisionRecordedDataSchema = z.object({
+  principalId: z.string().min(1),
+  principalKind: z.string().min(1),
+  provider: z.string().min(1),
+  action: z.string().min(1),
+  resource: z.string().min(1).optional(),
+  decision: z.enum(["allowed", "denied"]),
+  reason: z.string().min(1).optional(),
+  subjectHash: z.string().min(1).optional(),
+});
+export type AuthDecisionRecordedData = z.infer<typeof AuthDecisionRecordedDataSchema>;
+
+export function buildAuthDecisionEvent(input: AuthDecisionAuditInput): Extract<ThreadEvent, { type: "domain.event" }> {
   const actionType = input.action.type;
   const resource = input.resource ?? resourceFromAction(input.action);
   const subjectHash = firstSubjectHash(input.context.principal);
@@ -60,19 +75,22 @@ export function buildAuthDecisionEvent(input: AuthDecisionAuditInput): Extract<T
   return {
     eventId: deterministicUuid("auth-decision", input.threadId, input.context.principal.id, actionType, resource ?? ""),
     threadId: input.threadId,
-    type: "auth.decision.recorded",
+    type: "domain.event",
     occurredAt: nowIso(),
     correlationId: input.correlationId,
     actor: input.actor ?? { type: "system", id: "auth-gateway" },
     payload: {
-      principalId: input.context.principal.id,
-      principalKind: principalKindFromActor(input.actor),
-      provider: input.context.principal.provider,
-      action: actionType,
-      ...(resource ? { resource } : {}),
-      decision: input.decision.allowed ? "allowed" : "denied",
-      ...(input.decision.reason ? { reason: input.decision.reason } : {}),
-      ...(subjectHash ? { subjectHash } : {}),
+      kind: AUTH_DECISION_RECORDED,
+      data: {
+        principalId: input.context.principal.id,
+        principalKind: principalKindFromActor(input.actor),
+        provider: input.context.principal.provider,
+        action: actionType,
+        ...(resource ? { resource } : {}),
+        decision: input.decision.allowed ? "allowed" : "denied",
+        ...(input.decision.reason ? { reason: input.decision.reason } : {}),
+        ...(subjectHash ? { subjectHash } : {}),
+      },
     },
   };
 }

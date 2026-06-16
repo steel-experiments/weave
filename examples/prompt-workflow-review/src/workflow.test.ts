@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { z } from "zod";
+import { isDomainEvent } from "weave";
+import { FINDING_PRODUCED } from "./events.js";
 import {
   RepoListFilesInputSchema,
   RepoReadFileInputSchema,
@@ -136,7 +138,7 @@ assert.equal(result.report.recommendation, "do-not-publish");
 assert.equal(result.report.claims.length, 3);
 assert(result.childThreadIds.length >= 5);
 assert(result.events.some((event) => event.type === "checkpoint.completed"));
-assert(result.events.some((event) => event.type === "agent.finding.produced"));
+assert(result.events.some((event) => isDomainEvent(event, FINDING_PRODUCED)));
 assert(result.allEvents.some((event) => event.type === "policy.evaluated"));
 assert(result.allEvents.some((event) => event.type === "tool.requested" && event.payload.toolName === "repo.searchText"));
 assert(result.allEvents.some((event) => event.type === "tool.requested" && event.payload.toolName === "repo.readRange"));

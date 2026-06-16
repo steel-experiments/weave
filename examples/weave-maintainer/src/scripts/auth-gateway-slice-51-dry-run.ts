@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import { defineWeaveApp, GitWorktreeWorkspaceProvider, PostgresObservabilitySink, toTextTimeline, type CredentialProvider, type CredentialRequest, type CredentialResolution, type CredentialResolutionContext, type DevCommandResult, type DevReviewFinding, type ThreadEvent, type ThreadProjection, type WorkspaceProvider } from "weave";
+import { defineWeaveApp, GitWorktreeWorkspaceProvider, isDomainEvent, PostgresObservabilitySink, toTextTimeline, type CredentialProvider, type CredentialRequest, type CredentialResolution, type CredentialResolutionContext, type ThreadEvent, type ThreadProjection, type WorkspaceProvider } from "weave";
+import type { DevCommandResult, DevReviewFinding } from "../events.js";
 import { createPool, migrate, PostgresThreadEngine } from "weave/postgres";
 import { createWeaveRuntime, ThreadService } from "weave/runtime";
 import {
@@ -447,6 +448,20 @@ function printNewThreadEvents(tree: readonly DryRunThread[], lastSeqByThread: Ma
 }
 
 function shouldPrintLiveEvent(event: ThreadEvent): boolean {
+  if (isDomainEvent(event)) {
+    return [
+      "dev.slice.started",
+      "dev.slice.completed",
+      "dev.slice.failed",
+      "dev.implementation.started",
+      "dev.implementation.completed",
+      "dev.verification.completed",
+      "dev.review.completed",
+      "dev.repair.started",
+      "dev.repair.completed",
+      "dev.pr.ready_for_review",
+    ].includes(event.payload.kind);
+  }
   return [
     "tool.started",
     "tool.progress",
@@ -458,16 +473,6 @@ function shouldPrintLiveEvent(event: ThreadEvent): boolean {
     "gate.created",
     "agent.failed",
     "agent.response.produced",
-    "dev.slice.started",
-    "dev.slice.completed",
-    "dev.slice.failed",
-    "dev.implementation.started",
-    "dev.implementation.completed",
-    "dev.verification.completed",
-    "dev.review.completed",
-    "dev.repair.started",
-    "dev.repair.completed",
-    "dev.pr.ready_for_review",
   ].includes(event.type);
 }
 

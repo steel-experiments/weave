@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { DevelopmentCheckpointKeys, InitiativePlanSchema, SourceCheckpointRestoredSchema, SourceCheckpointSchema, developmentEvents } from "./development-orchestrator.js";
-import { ThreadEventSchema, newEventId, nowIso, type ThreadEvent } from "weave";
+import { ThreadEventSchema, isDomainEvent, newEventId, nowIso, type ThreadEvent } from "weave";
 import { PostgresThreadEngine } from "weave/postgres";
 import { ThreadService } from "weave/runtime";
 
@@ -770,14 +770,22 @@ async function recentEventsForThread(pool: Pool, threadId: string): Promise<Even
 }
 
 function currentSliceFromEvents(events: readonly ThreadEvent[]): OperatorInitiativeStatus["currentSlice"] {
-  const relevant = [...events].reverse().find((event) =>
-    event.type === "dev.slice.started" || event.type === "dev.slice.completed" || event.type === "dev.slice.failed" || event.type === "dev.slice.approved",
+  const relevant = [...events].reverse().find(
+    (event) =>
+      isDomainEvent(event, "dev.slice.started") ||
+      isDomainEvent(event, "dev.slice.completed") ||
+      isDomainEvent(event, "dev.slice.failed") ||
+      isDomainEvent(event, "dev.slice.approved"),
   );
-  if (!relevant || !("sliceId" in relevant.payload) || !("title" in relevant.payload)) {
+  if (!relevant || !isDomainEvent(relevant)) {
     return undefined;
   }
-  const status = relevant.type.replace("dev.slice.", "");
-  return { sliceId: relevant.payload.sliceId, title: relevant.payload.title, status };
+  const sliceRef = z.object({ sliceId: z.string(), title: z.string() }).safeParse(relevant.payload.data);
+  if (!sliceRef.success) {
+    return undefined;
+  }
+  const status = relevant.payload.kind.replace("dev.slice.", "");
+  return { sliceId: sliceRef.data.sliceId, title: sliceRef.data.title, status };
 }
 
 function currentSliceFromOutput(output: ReturnType<typeof initiativeOutputFromRow>): OperatorInitiativeStatus["currentSlice"] {

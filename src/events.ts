@@ -201,7 +201,7 @@ export const CredentialFailedPayloadSchema = z.object({
 export const GateCreatedPayloadSchema = z.object({
   gateId: z.string().uuid(),
   gateType: z.literal("manual-approval"),
-  reason: z.enum(["tool-result-requires-approval", "risky-remediation", "slice-plan-approval", "repair-stop", "source-checkpoint-stop", "pr-review-approval", "finalization-stop"]),
+  reason: z.string().min(1),
   relatedToolCallId: z.string().uuid().optional(),
   proposedAction: z.string().optional(),
 });
@@ -211,6 +211,12 @@ export const GateResolvedPayloadSchema = z.object({
   resolution: z.enum(["approved", "denied"]),
   comment: z.string().optional(),
 });
+
+export const DomainEventPayloadSchema = z.object({
+  kind: z.string().min(1),
+  data: z.unknown(),
+});
+export type DomainEventPayload = z.infer<typeof DomainEventPayloadSchema>;
 
 export const RunnerResumedPayloadSchema = z.object({
   reason: z.enum([
@@ -237,34 +243,6 @@ export const AgentReplyProducedPayloadSchema = z.object({
 export const AgentOutputCompletedPayloadSchema = z.object({
   output: z.unknown(),
   summary: z.string().min(1).optional(),
-});
-
-export const AgentFindingProducedPayloadSchema = z.object({
-  findingId: z.string().uuid(),
-  severity: z.enum(["info", "warning", "critical"]),
-  summary: z.string().min(1),
-  evidence: z.array(
-    z.object({
-      source: z.string().min(1),
-      summary: z.string().min(1),
-    }),
-  ),
-});
-
-export const AgentRemediationProposedPayloadSchema = z.object({
-  remediationId: z.string().uuid(),
-  actionToolName: ToolNameSchema,
-  summary: z.string().min(1),
-  risk: z.enum(["low", "medium", "high"]),
-  requiresApproval: z.boolean(),
-});
-
-export const AgentIncidentReportProducedPayloadSchema = z.object({
-  title: z.string().min(1),
-  summary: z.string().min(1),
-  rootCause: z.string().min(1),
-  actions: z.array(z.string().min(1)),
-  evidence: z.array(z.string().min(1)),
 });
 
 export const CheckpointCompletedPayloadSchema = z.object({
@@ -296,262 +274,6 @@ export const ChildThreadFailedPayloadSchema = z.object({
   childAgentName: z.string().min(1).optional(),
   errorCode: z.string().min(1),
   message: z.string().min(1),
-});
-
-export const DevReviewVerdictSchema = z.enum(["pass", "needs-fixes", "blocked"]);
-export type DevReviewVerdict = z.infer<typeof DevReviewVerdictSchema>;
-
-export const DevReviewFindingSchema = z.object({
-  severity: z.enum(["high", "medium", "low"]),
-  file: z.string().min(1).optional(),
-  line: z.number().int().positive().optional(),
-  issue: z.string().min(1),
-  suggestedFix: z.string().min(1).optional(),
-});
-export type DevReviewFinding = z.infer<typeof DevReviewFindingSchema>;
-
-export const DevCommandResultSchema = z.object({
-  command: z.string().min(1),
-  exitCode: z.number().int().nullable(),
-  status: z.enum(["passed", "failed", "skipped"]),
-  durationMs: z.number().int().nonnegative().optional(),
-  summary: z.string().min(1),
-  output: z.string().optional(),
-});
-export type DevCommandResult = z.infer<typeof DevCommandResultSchema>;
-
-export const DevSourceCheckpointWorkspaceRefSchema = z.object({
-  provider: z.string().min(1),
-  workspaceId: z.string().min(1),
-  path: z.string().min(1),
-  repo: z.string().min(1),
-  baseBranch: z.string().min(1),
-  workingBranch: z.string().min(1),
-  baseCommit: z.string().min(1),
-  parentWorkspaceId: z.string().min(1).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-export const DevSourceCheckpointVerificationSummarySchema = z.object({
-  status: z.enum(["passed", "failed", "blocked"]),
-  commands: z.array(DevCommandResultSchema).default([]),
-});
-
-export const DevSourceCheckpointReviewSummarySchema = z.object({
-  reviewer: z.string().min(1),
-  verdict: DevReviewVerdictSchema,
-  findingCount: z.number().int().nonnegative(),
-});
-
-export const DevSourceCheckpointCreatedPayloadSchema = z.object({
-  checkpointId: z.string().uuid(),
-  initiativeThreadId: z.string().min(1),
-  sliceThreadId: z.string().min(1),
-  sliceId: z.string().min(1),
-  title: z.string().min(1).optional(),
-  workspaceRef: DevSourceCheckpointWorkspaceRefSchema,
-  baseSha: z.string().min(1),
-  checkpointSha: z.string().min(1),
-  changedFiles: z.array(z.string().min(1)).min(1),
-  commitMessage: z.string().min(1),
-  verificationSummary: DevSourceCheckpointVerificationSummarySchema,
-  reviewSummary: z.array(DevSourceCheckpointReviewSummarySchema).default([]),
-  createdAt: z.string().datetime().optional(),
-});
-
-export const DevSourceCheckpointProposedPayloadSchema = DevSourceCheckpointCreatedPayloadSchema.omit({ checkpointSha: true, createdAt: true }).extend({
-  proposedAt: z.string().datetime().optional(),
-});
-
-export const DevSourceCheckpointFailedPayloadSchema = z.object({
-  checkpointId: z.string().uuid().optional(),
-  initiativeThreadId: z.string().min(1),
-  sliceThreadId: z.string().min(1),
-  sliceId: z.string().min(1),
-  title: z.string().min(1).optional(),
-  workspaceRef: DevSourceCheckpointWorkspaceRefSchema.optional(),
-  baseSha: z.string().min(1).optional(),
-  changedFiles: z.array(z.string().min(1)).default([]),
-  commitMessage: z.string().min(1).optional(),
-  reason: z.string().min(1),
-  errorCode: z.string().min(1).optional(),
-  failedAt: z.string().datetime().optional(),
-});
-
-export const DevSourceCheckpointRestoredPayloadSchema = z.object({
-  checkpointId: z.string().uuid(),
-  initiativeThreadId: z.string().min(1),
-  sliceThreadId: z.string().min(1),
-  sliceId: z.string().min(1),
-  title: z.string().min(1).optional(),
-  workspaceRef: DevSourceCheckpointWorkspaceRefSchema,
-  restoredBy: z.string().min(1),
-  fromSha: z.string().min(1),
-  checkpointSha: z.string().min(1),
-  restoredSha: z.string().min(1),
-  dirtyBefore: z.boolean(),
-  forced: z.boolean().default(false),
-  restoredAt: z.string().datetime().optional(),
-});
-
-export const DevInitiativeStartedPayloadSchema = z.object({
-  initiative: z.string().min(1),
-  repo: z.string().min(1),
-  baseBranch: z.string().min(1),
-  workingBranch: z.string().min(1),
-  contextFiles: z.array(z.string().min(1)),
-});
-
-export const DevInitiativeSpecReceivedPayloadSchema = z.object({
-  title: z.string().min(1),
-  source: z.enum(["prd", "statement-of-work", "prompt", "markdown", "manual"]),
-  summary: z.string().min(1).optional(),
-  goals: z.array(z.string().min(1)).default([]),
-  acceptanceCriteria: z.array(z.string().min(1)).default([]),
-  contextFiles: z.array(z.string().min(1)).default([]),
-});
-
-export const DevInitiativePlanProposedPayloadSchema = z.object({
-  initiative: z.string().min(1),
-  repo: z.string().min(1),
-  workingBranch: z.string().min(1),
-  revision: z.number().int().positive(),
-  sliceCount: z.number().int().positive(),
-  summary: z.string().min(1),
-});
-
-export const DevInitiativePlanRevisedPayloadSchema = z.object({
-  initiative: z.string().min(1),
-  revision: z.number().int().positive(),
-  sliceCount: z.number().int().positive(),
-  summary: z.string().min(1),
-  reason: z.string().min(1),
-});
-
-export const DevInitiativePlanApprovedPayloadSchema = z.object({
-  initiative: z.string().min(1),
-  revision: z.number().int().positive(),
-  approvedBy: z.string().min(1),
-  sliceCount: z.number().int().positive(),
-  summary: z.string().min(1),
-});
-
-export const DevInitiativePlanRejectedPayloadSchema = z.object({
-  initiative: z.string().min(1),
-  revision: z.number().int().positive(),
-  rejectedBy: z.string().min(1),
-  reason: z.string().min(1),
-});
-
-export const DevSliceProposedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  title: z.string().min(1),
-  objective: z.string().min(1),
-  acceptanceCriteria: z.array(z.string().min(1)),
-  requiredReviewers: z.array(z.string().min(1)).default([]),
-});
-
-export const DevSliceApprovedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  title: z.string().min(1),
-  approvedBy: z.string().min(1),
-});
-
-export const DevSliceStartedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  title: z.string().min(1),
-  branch: z.string().min(1),
-});
-
-export const DevSliceCompletedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  title: z.string().min(1),
-  branch: z.string().min(1),
-  summary: z.string().min(1),
-  testsPassed: z.boolean(),
-  reviewVerdicts: z.array(DevReviewVerdictSchema),
-});
-
-export const DevSliceFailedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  title: z.string().min(1),
-  branch: z.string().min(1),
-  reason: z.string().min(1),
-  findings: z.array(DevReviewFindingSchema).default([]),
-});
-
-export const DevImplementationStartedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  branch: z.string().min(1),
-  agentName: z.string().min(1),
-});
-
-export const DevImplementationCompletedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  branch: z.string().min(1),
-  summary: z.string().min(1),
-  filesChanged: z.array(z.string().min(1)),
-  testsAdded: z.array(z.string().min(1)).default([]),
-  knownLimitations: z.array(z.string().min(1)).default([]),
-});
-
-export const DevVerificationCompletedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  branch: z.string().min(1),
-  status: z.enum(["passed", "failed", "blocked"]),
-  commands: z.array(DevCommandResultSchema),
-});
-
-export const DevReviewCompletedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  reviewer: z.string().min(1),
-  verdict: DevReviewVerdictSchema,
-  findings: z.array(DevReviewFindingSchema),
-});
-
-export const DevRepairStartedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  branch: z.string().min(1),
-  attempt: z.number().int().nonnegative(),
-  findings: z.array(DevReviewFindingSchema),
-});
-
-export const DevRepairCompletedPayloadSchema = z.object({
-  sliceId: z.string().min(1),
-  branch: z.string().min(1),
-  attempt: z.number().int().nonnegative(),
-  status: z.enum(["completed", "failed", "blocked"]),
-  summary: z.string().min(1),
-});
-
-export const DevPrOpenedPayloadSchema = z.object({
-  branch: z.string().min(1),
-  url: z.string().url(),
-  title: z.string().min(1),
-});
-
-export const DevPrUpdatedPayloadSchema = z.object({
-  branch: z.string().min(1),
-  url: z.string().url(),
-  summary: z.string().min(1),
-});
-
-export const DevPrReadyForReviewPayloadSchema = z.object({
-  branch: z.string().min(1),
-  url: z.string().url().optional(),
-  summary: z.string().min(1),
-  shippedSlices: z.array(z.string().min(1)),
-});
-
-export const AuthDecisionRecordedPayloadSchema = z.object({
-  principalId: z.string().min(1),
-  principalKind: z.string().min(1),
-  provider: z.string().min(1),
-  action: z.string().min(1),
-  resource: z.string().min(1).optional(),
-  decision: z.enum(["allowed", "denied"]),
-  reason: z.string().min(1).optional(),
-  subjectHash: z.string().min(1).optional(),
 });
 
 const SessionStartedEventSchema = EventEnvelopeBaseSchema.extend({
@@ -654,6 +376,11 @@ const GateResolvedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: GateResolvedPayloadSchema,
 });
 
+const DomainEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("domain.event"),
+  payload: DomainEventPayloadSchema,
+});
+
 const RunnerResumedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("runner.resumed"),
   payload: RunnerResumedPayloadSchema,
@@ -674,21 +401,6 @@ const AgentOutputCompletedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: AgentOutputCompletedPayloadSchema,
 });
 
-const AgentFindingProducedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("agent.finding.produced"),
-  payload: AgentFindingProducedPayloadSchema,
-});
-
-const AgentRemediationProposedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("agent.remediation.proposed"),
-  payload: AgentRemediationProposedPayloadSchema,
-});
-
-const AgentIncidentReportProducedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("agent.incident_report.produced"),
-  payload: AgentIncidentReportProducedPayloadSchema,
-});
-
 const CheckpointCompletedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("checkpoint.completed"),
   payload: CheckpointCompletedPayloadSchema,
@@ -707,131 +419,6 @@ const ChildThreadCompletedEventSchema = EventEnvelopeBaseSchema.extend({
 const ChildThreadFailedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("child_thread.failed"),
   payload: ChildThreadFailedPayloadSchema,
-});
-
-const DevInitiativeStartedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.initiative.started"),
-  payload: DevInitiativeStartedPayloadSchema,
-});
-
-const DevInitiativeSpecReceivedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.initiative.spec_received"),
-  payload: DevInitiativeSpecReceivedPayloadSchema,
-});
-
-const DevInitiativePlanProposedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.initiative.plan_proposed"),
-  payload: DevInitiativePlanProposedPayloadSchema,
-});
-
-const DevInitiativePlanRevisedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.initiative.plan_revised"),
-  payload: DevInitiativePlanRevisedPayloadSchema,
-});
-
-const DevInitiativePlanApprovedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.initiative.plan_approved"),
-  payload: DevInitiativePlanApprovedPayloadSchema,
-});
-
-const DevInitiativePlanRejectedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.initiative.plan_rejected"),
-  payload: DevInitiativePlanRejectedPayloadSchema,
-});
-
-const DevSliceProposedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.slice.proposed"),
-  payload: DevSliceProposedPayloadSchema,
-});
-
-const DevSliceApprovedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.slice.approved"),
-  payload: DevSliceApprovedPayloadSchema,
-});
-
-const DevSliceStartedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.slice.started"),
-  payload: DevSliceStartedPayloadSchema,
-});
-
-const DevSliceCompletedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.slice.completed"),
-  payload: DevSliceCompletedPayloadSchema,
-});
-
-const DevSliceFailedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.slice.failed"),
-  payload: DevSliceFailedPayloadSchema,
-});
-
-const DevImplementationStartedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.implementation.started"),
-  payload: DevImplementationStartedPayloadSchema,
-});
-
-const DevImplementationCompletedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.implementation.completed"),
-  payload: DevImplementationCompletedPayloadSchema,
-});
-
-const DevVerificationCompletedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.verification.completed"),
-  payload: DevVerificationCompletedPayloadSchema,
-});
-
-const DevReviewCompletedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.review.completed"),
-  payload: DevReviewCompletedPayloadSchema,
-});
-
-const DevRepairStartedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.repair.started"),
-  payload: DevRepairStartedPayloadSchema,
-});
-
-const DevRepairCompletedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.repair.completed"),
-  payload: DevRepairCompletedPayloadSchema,
-});
-
-const DevPrOpenedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.pr.opened"),
-  payload: DevPrOpenedPayloadSchema,
-});
-
-const DevPrUpdatedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.pr.updated"),
-  payload: DevPrUpdatedPayloadSchema,
-});
-
-const DevPrReadyForReviewEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.pr.ready_for_review"),
-  payload: DevPrReadyForReviewPayloadSchema,
-});
-
-const DevSourceCheckpointProposedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.source_checkpoint.proposed"),
-  payload: DevSourceCheckpointProposedPayloadSchema,
-});
-
-const DevSourceCheckpointCreatedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.source_checkpoint.created"),
-  payload: DevSourceCheckpointCreatedPayloadSchema,
-});
-
-const DevSourceCheckpointFailedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.source_checkpoint.failed"),
-  payload: DevSourceCheckpointFailedPayloadSchema,
-});
-
-const DevSourceCheckpointRestoredEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("dev.source_checkpoint.restored"),
-  payload: DevSourceCheckpointRestoredPayloadSchema,
-});
-
-const AuthDecisionRecordedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("auth.decision.recorded"),
-  payload: AuthDecisionRecordedPayloadSchema,
 });
 
 export const ThreadEventSchema = z.discriminatedUnion("type", [
@@ -855,46 +442,26 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   CredentialFailedEventSchema,
   GateCreatedEventSchema,
   GateResolvedEventSchema,
+  DomainEventSchema,
   RunnerResumedEventSchema,
   AgentResponseProducedEventSchema,
   AgentReplyProducedEventSchema,
   AgentOutputCompletedEventSchema,
-  AgentFindingProducedEventSchema,
-  AgentRemediationProposedEventSchema,
-  AgentIncidentReportProducedEventSchema,
   CheckpointCompletedEventSchema,
   ChildThreadSpawnedEventSchema,
   ChildThreadCompletedEventSchema,
   ChildThreadFailedEventSchema,
-  DevInitiativeStartedEventSchema,
-  DevInitiativeSpecReceivedEventSchema,
-  DevInitiativePlanProposedEventSchema,
-  DevInitiativePlanRevisedEventSchema,
-  DevInitiativePlanApprovedEventSchema,
-  DevInitiativePlanRejectedEventSchema,
-  DevSliceProposedEventSchema,
-  DevSliceApprovedEventSchema,
-  DevSliceStartedEventSchema,
-  DevSliceCompletedEventSchema,
-  DevSliceFailedEventSchema,
-  DevImplementationStartedEventSchema,
-  DevImplementationCompletedEventSchema,
-  DevVerificationCompletedEventSchema,
-  DevReviewCompletedEventSchema,
-  DevRepairStartedEventSchema,
-  DevRepairCompletedEventSchema,
-  DevPrOpenedEventSchema,
-  DevPrUpdatedEventSchema,
-  DevPrReadyForReviewEventSchema,
-  DevSourceCheckpointProposedEventSchema,
-  DevSourceCheckpointCreatedEventSchema,
-  DevSourceCheckpointFailedEventSchema,
-  DevSourceCheckpointRestoredEventSchema,
-  AuthDecisionRecordedEventSchema,
 ]);
 
 export type ThreadEvent = z.infer<typeof ThreadEventSchema>;
 export type ThreadEventType = ThreadEvent["type"];
+
+export function isDomainEvent(
+  event: ThreadEvent,
+  kind?: string,
+): event is Extract<ThreadEvent, { type: "domain.event" }> {
+  return event.type === "domain.event" && (kind === undefined || event.payload.kind === kind);
+}
 
 export const ThreadStatusSchema = z.enum([
   "idle",
@@ -934,11 +501,6 @@ export const ThreadSummarySchema = z.object({
     status: ThreadExecutionStatusSchema,
     errorCode: z.string().min(1).nullable(),
     message: z.string().min(1).nullable(),
-  }),
-  findings: z.object({
-    critical: z.number().int().nonnegative(),
-    warning: z.number().int().nonnegative(),
-    info: z.number().int().nonnegative(),
   }),
   finalMessage: z.string().min(1).nullable(),
   tailSeq: z.number().int().nonnegative(),

@@ -154,6 +154,20 @@ export function defineEvent<const Type extends ThreadEvent["type"]>(
 
 export const event = defineEvent;
 
+export function domainEvent<Data>(
+  kind: string,
+  schema: z.ZodType<Data>,
+  data: Data,
+  metadata: AgentEventMetadata = {},
+): AgentEventInput<"domain.event"> {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    throw new WeaveError("EVENT_PAYLOAD_INVALID", `Invalid payload for domain event ${kind}`, result.error);
+  }
+
+  return { ...metadata, type: "domain.event", payload: { kind, data: result.data } };
+}
+
 export type AgentContext<
   Tools extends readonly AnyToolContract[] = readonly AnyToolContract[],
 > = {

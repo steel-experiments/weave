@@ -4,6 +4,7 @@ import { AddressInfo } from "node:net";
 import {
   ThreadArtifactSchema,
   getAgent,
+  isDomainEvent,
   type ThreadEvent,
   type ThreadProjection,
   type ThreadSummary,
@@ -12,6 +13,7 @@ import { ContractToolWorker, ThreadRunner, ThreadService, createWeaveRuntime } f
 import { PostgresThreadArtifactStore, PostgresThreadEngine, createPool, migrate } from "weave/postgres";
 import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";
+import { FINDING_PRODUCED, FindingProducedSchema } from "./events.js";
 import { startSteelFixtureServer } from "./fixtures.js";
 import { createSteelDocsSyncApiServer, type SteelDocsSyncWebhookPayload } from "./server.js";
 
@@ -137,17 +139,26 @@ try {
     const toolCompleted = events.find((event) => event.type === "tool.completed");
     const finalResponse = events.find((event) => event.type === "agent.response.produced");
 
+    const findingSeverities = events
+      .filter((event) => isDomainEvent(event, FINDING_PRODUCED))
+      .map((event) => FindingProducedSchema.parse(event.payload.data).severity);
+    const findingBreakdown = {
+      critical: findingSeverities.filter((severity) => severity === "critical").length,
+      warning: findingSeverities.filter((severity) => severity === "warning").length,
+      info: findingSeverities.filter((severity) => severity === "info").length,
+    };
+
     assert.equal(finalProjection.status, "completed");
     assert.equal(summary.status, "completed");
-    assert.equal(summary.outcome, "warning");
+    assert.equal(summary.outcome, "passed");
     assert.equal(summary.execution.status, "succeeded");
-    assert.deepEqual(summary.findings, { critical: 0, warning: 2, info: 0 });
+    assert.deepEqual(findingBreakdown, { critical: 0, warning: 2, info: 0 });
     assert.equal(streamed.summary.status, "completed");
-    assert.equal(streamed.summary.outcome, "warning");
+    assert.equal(streamed.summary.outcome, "passed");
     assert.equal(streamed.summary.execution.status, "succeeded");
     assert.equal(streamed.completed.status, "completed");
     assert(streamed.events.every((event) => (event.seq ?? 0) > firstStreamEvent.id));
-    assert.equal(streamed.events.filter((event) => event.type === "agent.finding.produced").length, 2);
+    assert.equal(streamed.events.filter((event) => isDomainEvent(event, FINDING_PRODUCED)).length, 2);
     assert(sessionStarted?.type === "session.started");
     assert.equal(sessionStarted.payload.source, "github-action");
     assert.deepEqual(sessionStarted.payload.metadata, payload);

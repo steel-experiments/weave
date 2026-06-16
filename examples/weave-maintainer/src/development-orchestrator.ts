@@ -3,40 +3,22 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { agent, capability, event, tool, type AgentContext, type AgentContract, type CapabilityDeclaration, type ToolProgressUpdate } from "weave";
+import { agent, capability, tool, type AgentContext, type AgentContract, type CapabilityDeclaration, type ToolProgressUpdate } from "weave";
+import { deterministicUuid } from "weave";
 import {
-  DevImplementationCompletedPayloadSchema,
-  DevImplementationStartedPayloadSchema,
-  DevInitiativePlanApprovedPayloadSchema,
-  DevInitiativePlanProposedPayloadSchema,
-  DevInitiativePlanRejectedPayloadSchema,
-  DevInitiativePlanRevisedPayloadSchema,
-  DevInitiativeSpecReceivedPayloadSchema,
-  DevInitiativeStartedPayloadSchema,
-  DevPrOpenedPayloadSchema,
-  DevPrReadyForReviewPayloadSchema,
-  DevPrUpdatedPayloadSchema,
-  DevRepairCompletedPayloadSchema,
-  DevRepairStartedPayloadSchema,
-  DevReviewCompletedPayloadSchema,
+  DevCommandResultSchema,
   DevReviewFindingSchema,
   DevReviewVerdictSchema,
-  DevSliceApprovedPayloadSchema,
-  DevSliceCompletedPayloadSchema,
-  DevSliceFailedPayloadSchema,
-  DevSliceProposedPayloadSchema,
-  DevSliceStartedPayloadSchema,
   DevSourceCheckpointCreatedPayloadSchema,
   DevSourceCheckpointFailedPayloadSchema,
   DevSourceCheckpointProposedPayloadSchema,
   DevSourceCheckpointReviewSummarySchema,
   DevSourceCheckpointRestoredPayloadSchema,
   DevSourceCheckpointVerificationSummarySchema,
-  DevVerificationCompletedPayloadSchema,
-  DevCommandResultSchema,
-  deterministicUuid,
+  developmentEvents,
   type DevReviewFinding,
-} from "weave";
+} from "./events.js";
+export { developmentEvents };
 import {
   WorkspaceRefSchema,
   WorkspaceAllocateInputSchema,
@@ -1401,176 +1383,6 @@ export function createGitLocalMergeFinalizationRunner(): LocalMergeFinalizationR
   };
 }
 
-export const developmentEvents = {
-  initiativeStarted: event({
-    type: "dev.initiative.started",
-    payload: DevInitiativeStartedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A development initiative thread started.",
-  }),
-  initiativeSpecReceived: event({
-    type: "dev.initiative.spec_received",
-    payload: DevInitiativeSpecReceivedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A PRD or statement of work was recorded for planning.",
-  }),
-  initiativePlanProposed: event({
-    type: "dev.initiative.plan_proposed",
-    payload: DevInitiativePlanProposedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A schema-valid initiative plan was proposed for human approval.",
-  }),
-  initiativePlanRevised: event({
-    type: "dev.initiative.plan_revised",
-    payload: DevInitiativePlanRevisedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A proposed initiative plan was revised before approval.",
-  }),
-  initiativePlanApproved: event({
-    type: "dev.initiative.plan_approved",
-    payload: DevInitiativePlanApprovedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A proposed initiative plan was approved for execution.",
-  }),
-  initiativePlanRejected: event({
-    type: "dev.initiative.plan_rejected",
-    payload: DevInitiativePlanRejectedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A proposed initiative plan was rejected before execution.",
-  }),
-  sliceProposed: event({
-    type: "dev.slice.proposed",
-    payload: DevSliceProposedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A development slice was proposed for human approval.",
-  }),
-  sliceApproved: event({
-    type: "dev.slice.approved",
-    payload: DevSliceApprovedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A development slice was approved for implementation.",
-  }),
-  sliceStarted: event({
-    type: "dev.slice.started",
-    payload: DevSliceStartedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "Implementation work started for one development slice.",
-  }),
-  sliceCompleted: event({
-    type: "dev.slice.completed",
-    payload: DevSliceCompletedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A development slice passed required verification and review.",
-  }),
-  sliceFailed: event({
-    type: "dev.slice.failed",
-    payload: DevSliceFailedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A development slice failed or stopped before completion.",
-  }),
-  implementationStarted: event({
-    type: "dev.implementation.started",
-    payload: DevImplementationStartedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "An OpenCode-backed implementation child thread started.",
-  }),
-  implementationCompleted: event({
-    type: "dev.implementation.completed",
-    payload: DevImplementationCompletedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "An OpenCode-backed implementation child thread returned its summary.",
-  }),
-  verificationCompleted: event({
-    type: "dev.verification.completed",
-    payload: DevVerificationCompletedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "Deterministic verification finished for a development slice.",
-  }),
-  reviewCompleted: event({
-    type: "dev.review.completed",
-    payload: DevReviewCompletedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A read-only reviewer finished evaluating a development slice.",
-  }),
-  repairStarted: event({
-    type: "dev.repair.started",
-    payload: DevRepairStartedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A bounded repair attempt started for a development slice.",
-  }),
-  repairCompleted: event({
-    type: "dev.repair.completed",
-    payload: DevRepairCompletedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A bounded repair attempt completed for a development slice.",
-  }),
-  prOpened: event({
-    type: "dev.pr.opened",
-    payload: DevPrOpenedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A development initiative PR was opened.",
-  }),
-  prUpdated: event({
-    type: "dev.pr.updated",
-    payload: DevPrUpdatedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A development initiative PR was updated.",
-  }),
-  prReadyForReview: event({
-    type: "dev.pr.ready_for_review",
-    payload: DevPrReadyForReviewPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A development initiative PR draft is ready for human review.",
-  }),
-  sourceCheckpointProposed: event({
-    type: "dev.source_checkpoint.proposed",
-    payload: DevSourceCheckpointProposedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A source checkpoint is ready to be created for a completed development slice.",
-  }),
-  sourceCheckpointCreated: event({
-    type: "dev.source_checkpoint.created",
-    payload: DevSourceCheckpointCreatedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A source checkpoint was created for a completed development slice.",
-  }),
-  sourceCheckpointFailed: event({
-    type: "dev.source_checkpoint.failed",
-    payload: DevSourceCheckpointFailedPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "A source checkpoint could not be created for a development slice.",
-  }),
-  sourceCheckpointRestored: event({
-    type: "dev.source_checkpoint.restored",
-    payload: DevSourceCheckpointRestoredPayloadSchema,
-    visibility: "internal",
-    version: 1,
-    description: "An operator restored an initiative workspace to a source checkpoint.",
-  }),
-} as const;
 
 export function buildDevelopmentSlicePlan(input: DevelopmentInitiativeInput): DevelopmentSlicePlan {
   if (!input.slices?.length) {

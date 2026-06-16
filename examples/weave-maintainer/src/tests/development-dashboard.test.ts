@@ -39,15 +39,18 @@ try {
     {
       eventId: newEventId(),
       threadId,
-      type: "dev.initiative.started",
+      type: "domain.event",
       occurredAt: nowIso(),
       actor: { type: "agent", id: "weave.maintainer" },
       payload: {
-        initiative: "Dashboard State Regression",
-        repo: "weave",
-        baseBranch: "main",
-        workingBranch: "dashboard-state-regression",
-        contextFiles: ["README.md"],
+        kind: "dev.initiative.started",
+        data: {
+          initiative: "Dashboard State Regression",
+          repo: "weave",
+          baseBranch: "main",
+          workingBranch: "dashboard-state-regression",
+          contextFiles: ["README.md"],
+        },
       },
     },
     {

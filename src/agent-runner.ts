@@ -1434,10 +1434,7 @@ function capabilityDescriptors(capabilities: readonly CapabilityDeclaration[]): 
 
 function hasTerminalAgentResponse(events: readonly ThreadEvent[]): boolean {
   return events.some(
-    (event) =>
-      event.type === "agent.response.produced" ||
-      event.type === "agent.incident_report.produced" ||
-      event.type === "agent.failed",
+    (event) => event.type === "agent.response.produced" || event.type === "agent.failed",
   );
 }
 

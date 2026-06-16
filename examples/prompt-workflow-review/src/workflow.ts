@@ -2,6 +2,7 @@ import {
   ThreadService,
   agent,
   deterministicUuid,
+  domainEvent,
   event,
   eventKey,
   nowIso,
@@ -55,6 +56,7 @@ import {
   type OpenCodeSessionRunner,
   type RepoSearchTextOutput,
 } from "./opencode-adapter.js";
+import { FINDING_PRODUCED, FindingProducedSchema } from "./events.js";
 
 const SAFE_CAPABILITIES = new Set(["repo.read"]);
 const REGISTERED_WORKFLOW_AGENT_NAMES = new Set([
@@ -160,7 +162,7 @@ export const workflowCustomizeAgent = agent({
     );
     await ctx.emit(
       "workflow-plan-summary",
-      event("agent.finding.produced", {
+      domainEvent(FINDING_PRODUCED, FindingProducedSchema, {
         findingId: ctx.id("workflow-plan-summary"),
         severity: planRequiresApproval(plan) ? "warning" : "info",
         summary: `Workflow plan selected ${plan.pattern} with ${plan.steps.length} deterministic steps.`,

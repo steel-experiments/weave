@@ -1,5 +1,6 @@
-import { agent, event } from "weave";
+import { agent, domainEvent, event } from "weave";
 import { z } from "zod";
+import { FINDING_PRODUCED, FindingProducedSchema } from "./events.js";
 import {
   steelAuditTool,
   steelModelReviewTool,
@@ -13,22 +14,6 @@ export const SteelDocsSessionMetadataSchema = z.object({
   docsBaseUrl: z.string().url(),
   llmsTxtUrl: z.string().url(),
   openApiSpecUrl: z.string().url().optional(),
-});
-
-const findingProduced = event({
-  type: "agent.finding.produced",
-  payload: z.object({
-    findingId: z.string().uuid(),
-    severity: z.enum(["info", "warning", "critical"]),
-    summary: z.string().min(1),
-    evidence: z.array(
-      z.object({
-        source: z.string().min(1),
-        summary: z.string().min(1),
-      }),
-    ),
-  }),
-  description: "Structured finding produced by the Steel docs sync model review.",
 });
 
 const responseProduced = event({
@@ -51,7 +36,7 @@ export const steelDocsAgent = agent({
     for (const [index, finding] of reviewData.findings.entries()) {
       await ctx.emit(
         `model-review-finding:${index}`,
-        findingProduced({
+        domainEvent(FINDING_PRODUCED, FindingProducedSchema, {
           findingId: ctx.id(`model-review-finding:${index}`),
           severity: finding.severity,
           summary: finding.summary,
