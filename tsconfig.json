@@ -9,7 +9,17 @@
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,
     "rootDir": ".",
-    "outDir": "dist"
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "weave": ["./src/index.ts"],
+      "weave/runtime": ["./src/runtime-entry.ts"],
+      "weave/postgres": ["./src/postgres-entry.ts"],
+      "weave/server": ["./src/server-entry.ts"],
+      "weave/testing": ["./src/testing-entry.ts"],
+      "weave/auth": ["./src/auth-entry.ts"],
+      "weave/opencode": ["./src/opencode-entry.ts"]
+    }
   },
   "include": ["src/**/*.ts"]
 }

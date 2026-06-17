@@ -6,20 +6,27 @@ This document tracks the current open-source release state for Weave. It is inte
 
 - Core runtime, Postgres storage, API server, auth gateway, policies, durable effects, and examples are implemented in TypeScript.
 - `npm run typecheck` and `npm test` are the baseline local verification commands.
-- The package is private and exports TypeScript source for local workspace use.
+- A `tsc` build emits JavaScript and declarations to `dist/`; `exports` point at `dist`, `files` narrows the publish manifest, and the package is MIT-licensed. It remains `private: true` as a safety latch until the publish decision. Local development still resolves the `weave` subpaths to source via `tsconfig` path mapping, so no build is needed to run tests or examples.
 - The root README documents the current local development workflow and current public API shape.
 
 ## Release Blockers
 
-- Choose and add an open-source license in `LICENSE` and `package.json`.
-- Add repository metadata once the public repository URL is final: `repository`, `homepage`, `bugs`, and maintainer ownership.
-- Add a real build pipeline that emits JavaScript and declaration files to `dist`.
-- Point `exports` at built files instead of `src/*.ts` before publishing.
-- Finalize the publish manifest after the build pipeline exists so npm packages contain built files, public docs, and any examples intentionally shipped to consumers.
+Done in publish prep:
+
+- MIT license added in `LICENSE` and `package.json`.
+- `tsc` build pipeline (`npm run build`, `tsconfig.build.json`) emits JS + `.d.ts` to `dist/`.
+- `exports` point at the built `dist/` files; `files` narrows the publish manifest to `dist`, `README.md`, and `LICENSE`; `prepack` builds before pack/publish.
+- CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm run typecheck`, `npm run build`, `npm test` against a Postgres service, and `npm pack --dry-run`.
+- Repository metadata (`repository`, `homepage`, `bugs`, `author`) added with the current `steel-experiments/weave` URL.
+- Blade product-planning docs relocated to the Blade app (`apps/blade/docs/`); the north-star framing now treats Blade as the primary consumer rather than this repo's product.
+
+Remaining before `npm publish`:
+
+- Flip `private: true` to `false` (kept as a safety latch during prep).
+- Confirm the npm package name. `weave` is unscoped and likely already taken on the public registry; a scope such as `@steel/weave` would change consumer imports — including the in-repo Blade app, which imports `weave` and `weave/postgres`. Finalize the public repository URL at the same time.
 - Decide whether the kernel and runtime ship as one package with subpaths or as two separate npm packages. Current decision: one package with subpaths (see Packaging Decision below). The narrower-root question is resolved — the root `weave` export is now kernel-only.
-- Add CI for `npm ci`, `npm run typecheck`, `npm test`, and `npm pack --dry-run`.
 - Add public project governance docs before launch: `CONTRIBUTING.md`, `SECURITY.md`, and a changelog or release notes policy.
-- Done: Blade product-planning docs were relocated to the Blade app (`apps/blade/docs/`), and the repository's north-star framing now treats Blade as the primary consumer rather than this repo's product. Keep Blade-specific product planning out of `docs/` before publishing.
+- Keep Blade-specific product planning out of `docs/`.
 - Revoke any API keys that have ever existed in local ignored `.env` files before the repository becomes public.
 
 ## Recommended Publish Shape
@@ -61,8 +68,9 @@ Run before opening the repository publicly:
 ```sh
 npm ci
 npm run typecheck
+npm run build
 npm test
 npm pack --dry-run
 ```
 
-After a build pipeline exists, include the build command in the checklist and verify a sample consumer can import each documented package subpath from the packed tarball.
+Before the first publish, verify a sample consumer can import each documented package subpath from the packed tarball (`.`, `/runtime`, `/postgres`, `/server`, `/testing`, `/auth`, `/opencode`), and that types resolve.

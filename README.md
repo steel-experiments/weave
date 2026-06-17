@@ -23,7 +23,7 @@ Weave does not persist JavaScript continuations. When a durable operation is pen
 - Storage status: Postgres-backed implementation using a dedicated `weave` schema.
 - Authoring API: current preferred API is `agent`, `tool`, `weave`, `event`, `capability`, `policy`, and durable `ctx.*` operations, exported from `weave/runtime` (the bare `weave` entry is the kernel).
 - Compatibility: older planner-style agents and legacy tool output envelopes are still supported as migration paths.
-- Packaging status: not npm-publish-ready yet. `package.json` remains `private: true` and exports TypeScript source for local workspace use.
+- Packaging status: a `tsc` build emits JavaScript and declaration files to `dist/`, `exports` point at the built files, `files` narrows the publish manifest, and the package is MIT-licensed. Remaining before `npm publish`: flip `private: true`, finalize the public repository URL and package name, and complete `docs/release-readiness.md`.
 - Release status: see `docs/release-readiness.md` for remaining open-source blockers.
 
 ## Requirements
@@ -52,6 +52,16 @@ npm install
 npm run typecheck
 npm test
 ```
+
+## Build
+
+Local development resolves the `weave` subpaths to TypeScript source (via `tsconfig` path mapping), so no build is needed to run tests or examples. To produce the publishable artifact, compile to `dist/` with `tsc`:
+
+```sh
+npm run build
+```
+
+The package `exports` point at the built `dist/` files; the build also runs automatically before `npm pack`/`npm publish` via `prepack`.
 
 Run migrations without resetting existing data:
 
@@ -138,7 +148,7 @@ Local workspace subpaths:
 - `weave/auth`: auth gateway, access rules, JWT helper, and identity adapter contract tests. Kernel-only.
 - `weave/opencode`: hardened OpenCode CLI adapter, permission profiles, capability mapping, bounded execution, env sanitization, JSON output validation, and actual Git diff enforcement (runtime).
 
-These boundaries are the intended public shape, but the package still needs a compiled `dist` build and a narrowed publish manifest before npm publication.
+These boundaries are the intended public shape. The package builds to `dist/` (`npm run build`), `exports` point at the built files, and `files` narrows the publish manifest to `dist`, `README.md`, and `LICENSE`. Remaining npm-publication steps are tracked in `docs/release-readiness.md`.
 
 ## Local PoC Commands
 
