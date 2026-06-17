@@ -19,7 +19,7 @@ This document tracks the current open-source release state for Weave. It is inte
 - Decide whether the kernel and runtime ship as one package with subpaths or as two separate npm packages. Current decision: one package with subpaths (see Packaging Decision below). The narrower-root question is resolved — the root `weave` export is now kernel-only.
 - Add CI for `npm ci`, `npm run typecheck`, `npm test`, and `npm pack --dry-run`.
 - Add public project governance docs before launch: `CONTRIBUTING.md`, `SECURITY.md`, and a changelog or release notes policy.
-- Relocate or clearly fence Blade product-planning docs (`docs/blade`, plus Blade-specific north-star material referenced from `docs/README.md`). Blade is a separate product that consumes the kernel; its product roadmap should not define the OSS kernel repository's first impression. Candidate home: the Blade app repository.
+- Done: Blade product-planning docs were relocated to the Blade app (`apps/blade/docs/`), and the repository's north-star framing now treats Blade as the primary consumer rather than this repo's product. Keep Blade-specific product planning out of `docs/` before publishing.
 - Revoke any API keys that have ever existed in local ignored `.env` files before the repository becomes public.
 
 ## Recommended Publish Shape

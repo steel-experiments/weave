@@ -37,8 +37,8 @@ Use these docs to understand prior reasoning, external systems, and design press
 
 Research should become implementation only after it is linked from one of these places:
 
-- a slice document under `../blade/slices/`, `../docs-sync/slices/`, or another vertical
+- a slice document under `../docs-sync/slices/`, the Blade app, or another vertical
 - a core architecture doc such as `../architecture.md`, `../interface.md`, `../event-taxonomy.md`, or `../runnable-inbox.md`
-- a product north-star doc such as `../blade/overview.md`
+- a product north-star doc, such as the Blade app's `docs/overview.md`
 
 Until then, treat it as useful context, not committed direction.

@@ -126,13 +126,13 @@ In the strongest version of this project:
 
 The long-term ambition is to become the shared event and control substrate for open agent systems.
 
-## North Star Product
+## Primary Consumer
 
-Blade is now the product north star for proving Weave in production-shaped workflows.
+Blade is the primary consumer that proves Weave in production-shaped workflows. It is a separate product living in the Blade app (`apps/blade`), not in this repository.
 
-The original SRE agent harness remains a strong target workflow, but it should be treated as one Blade slice rather than the whole north star.
+The original SRE agent harness remains a strong target workflow, but it is best treated as one Blade slice rather than a separate north star.
 
-See `blade/overview.md` for the product direction and `north-star-sre-demo.md` for the SRE workflow input.
+See the Blade app's `docs/overview.md` for the product direction and `north-star-sre-demo.md` for the SRE workflow input.
 
 ## Principles
 

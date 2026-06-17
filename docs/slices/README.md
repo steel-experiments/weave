@@ -2,7 +2,7 @@
 
 This directory contains shared rules and templates for vertical implementation slices.
 
-Use `template.md` when creating a new slice under a vertical such as `blade/slices/` or `docs-sync/slices/`.
+Use `template.md` when creating a new slice under a vertical such as `docs-sync/slices/` (Blade slices live in the Blade app).
 
 ## Required Pattern
 
