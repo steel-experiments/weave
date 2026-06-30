@@ -114,10 +114,6 @@ create table if not exists weave.thread_inbox (
 alter table weave.thread_inbox
   drop constraint if exists thread_inbox_consumer_check;
 
-alter table weave.thread_inbox
-  add constraint thread_inbox_consumer_check
-  check (consumer in ('runner', 'tool-worker'));
-
 create index if not exists thread_inbox_pending_idx
   on weave.thread_inbox(consumer, state, visible_at, id);
 

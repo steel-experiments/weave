@@ -27,7 +27,14 @@ export type Lease = {
   expiresAt: string;
 };
 
-export type InboxConsumer = "runner" | "tool-worker";
+export type InboxConsumer = "runner" | "tool-worker" | (string & {});
+
+export type InboxRoute = {
+  consumer: InboxConsumer;
+  visibleAt?: string;
+};
+
+export type InboxRouteResolver = (event: ThreadEvent) => readonly InboxRoute[];
 
 export type InboxWorkItem = {
   id: number;

@@ -82,6 +82,29 @@ test("getEvents filters by type and preserves order", async () => {
   assert.equal(limited[0]?.type, "agent.reply.produced");
 });
 
+test("custom inbox routes can deliver host consumers", async () => {
+  const consumer = `egress-${randomUUID()}`;
+  const routedEngine = new PostgresThreadEngine(pool, {
+    inboxRoutes(event) {
+      return event.type === "agent.reply.produced" ? [{ consumer }] : [];
+    },
+  });
+  const routedService = new ThreadService(routedEngine);
+  const { threadId } = await routedService.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  await appendReply(routedEngine, threadId, "agent.reply.produced", "egress me");
+
+  const items = await routedEngine.claimInbox(consumer, "test-egress", 10, 10_000);
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.threadId, threadId);
+  const [event] = await routedEngine.read(threadId, { fromSeq: items[0]?.eventSeq, limit: 1 });
+  assert.ok(event);
+  assert.equal(event.type, "agent.reply.produced");
+  assert.equal(event.type === "agent.reply.produced" ? event.payload.message : null, "egress me");
+
+  await routedEngine.completeInbox(items.map((item) => item.id), "test-egress");
+  assert.equal((await routedEngine.claimInbox(consumer, "test-egress", 10, 10_000)).length, 0);
+});
+
 test("getLatestReply returns the newest reply or response message", async () => {
   const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
   assert.equal(await service.getLatestReply(threadId), null);

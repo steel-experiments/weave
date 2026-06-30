@@ -6,6 +6,8 @@ import type {
   CreateThreadOptions,
   FollowCursor,
   InboxConsumer,
+  InboxRoute,
+  InboxRouteResolver,
   InboxWorkItem,
   Lease,
   ThreadEngine,
@@ -20,8 +22,15 @@ import {
   type ThreadStatus,
 } from "./events.js";
 
+export type PostgresThreadEngineOptions = {
+  inboxRoutes?: InboxRouteResolver;
+};
+
 export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly options: PostgresThreadEngineOptions = {},
+  ) {}
 
   async createThread(threadId: string, options: CreateThreadOptions = {}): Promise<void> {
     await this.pool.query(
@@ -565,7 +574,10 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
     seq: number,
     event: ThreadEvent,
   ): Promise<void> {
-    const routes = inboxRoutesForEvent(event);
+    const routes = [
+      ...inboxRoutesForEvent(event),
+      ...(this.options.inboxRoutes?.(event) ?? []),
+    ].map(validateInboxRoute);
 
     for (const route of routes) {
       await client.query(
@@ -598,11 +610,6 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
     });
   }
 }
-
-type InboxRoute = {
-  consumer: InboxConsumer;
-  visibleAt?: string;
-};
 
 function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
   switch (event.type) {
@@ -641,6 +648,13 @@ function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
     default:
       return [];
   }
+}
+
+function validateInboxRoute(route: InboxRoute): InboxRoute {
+  if (!route.consumer || route.consumer.includes("\0")) {
+    throw new Error("Inbox route consumer must be a non-empty string without NUL bytes");
+  }
+  return route;
 }
 
 function leaseFromRow(row: { thread_id: string; owner_id: string; token: string; expires_at: Date }): Lease {
