@@ -15,8 +15,10 @@ import type {
   ReadOptions,
 } from "./contracts.js";
 import {
+  SessionMetadataSchema,
   ThreadEventSchema,
   ThreadProjectionSchema,
+  type SessionMetadata,
   type ThreadEvent,
   type ThreadProjection,
   type ThreadStatus,
@@ -24,6 +26,44 @@ import {
 
 export type PostgresThreadEngineOptions = {
   inboxRoutes?: InboxRouteResolver;
+};
+
+export type ThreadHeadRead = {
+  threadId: string;
+  status: ThreadStatus;
+  parentThreadId: string | null;
+  rootThreadId: string;
+  parentScopeKey: string | null;
+  parentStepKey: string | null;
+  createdAt: string;
+  updatedAt: string;
+  metadata: SessionMetadata | null;
+};
+
+export type ThreadHeadReadWithDepth = ThreadHeadRead & { depth: number };
+
+export type ListThreadHeadsOptions = {
+  parentThreadId?: string | null;
+  parentThreadIdNotNull?: boolean;
+  statuses?: readonly ThreadStatus[];
+  updatedBefore?: string;
+  orderBy?: "created_asc" | "created_desc" | "updated_asc" | "updated_desc";
+  limit?: number;
+};
+
+export type RecentEventsResult = {
+  events: ThreadEvent[];
+  total: number;
+};
+
+export type LatestChildReply = {
+  parentThreadId: string;
+  childThreadId: string;
+  status: ThreadStatus;
+  summary: string | null;
+  eventId: string | null;
+  occurredAt: string | null;
+  updatedAt: string;
 };
 
 export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
@@ -259,6 +299,158 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       parentStepKey: row.parent_step_key,
       updatedAt: row.updated_at.toISOString(),
     });
+  }
+
+  async getThreadHead(threadId: string): Promise<ThreadHeadRead | null> {
+    const heads = await this.listThreadHeads({ limit: 1, threadId });
+    return heads[0] ?? null;
+  }
+
+  async listThreadHeads(options: ListThreadHeadsOptions & { threadId?: string } = {}): Promise<ThreadHeadRead[]> {
+    const { where, values } = threadHeadWhere(options);
+    const orderBy = threadHeadOrderBy(options.orderBy);
+    const limit = options.limit ?? 500;
+    const result = await this.pool.query(
+      `${THREAD_HEAD_SELECT}
+       ${where}
+       ${orderBy}
+       limit $${values.length + 1}`,
+      [...values, limit],
+    );
+    return result.rows.map(rowToThreadHead);
+  }
+
+  async countThreadHeads(options: ListThreadHeadsOptions & { threadId?: string } = {}): Promise<number> {
+    const { where, values } = threadHeadWhere(options);
+    const result = await this.pool.query<{ total: string }>(
+      `select count(*)::text as total
+       from weave.thread t
+       ${where}`,
+      values,
+    );
+    return Number(result.rows[0]?.total ?? 0);
+  }
+
+  async listThreadAncestors(threadId: string): Promise<ThreadHeadReadWithDepth[]> {
+    const result = await this.pool.query(
+      `with recursive chain as (
+         select id, parent_thread_id, 0 as depth from weave.thread where id = $1
+         union all
+         select t.id, t.parent_thread_id, c.depth + 1
+         from weave.thread t join chain c on t.id = c.parent_thread_id
+       )
+       select
+         t.id,
+         t.status,
+         t.parent_thread_id,
+         coalesce(t.root_thread_id, t.id) as root_thread_id,
+         t.parent_scope_key,
+         t.parent_step_key,
+         t.created_at,
+         t.updated_at,
+         se.payload_json->'metadata' as metadata_json,
+         c.depth
+       from chain c
+       join weave.thread t on t.id = c.id
+       left join lateral (
+         select payload_json
+         from weave.thread_event
+         where thread_id = t.id and type = 'session.started'
+         order by seq
+         limit 1
+       ) se on true
+       order by c.depth asc`,
+      [threadId],
+    );
+    return result.rows.map((row) => ({ ...rowToThreadHead(row), depth: Number(row.depth) }));
+  }
+
+  async listRecentEvents(options: {
+    types: readonly ThreadEvent["type"][];
+    limit?: number;
+  }): Promise<RecentEventsResult> {
+    if (options.types.length === 0) {
+      return { events: [], total: 0 };
+    }
+    const result = await this.pool.query(
+      `select *, count(*) over()::int as total
+       from weave.thread_event
+       where type = any($1::text[])
+       order by occurred_at desc, thread_id asc, seq desc
+       limit $2`,
+      [options.types, options.limit ?? 100],
+    );
+    return {
+      events: result.rows.map((row) => this.rowToEvent(row)),
+      total: Number(result.rows[0]?.total ?? 0),
+    };
+  }
+
+  async listLatestChildRepliesByMetadata(options: {
+    parentThreadIds: readonly string[];
+    metadata: Record<string, string>;
+    statuses?: readonly ThreadStatus[];
+  }): Promise<LatestChildReply[]> {
+    if (options.parentThreadIds.length === 0) {
+      return [];
+    }
+    const values: unknown[] = [options.parentThreadIds];
+    const clauses = ["t.parent_thread_id = any($1::text[])"];
+    if (options.statuses && options.statuses.length > 0) {
+      values.push(options.statuses);
+      clauses.push(`t.status = any($${values.length}::text[])`);
+    }
+    for (const [key, value] of Object.entries(options.metadata)) {
+      values.push(key);
+      const keyIndex = values.length;
+      values.push(value);
+      clauses.push(`se.payload_json->'metadata'->>$${keyIndex} = $${values.length}`);
+    }
+    const result = await this.pool.query<{
+      parent_thread_id: string;
+      child_thread_id: string;
+      status: ThreadStatus;
+      summary: string | null;
+      event_id: string | null;
+      occurred_at: Date | null;
+      updated_at: Date;
+    }>(
+      `select distinct on (t.parent_thread_id)
+         t.parent_thread_id,
+         t.id as child_thread_id,
+         t.status,
+         reply.payload_json->>'message' as summary,
+         reply.event_id::text as event_id,
+         reply.occurred_at,
+         t.updated_at
+       from weave.thread t
+       join lateral (
+         select payload_json
+         from weave.thread_event
+         where thread_id = t.id and type = 'session.started'
+         order by seq
+         limit 1
+       ) se on true
+       left join lateral (
+         select event_id, occurred_at, payload_json
+         from weave.thread_event
+         where thread_id = t.id and type in ('agent.reply.produced', 'agent.response.produced')
+         order by seq desc
+         limit 1
+       ) reply on true
+       where ${clauses.join(" and ")}
+       order by t.parent_thread_id, t.updated_at desc`,
+      values,
+    );
+    return result.rows.map((row) => ({
+      parentThreadId: row.parent_thread_id,
+      childThreadId: row.child_thread_id,
+      status: row.status,
+      summary: row.summary,
+      eventId: row.event_id,
+      occurredAt: row.occurred_at?.toISOString() ?? null,
+      updatedAt: row.updated_at.toISOString(),
+    }));
   }
 
   async claimInbox(consumer: InboxConsumer, ownerId: string, limit = 20, ttlMs = 10_000): Promise<InboxWorkItem[]> {
@@ -655,6 +847,99 @@ function validateInboxRoute(route: InboxRoute): InboxRoute {
     throw new Error("Inbox route consumer must be a non-empty string without NUL bytes");
   }
   return route;
+}
+
+const THREAD_HEAD_SELECT = `
+  select
+    t.id,
+    t.status,
+    t.parent_thread_id,
+    coalesce(t.root_thread_id, t.id) as root_thread_id,
+    t.parent_scope_key,
+    t.parent_step_key,
+    t.created_at,
+    t.updated_at,
+    se.payload_json->'metadata' as metadata_json
+  from weave.thread t
+  left join lateral (
+    select payload_json
+    from weave.thread_event
+    where thread_id = t.id and type = 'session.started'
+    order by seq
+    limit 1
+  ) se on true`;
+
+function threadHeadWhere(options: ListThreadHeadsOptions & { threadId?: string }): {
+  where: string;
+  values: unknown[];
+} {
+  const values: unknown[] = [];
+  const clauses: string[] = [];
+  if (options.threadId !== undefined) {
+    values.push(options.threadId);
+    clauses.push(`t.id = $${values.length}`);
+  }
+  if (options.parentThreadId !== undefined) {
+    if (options.parentThreadId === null) {
+      clauses.push("t.parent_thread_id is null");
+    } else {
+      values.push(options.parentThreadId);
+      clauses.push(`t.parent_thread_id = $${values.length}`);
+    }
+  }
+  if (options.parentThreadIdNotNull) {
+    clauses.push("t.parent_thread_id is not null");
+  }
+  if (options.statuses && options.statuses.length > 0) {
+    values.push(options.statuses);
+    clauses.push(`t.status = any($${values.length}::text[])`);
+  }
+  if (options.updatedBefore) {
+    values.push(options.updatedBefore);
+    clauses.push(`t.updated_at < $${values.length}::timestamptz`);
+  }
+  return {
+    where: clauses.length > 0 ? `where ${clauses.join(" and ")}` : "",
+    values,
+  };
+}
+
+function threadHeadOrderBy(orderBy: ListThreadHeadsOptions["orderBy"]): string {
+  switch (orderBy) {
+    case "created_asc":
+      return "order by t.created_at asc";
+    case "updated_asc":
+      return "order by t.updated_at asc";
+    case "updated_desc":
+      return "order by t.updated_at desc";
+    case "created_desc":
+    default:
+      return "order by t.created_at desc";
+  }
+}
+
+function rowToThreadHead(row: {
+  id: string;
+  status: ThreadStatus;
+  parent_thread_id: string | null;
+  root_thread_id: string | null;
+  parent_scope_key: string | null;
+  parent_step_key: string | null;
+  created_at: Date;
+  updated_at: Date;
+  metadata_json: unknown;
+}): ThreadHeadRead {
+  return {
+    threadId: row.id,
+    status: row.status,
+    parentThreadId: row.parent_thread_id,
+    rootThreadId: row.root_thread_id ?? row.id,
+    parentScopeKey: row.parent_scope_key,
+    parentStepKey: row.parent_step_key,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+    metadata: row.metadata_json == null ? null : SessionMetadataSchema.parse(row.metadata_json),
+  };
 }
 
 function leaseFromRow(row: { thread_id: string; owner_id: string; token: string; expires_at: Date }): Lease {

@@ -157,6 +157,113 @@ test("listOpenGates returns open gates and excludes resolved ones", async () => 
   assert.equal(open.length, 0);
 });
 
+test("postgres read model lists thread heads with metadata and children", async () => {
+  const parent = await service.startSession({
+    prompt: "parent",
+    source: "api",
+    agentName: "blade",
+    metadata: { role: "default", prompt: "parent brief" },
+  });
+  const child = await service.startChildSession({
+    parentThreadId: parent.threadId,
+    agentName: "blade",
+    input: { role: "reviewer", prompt: "review brief" },
+    prompt: "review brief",
+    idempotencyKey: `review-${randomUUID()}`,
+  });
+
+  const head = await engine.getThreadHead(parent.threadId);
+  assert.equal(head?.threadId, parent.threadId);
+  assert.equal(head?.metadata?.role, "default");
+
+  const children = await engine.listThreadHeads({
+    parentThreadId: parent.threadId,
+    orderBy: "created_asc",
+  });
+  assert.equal(children.length, 1);
+  assert.equal(children[0]?.threadId, child.threadId);
+  assert.equal(children[0]?.metadata?.role, "reviewer");
+});
+
+test("postgres read model lists ancestors from child to root", async () => {
+  const parent = await service.startSession({
+    prompt: "root",
+    source: "api",
+    agentName: "blade",
+    metadata: { prompt: "root" },
+  });
+  const child = await service.startChildSession({
+    parentThreadId: parent.threadId,
+    agentName: "blade",
+    input: { prompt: "child" },
+    prompt: "child",
+    idempotencyKey: `child-${randomUUID()}`,
+  });
+
+  const chain = await engine.listThreadAncestors(child.threadId);
+  assert.equal(chain[0]?.threadId, child.threadId);
+  assert.equal(chain[0]?.depth, 0);
+  assert.equal(chain[1]?.threadId, parent.threadId);
+  assert.equal(chain[1]?.depth, 1);
+});
+
+test("postgres read model finds latest child reply by metadata", async () => {
+  const parent = await service.startSession({ prompt: "parent", source: "api", agentName: "blade" });
+  const reviewer = await service.startChildSession({
+    parentThreadId: parent.threadId,
+    agentName: "blade",
+    input: { role: "reviewer" },
+    prompt: "review",
+    idempotencyKey: `reviewer-${randomUUID()}`,
+  });
+  const dev = await service.startChildSession({
+    parentThreadId: parent.threadId,
+    agentName: "blade",
+    input: { role: "dev" },
+    prompt: "dev",
+    idempotencyKey: `dev-${randomUUID()}`,
+  });
+  await appendReply(engine, dev.threadId, "agent.response.produced", "dev done");
+  await appendReply(engine, reviewer.threadId, "agent.response.produced", "looks good");
+
+  const replies = await engine.listLatestChildRepliesByMetadata({
+    parentThreadIds: [parent.threadId],
+    metadata: { role: "reviewer" },
+    statuses: ["completed"],
+  });
+
+  assert.equal(replies.length, 1);
+  assert.equal(replies[0]?.parentThreadId, parent.threadId);
+  assert.equal(replies[0]?.childThreadId, reviewer.threadId);
+  assert.equal(replies[0]?.summary, "looks good");
+});
+
+test("postgres read model lists recent events with a total count", async () => {
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  await engine.append([
+    {
+      eventId: newEventId(),
+      threadId,
+      type: "tool.failed",
+      occurredAt: nowIso(),
+      correlationId: randomUUID(),
+      actor: { type: "system", id: "test" },
+      payload: {
+        toolCallId: randomUUID(),
+        toolName: "github",
+        errorCode: "BOOM",
+        message: "failed",
+      },
+    },
+  ]);
+
+  const result = await engine.listRecentEvents({ types: ["tool.failed"], limit: 1 });
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0]?.type, "tool.failed");
+  assert.equal(result.events[0]?.type === "tool.failed" ? result.events[0].payload.toolName : null, "github");
+  assert.ok(result.total >= 1);
+});
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

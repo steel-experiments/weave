@@ -551,6 +551,7 @@ export class ContractToolWorker {
       actor: { type: "worker", id: this.workerId },
       payload: {
         toolCallId: request.payload.toolCallId,
+        toolName: request.payload.toolName,
         errorCode,
         message,
       },

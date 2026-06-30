@@ -94,6 +94,7 @@ export const ToolCompletedPayloadSchema = z.union([
 
 export const ToolFailedPayloadSchema = z.object({
   toolCallId: z.string().uuid(),
+  toolName: ToolNameSchema.optional(),
   errorCode: z.string().min(1),
   message: z.string().min(1),
 });
