@@ -1,4 +1,4 @@
-import { policy, type AnyPolicyRule, type CapabilityDeclaration } from "weave";
+import { policy, type AnyPolicyRule, type CapabilityDeclaration } from "weave/runtime";
 import {
   OpenCodeAdapterError,
   buildOpenCodeChildEnv,

@@ -189,7 +189,19 @@ Tool and integration activity should happen through explicit requested and compl
 
 ### Per-thread coordination
 
-Prefer one active runner lease per thread to keep ordering and state reconstruction simple.
+Prefer one active runner lease per thread to keep ordering and state reconstruction simple. Single-writer correctness has two independent backstops at the engine boundary, so a host that runs its own turn loop (rather than the replay runner) still gets safe writes:
+
+- Every event carries a stable `eventId` and an optional `idempotencyKey`, both uniquely indexed per thread. A re-delivered or duplicated write is rejected, not doubled.
+- `append` accepts an optional `expectedTailSeq` — a compare-and-swap against the thread's current tail under a row lock. A writer can guarantee it is appending against the exact state it read, so a stale runner that has lost its lease cannot silently extend the log.
+
+### Kernel and runtime separation
+
+The implementation is split into a kernel and a runtime, and the boundary is enforced statically (`npm run lint:boundaries`, dependency-cruiser).
+
+- The **kernel** (`src/`, published as `weave`, `weave/postgres`, `weave/auth`) owns the durable thread/record/coordination core from the Thread Layer above: the event log and closed event union, the `ThreadEngine`/`ThreadLeaseStore` contracts and Postgres engine, projections, the inbox, gates, timers, signals, lineage, the auth gateway, and the read-only `ThreadService`. It depends on nothing in the runtime.
+- The **runtime** (`src/runtime/`, published as `weave/runtime` and friends) is the replay/agent layer from the Agent and Tool/Worker layers above: `agent`/`tool`/`weave` authoring, the durable `ctx.*` context, the replay runner, daemons, and tool workers. It is a strict superset of the kernel.
+
+This lets a host build directly on the durable log without adopting Weave's replay/authoring model. Blade does exactly this: it consumes the kernel (`weave`, `weave/postgres`) and runs its own turn loop over the event log, because its agent runtime is an opaque external process rather than a replayed `agent.run`.
 
 ### Trace continuity
 

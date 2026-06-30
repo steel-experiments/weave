@@ -1,6 +1,6 @@
-import type { ThreadEngine, ThreadLeaseStore } from "./contracts.js";
-import { eventKey, nowIso, type ThreadEvent } from "./events.js";
-import { WeaveError } from "./errors.js";
+import type { ThreadEngine, ThreadLeaseStore } from "../contracts.js";
+import { eventKey, nowIso, type ThreadEvent } from "../events.js";
+import { WeaveError } from "../errors.js";
 import { DeterministicMockAgent } from "./mock-agent.js";
 import {
   NoopObservabilitySink,
@@ -10,8 +10,8 @@ import {
   safeEmitLog,
   safeEmitSpan,
   type ObservabilitySink,
-} from "./observability.js";
-import type { MaybePromise } from "./types.js";
+} from "../observability.js";
+import type { MaybePromise } from "../types.js";
 
 export type RunnerStepResult = {
   acted: boolean;

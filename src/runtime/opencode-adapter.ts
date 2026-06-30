@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
@@ -714,12 +714,6 @@ async function resolveWorkspaceRoot(profile: OpenCodePermissionProfile, workspac
   if (resolved === path.parse(resolved).root) {
     fail("WORKSPACE_INVALID", "OpenCode workspace root must not be the filesystem root.", { workspacePath });
   }
-  if (profile.workspace && path.resolve(profile.workspace.path) !== resolved) {
-    fail("WORKSPACE_INVALID", "OpenCode run workspace does not match the profile-bound WorkspaceRef.", {
-      profileWorkspace: profile.workspace.path,
-      runWorkspace: workspacePath,
-    });
-  }
   let workspaceStat;
   try {
     workspaceStat = await stat(resolved);
@@ -729,15 +723,31 @@ async function resolveWorkspaceRoot(profile: OpenCodePermissionProfile, workspac
   if (!workspaceStat.isDirectory()) {
     fail("WORKSPACE_INVALID", "OpenCode workspace path must be a directory.", { workspacePath });
   }
-  return resolved;
+
+  const workspaceRoot = await realpath(resolved);
+  if (profile.workspace && path.resolve(profile.workspace.path) !== resolved) {
+    let profileWorkspaceRoot: string | undefined;
+    try {
+      profileWorkspaceRoot = await realpath(path.resolve(profile.workspace.path));
+    } catch {
+      profileWorkspaceRoot = undefined;
+    }
+    if (profileWorkspaceRoot !== workspaceRoot) {
+      fail("WORKSPACE_INVALID", "OpenCode run workspace does not match the profile-bound WorkspaceRef.", {
+        profileWorkspace: profile.workspace.path,
+        runWorkspace: workspacePath,
+      });
+    }
+  }
+  return workspaceRoot;
 }
 
 async function captureGitChangedFiles(cwd: string): Promise<GitChangedFilesSnapshot> {
-  const workspaceRoot = path.resolve(cwd);
+  const workspaceRoot = await realpath(path.resolve(cwd));
   let gitRoot: string;
   try {
     const rootResult = await execFileAsync("git", ["-C", workspaceRoot, "rev-parse", "--show-toplevel"], { encoding: "utf8", maxBuffer: 64_000 });
-    gitRoot = path.resolve(String(rootResult.stdout).trim());
+    gitRoot = await realpath(path.resolve(String(rootResult.stdout).trim()));
   } catch (error) {
     fail("WORKSPACE_INVALID", "OpenCode workspace is not a Git worktree; refusing to run without diff enforcement.", {
       cwd,

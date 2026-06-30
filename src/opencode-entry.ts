@@ -1,1 +1,1 @@
-export * from "./opencode-adapter.js";
+export * from "./runtime/opencode-adapter.js";

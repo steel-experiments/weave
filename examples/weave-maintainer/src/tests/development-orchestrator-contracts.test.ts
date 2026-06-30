@@ -63,7 +63,8 @@ import {
   weaveMaintainer,
   weaveSliceRunner,
 } from "../development-orchestrator.js";
-import { createAgentPlanner, ThreadEventSchema, deterministicUuid, eventKey, nowIso, stableJsonHash, type ThreadEvent, type WorkspaceProvider } from "weave";
+import { isDomainEvent, ThreadEventSchema, deterministicUuid, eventKey, nowIso, stableJsonHash, type ThreadEvent, type WorkspaceProvider } from "weave/runtime";
+import { createAgentPlanner } from "weave/runtime";
 
 const validSlice = {
   id: "01-contracts",
@@ -424,7 +425,7 @@ const sliceCompleted = developmentEvents.sliceCompleted({
   reviewVerdicts: ["pass"],
 });
 
-assert.equal(sliceCompleted.type, "dev.slice.completed");
+assert.equal(sliceCompleted.payload.kind, "dev.slice.completed");
 assert.throws(() => {
   developmentEvents.sliceCompleted({
     sliceId: validSlice.id,
@@ -439,14 +440,14 @@ assert.throws(() => {
 const parsedThreadEvent = ThreadEventSchema.parse({
   eventId: eventKey("dev-thread", "dev.slice.completed", "slice-completed"),
   threadId: "dev-thread",
-  type: "dev.slice.completed",
+  type: "domain.event",
   occurredAt: nowIso(),
   actor: { type: "agent", id: "weave.maintainer" },
   payload: sliceCompleted.payload,
 });
 
-assert.equal(parsedThreadEvent.type, "dev.slice.completed");
-assert.equal(parsedThreadEvent.payload.testsPassed, true);
+assert.ok(isDomainEvent(parsedThreadEvent, "dev.slice.completed"));
+assert.deepEqual(parsedThreadEvent.payload, sliceCompleted.payload);
 
 const specReceived = developmentEvents.initiativeSpecReceived({
   title: initiativeSpec.title,
@@ -457,7 +458,7 @@ const specReceived = developmentEvents.initiativeSpecReceived({
   contextFiles: initiativeSpec.contextFiles,
 });
 
-assert.equal(specReceived.type, "dev.initiative.spec_received");
+assert.equal(specReceived.payload.kind, "dev.initiative.spec_received");
 
 const planProposed = developmentEvents.initiativePlanProposed({
   initiative: plan.initiative,
@@ -468,19 +469,19 @@ const planProposed = developmentEvents.initiativePlanProposed({
   summary: plan.summary,
 });
 
-assert.equal(planProposed.type, "dev.initiative.plan_proposed");
+assert.equal(planProposed.payload.kind, "dev.initiative.plan_proposed");
 
 const parsedPlanEvent = ThreadEventSchema.parse({
   eventId: eventKey("dev-thread", "dev.initiative.plan_proposed", "plan-proposed"),
   threadId: "dev-thread",
-  type: "dev.initiative.plan_proposed",
+  type: "domain.event",
   occurredAt: nowIso(),
   actor: { type: "agent", id: "weave.maintainer" },
   payload: planProposed.payload,
 });
 
-assert.equal(parsedPlanEvent.type, "dev.initiative.plan_proposed");
-assert.equal(parsedPlanEvent.payload.sliceCount, 1);
+assert.ok(isDomainEvent(parsedPlanEvent, "dev.initiative.plan_proposed"));
+assert.deepEqual(parsedPlanEvent.payload, planProposed.payload);
 assert.equal(
   developmentEvents.initiativePlanApproved({
     initiative: plan.initiative,
@@ -488,7 +489,7 @@ assert.equal(
     approvedBy: "human-maintainer",
     sliceCount: plan.slices.length,
     summary: plan.summary,
-  }).type,
+  }).payload.kind,
   "dev.initiative.plan_approved",
 );
 assert.equal(
@@ -497,7 +498,7 @@ assert.equal(
     revision: plan.revision,
     rejectedBy: "human-maintainer",
     reason: "Too broad.",
-  }).type,
+  }).payload.kind,
   "dev.initiative.plan_rejected",
 );
 
@@ -508,13 +509,13 @@ const reviewCompleted = developmentEvents.reviewCompleted({
   findings: [],
 });
 
-assert.equal(reviewCompleted.type, "dev.review.completed");
-assert.equal(developmentEvents.prReadyForReview.type, "dev.pr.ready_for_review");
+assert.equal(reviewCompleted.payload.kind, "dev.review.completed");
+assert.equal(developmentEvents.prReadyForReview.kind, "dev.pr.ready_for_review");
 
 const sourceCheckpointCreated = developmentEvents.sourceCheckpointCreated(sourceCheckpoint);
-assert.equal(sourceCheckpointCreated.type, "dev.source_checkpoint.created");
+assert.equal(sourceCheckpointCreated.payload.kind, "dev.source_checkpoint.created");
 const { checkpointSha: _checkpointSha, createdAt: _createdAt, ...sourceCheckpointProposal } = sourceCheckpoint;
-assert.equal(developmentEvents.sourceCheckpointProposed(sourceCheckpointProposal).type, "dev.source_checkpoint.proposed");
+assert.equal(developmentEvents.sourceCheckpointProposed(sourceCheckpointProposal).payload.kind, "dev.source_checkpoint.proposed");
 assert.equal(
   developmentEvents.sourceCheckpointFailed({
     initiativeThreadId: sourceCheckpoint.initiativeThreadId,
@@ -526,34 +527,34 @@ assert.equal(
     commitMessage: sourceCheckpoint.commitMessage,
     reason: "git commit failed",
     errorCode: "git-commit-failed",
-  }).type,
+  }).payload.kind,
   "dev.source_checkpoint.failed",
 );
 
 const parsedCheckpointEvent = ThreadEventSchema.parse({
   eventId: eventKey("dev-thread", "dev.source_checkpoint.created", "source-checkpoint-created"),
   threadId: "dev-thread",
-  type: "dev.source_checkpoint.created",
+  type: "domain.event",
   occurredAt: nowIso(),
   actor: { type: "agent", id: "weave.sliceRunner" },
   payload: sourceCheckpointCreated.payload,
 });
 
-assert.equal(parsedCheckpointEvent.type, "dev.source_checkpoint.created");
-assert.equal(parsedCheckpointEvent.payload.checkpointSha, "def456");
+assert.ok(isDomainEvent(parsedCheckpointEvent, "dev.source_checkpoint.created"));
+assert.deepEqual(parsedCheckpointEvent.payload, sourceCheckpointCreated.payload);
 
 const sourceCheckpointRestored = developmentEvents.sourceCheckpointRestored(restoredCheckpoint);
-assert.equal(sourceCheckpointRestored.type, "dev.source_checkpoint.restored");
+assert.equal(sourceCheckpointRestored.payload.kind, "dev.source_checkpoint.restored");
 const parsedRestoredEvent = ThreadEventSchema.parse({
   eventId: eventKey("dev-thread", "dev.source_checkpoint.restored", "source-checkpoint-restored"),
   threadId: "dev-thread",
-  type: "dev.source_checkpoint.restored",
+  type: "domain.event",
   occurredAt: nowIso(),
   actor: { type: "human", id: "operator" },
   payload: sourceCheckpointRestored.payload,
 });
-assert.equal(parsedRestoredEvent.type, "dev.source_checkpoint.restored");
-assert.equal(parsedRestoredEvent.payload.restoredBy, "operator");
+assert.ok(isDomainEvent(parsedRestoredEvent, "dev.source_checkpoint.restored"));
+assert.deepEqual(parsedRestoredEvent.payload, sourceCheckpointRestored.payload);
 
 const actualRepoContext = await readDevelopmentRepoContext({
   repo: "weave",
@@ -573,8 +574,8 @@ const planner = createAgentPlanner(weaveMaintainer);
 const firstPlan = await planner.plan(threadId, initialHistory);
 
 assert(firstPlan);
-assert.equal(firstPlan.events.some((candidate) => candidate.type === "dev.initiative.started"), true);
-assert.equal(firstPlan.events.some((candidate) => candidate.type === "dev.slice.proposed"), false);
+assert.equal(firstPlan.events.some((candidate) => isDomainEvent(candidate, "dev.initiative.started")), true);
+assert.equal(firstPlan.events.some((candidate) => isDomainEvent(candidate, "dev.slice.proposed")), false);
 
 const contextRequest = firstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
   candidate.type === "tool.requested",
@@ -606,7 +607,7 @@ const contextCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
 
 const plannedAfterContext = await planner.plan(threadId, [...initialHistory, ...firstPlan.events, contextCompleted]);
 assert(plannedAfterContext);
-assert.equal(plannedAfterContext.events.some((candidate) => candidate.type === "dev.slice.proposed"), true);
+assert.equal(plannedAfterContext.events.some((candidate) => isDomainEvent(candidate, "dev.slice.proposed")), true);
 
 const gateCreated = plannedAfterContext.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
   candidate.type === "gate.created",
@@ -644,7 +645,7 @@ const compilerPlanner = createAgentPlanner(createWeaveMaintainerAgent({ planComp
 const compilerInitialHistory = createInitialHistory(compilerThreadId, compilerInitiative);
 const compilerFirstPlan = await compilerPlanner.plan(compilerThreadId, compilerInitialHistory);
 assert(compilerFirstPlan);
-assert.equal(compilerFirstPlan.events.some((candidate) => candidate.type === "dev.initiative.spec_received"), true);
+assert.equal(compilerFirstPlan.events.some((candidate) => isDomainEvent(candidate, "dev.initiative.spec_received")), true);
 const compilerContextRequest = compilerFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
   candidate.type === "tool.requested",
 );
@@ -676,9 +677,9 @@ const compilerPlanned = await compilerPlanner.plan(compilerThreadId, [
   compilerContextCompleted,
 ]);
 assert(compilerPlanned);
-assert.equal(compilerPlanned.events.some((candidate) => candidate.type === "dev.initiative.plan_proposed"), true);
-assert.equal(compilerPlanned.events.some((candidate) => candidate.type === "dev.slice.proposed"), true);
-assert.equal(compilerPlanned.events.some((candidate) => candidate.type === "dev.implementation.started"), false);
+assert.equal(compilerPlanned.events.some((candidate) => isDomainEvent(candidate, "dev.initiative.plan_proposed")), true);
+assert.equal(compilerPlanned.events.some((candidate) => isDomainEvent(candidate, "dev.slice.proposed")), true);
+assert.equal(compilerPlanned.events.some((candidate) => isDomainEvent(candidate, "dev.implementation.started")), false);
 assert.equal(
   compilerPlanned.events.some(
     (candidate) =>
@@ -715,7 +716,7 @@ const approvedPlan = await planner.plan(threadId, [
 ]);
 assert(approvedPlan);
 assert.equal(approvedPlan.resumeReason, "gate-resolved");
-assert.equal(approvedPlan.events.some((candidate) => candidate.type === "dev.slice.approved"), true);
+assert.equal(approvedPlan.events.some((candidate) => isDomainEvent(candidate, "dev.slice.approved")), true);
 assert.equal(approvedPlan.events.at(-1)?.type, "agent.output.completed");
 
 const outputCompleted = approvedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
@@ -1257,7 +1258,7 @@ const runnerPlanner = createAgentPlanner(weaveSliceRunner);
 const runnerFirstPlan = await runnerPlanner.plan(runnerThreadId, runnerHistory);
 
 assert(runnerFirstPlan);
-assert.equal(runnerFirstPlan.events.some((candidate) => candidate.type === "dev.slice.started"), false);
+assert.equal(runnerFirstPlan.events.some((candidate) => isDomainEvent(candidate, "dev.slice.started")), false);
 
 const branchRequest = runnerFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
   candidate.type === "tool.requested",
@@ -1283,7 +1284,7 @@ const branchCompleted: Extract<ThreadEvent, { type: "tool.completed" }> = {
 
 const runnerReadyPlan = await runnerPlanner.plan(runnerThreadId, [...runnerHistory, ...runnerFirstPlan.events, branchCompleted]);
 assert(runnerReadyPlan);
-assert.equal(runnerReadyPlan.events.some((candidate) => candidate.type === "dev.slice.started"), true);
+assert.equal(runnerReadyPlan.events.some((candidate) => isDomainEvent(candidate, "dev.slice.started")), true);
 
 const runnerOutput = runnerReadyPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
   candidate.type === "agent.output.completed",
@@ -1329,7 +1330,7 @@ const implementationPlanner = createAgentPlanner(openCodeImplementer);
 const implementationFirstPlan = await implementationPlanner.plan(implementationThreadId, implementationHistory);
 
 assert(implementationFirstPlan);
-assert.equal(implementationFirstPlan.events.some((candidate) => candidate.type === "dev.implementation.started"), true);
+assert.equal(implementationFirstPlan.events.some((candidate) => isDomainEvent(candidate, "dev.implementation.started")), true);
 const implementationRequest = implementationFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
   candidate.type === "tool.requested",
 );
@@ -1372,7 +1373,7 @@ const implementationFinishedPlan = await implementationPlanner.plan(implementati
 ]);
 assert(implementationFinishedPlan);
 assert.equal(implementationFinishedPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "implementation-summary"), true);
-assert.equal(implementationFinishedPlan.events.some((candidate) => candidate.type === "dev.implementation.completed"), true);
+assert.equal(implementationFinishedPlan.events.some((candidate) => isDomainEvent(candidate, "dev.implementation.completed")), true);
 const implementationOutput = implementationFinishedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
   candidate.type === "agent.output.completed",
 );
@@ -1507,7 +1508,7 @@ const verificationFinishedPlan = await verificationPlanner.plan(verificationThre
 ]);
 assert(verificationFinishedPlan);
 assert.equal(verificationFinishedPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "test-results"), true);
-assert.equal(verificationFinishedPlan.events.some((candidate) => candidate.type === "dev.verification.completed"), true);
+assert.equal(verificationFinishedPlan.events.some((candidate) => isDomainEvent(candidate, "dev.verification.completed")), true);
 
 const reviewerInput = {
   slice: initiative.slices[0]!,
@@ -1565,7 +1566,7 @@ assert.equal(
   reviewFinishedPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "review-findings:architecture-reviewer"),
   true,
 );
-assert.equal(reviewFinishedPlan.events.some((candidate) => candidate.type === "dev.review.completed"), true);
+assert.equal(reviewFinishedPlan.events.some((candidate) => isDomainEvent(candidate, "dev.review.completed")), true);
 
 assert.equal(
   evaluateSliceReadinessForCompletion({ implementationSummary: implementation, verificationResult, reviewResults: [passingReview] }).status,
@@ -1644,7 +1645,7 @@ const repairHistory = createInitialHistory(repairThreadId, repairInput, repairAg
 const repairPlanner = createAgentPlanner(repairAgent);
 const repairFirstPlan = await repairPlanner.plan(repairThreadId, repairHistory);
 assert(repairFirstPlan);
-assert.equal(repairFirstPlan.events.some((candidate) => candidate.type === "dev.repair.started"), true);
+assert.equal(repairFirstPlan.events.some((candidate) => isDomainEvent(candidate, "dev.repair.started")), true);
 const repairRequest = repairFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
   candidate.type === "tool.requested",
 );
@@ -1669,7 +1670,7 @@ const repairCompletedTool: Extract<ThreadEvent, { type: "tool.completed" }> = {
 };
 const repairFinishedPlan = await repairPlanner.plan(repairThreadId, [...repairHistory, ...repairFirstPlan.events, repairCompletedTool]);
 assert(repairFinishedPlan);
-assert.equal(repairFinishedPlan.events.some((candidate) => candidate.type === "dev.repair.completed"), true);
+assert.equal(repairFinishedPlan.events.some((candidate) => isDomainEvent(candidate, "dev.repair.completed")), true);
 const repairOutput = repairFinishedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
   candidate.type === "agent.output.completed",
 );
@@ -1760,7 +1761,7 @@ const approvedHighRiskPlan = await createAgentPlanner(approvedHighRiskRepairAgen
   approvedHighRiskGateResolved,
 ]);
 assert(approvedHighRiskPlan);
-assert.equal(approvedHighRiskPlan.events.some((candidate) => candidate.type === "dev.repair.started"), true);
+assert.equal(approvedHighRiskPlan.events.some((candidate) => isDomainEvent(candidate, "dev.repair.started")), true);
 const approvedHighRiskRequest = approvedHighRiskPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "tool.requested" }> =>
   candidate.type === "tool.requested",
 );
@@ -1925,7 +1926,7 @@ const prFirstPlan = await prPlanner.plan(prThreadId, prHistory);
 assert(prFirstPlan);
 assert.equal(prFirstPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "pr-draft"), true);
 assert.equal(prFirstPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "pr-handoff"), true);
-assert.equal(prFirstPlan.events.some((candidate) => candidate.type === "dev.pr.ready_for_review"), true);
+assert.equal(prFirstPlan.events.some((candidate) => isDomainEvent(candidate, "dev.pr.ready_for_review")), true);
 assert.equal(prFirstPlan.events.some((candidate) => candidate.type === "tool.requested"), false);
 const prGate = prFirstPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "gate.created" }> =>
   candidate.type === "gate.created",
@@ -1998,7 +1999,7 @@ const prCompletedTool: Extract<ThreadEvent, { type: "tool.completed" }> = {
 };
 const prFinishedPlan = await prPlanner.plan(prThreadId, [...prHistory, ...prFirstPlan.events, prGateResolved, ...prApprovedPlan.events, prCompletedTool]);
 assert(prFinishedPlan);
-assert.equal(prFinishedPlan.events.some((candidate) => candidate.type === "dev.pr.opened"), true);
+assert.equal(prFinishedPlan.events.some((candidate) => isDomainEvent(candidate, "dev.pr.opened")), true);
 assert.equal(prFinishedPlan.events.some((candidate) => candidate.type === "checkpoint.completed" && candidate.stepKey === "pr-remote-handoff"), true);
 const prOutput = prFinishedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
   candidate.type === "agent.output.completed",
@@ -2125,7 +2126,7 @@ const composedBranchCompleted: Extract<ThreadEvent, { type: "tool.completed" }> 
 };
 const composedAfterBranch = await composedPlanner.plan(composedThreadId, [...composedHistory, ...composedFirstPlan.events, composedBranchCompleted]);
 assert(composedAfterBranch);
-assert.equal(composedAfterBranch.events.some((candidate) => candidate.type === "dev.slice.started"), true);
+assert.equal(composedAfterBranch.events.some((candidate) => isDomainEvent(candidate, "dev.slice.started")), true);
 const composedAfterImplementation = await composedPlanner.plan(composedThreadId, [
   ...composedHistory,
   ...composedFirstPlan.events,
@@ -2195,9 +2196,9 @@ const composedFinished = await composedPlanner.plan(composedThreadId, [
   sourceCheckpointCompleted,
 ]);
 assert(composedFinished);
-assert.equal(composedFinished.events.some((candidate) => candidate.type === "dev.source_checkpoint.created"), true);
-assert.equal(composedFinished.events.some((candidate) => candidate.type === "dev.slice.completed"), true);
-assert.equal(composedFinished.events.filter((candidate) => candidate.type === "dev.slice.completed").length, 1);
+assert.equal(composedFinished.events.some((candidate) => isDomainEvent(candidate, "dev.source_checkpoint.created")), true);
+assert.equal(composedFinished.events.some((candidate) => isDomainEvent(candidate, "dev.slice.completed")), true);
+assert.equal(composedFinished.events.filter((candidate) => isDomainEvent(candidate, "dev.slice.completed")).length, 1);
 const composedOutput = composedFinished.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
   candidate.type === "agent.output.completed",
 );
@@ -2376,7 +2377,7 @@ const repairComposedFinished = await repairComposedPlanner.plan(repairComposedTh
   repairSourceCheckpointCompleted,
 ]);
 assert(repairComposedFinished);
-assert.equal(repairComposedFinished.events.some((candidate) => candidate.type === "dev.slice.completed"), true);
+assert.equal(repairComposedFinished.events.some((candidate) => isDomainEvent(candidate, "dev.slice.completed")), true);
 const repairComposedOutput = repairComposedFinished.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
   candidate.type === "agent.output.completed",
 );

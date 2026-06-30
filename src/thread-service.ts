@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ThreadEngine } from "./contracts.js";
-import type { ThreadRef } from "./agent-contract.js";
+import type { ThreadRef } from "./thread-ref.js";
 import { ReplayMismatchError } from "./errors.js";
 import {
   deterministicUuid,
@@ -106,6 +106,22 @@ export type DeliverSignalResult = {
   delivered: boolean;
   eventType: "signal.received";
   waitId: string;
+};
+
+export type LatestReply = {
+  message: string;
+  eventId: string;
+  occurredAt: string;
+};
+
+export type OpenGate = {
+  gateId: string;
+  gateType: "manual-approval";
+  reason: string;
+  proposedAction?: string;
+  scopeKey?: string;
+  stepKey?: string;
+  occurredAt: string;
 };
 
 export class ThreadService {
@@ -478,6 +494,74 @@ export class ThreadService {
     }
 
     return refs;
+  }
+
+  async getSessionMetadata(threadId: string): Promise<SessionMetadata | null> {
+    const events = await this.engine.read(threadId);
+    const started = events.find(
+      (event): event is Extract<ThreadEvent, { type: "session.started" }> =>
+        event.type === "session.started",
+    );
+    return started?.payload.metadata ?? null;
+  }
+
+  async getEvents(
+    threadId: string,
+    options: {
+      type?: ThreadEvent["type"] | readonly ThreadEvent["type"][];
+      fromSeq?: number;
+      limit?: number;
+    } = {},
+  ): Promise<readonly ThreadEvent[]> {
+    const events = await this.engine.read(
+      threadId,
+      options.fromSeq !== undefined ? { fromSeq: options.fromSeq } : undefined,
+    );
+    const types =
+      options.type === undefined
+        ? undefined
+        : Array.isArray(options.type)
+          ? options.type
+          : [options.type];
+    const filtered = types ? events.filter((event) => types.includes(event.type)) : events;
+    return options.limit !== undefined ? filtered.slice(0, options.limit) : filtered;
+  }
+
+  async getLatestReply(threadId: string): Promise<LatestReply | null> {
+    const events = await this.engine.read(threadId);
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event && (event.type === "agent.reply.produced" || event.type === "agent.response.produced")) {
+        return { message: event.payload.message, eventId: event.eventId, occurredAt: event.occurredAt };
+      }
+    }
+    return null;
+  }
+
+  async listOpenGates(threadId: string): Promise<readonly OpenGate[]> {
+    const events = await this.engine.read(threadId);
+    const resolved = new Set<string>();
+    for (const event of events) {
+      if (event.type === "gate.resolved") {
+        resolved.add(event.payload.gateId);
+      }
+    }
+    const open: OpenGate[] = [];
+    for (const event of events) {
+      if (event.type !== "gate.created" || resolved.has(event.payload.gateId)) {
+        continue;
+      }
+      open.push({
+        gateId: event.payload.gateId,
+        gateType: event.payload.gateType,
+        reason: event.payload.reason,
+        proposedAction: event.payload.proposedAction,
+        scopeKey: event.scopeKey,
+        stepKey: event.stepKey,
+        occurredAt: event.occurredAt,
+      });
+    }
+    return open;
   }
 
   async resolveGate(

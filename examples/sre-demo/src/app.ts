@@ -1,4 +1,4 @@
-import { StaticCredentialProvider, weave } from "weave";
+import { StaticCredentialProvider, weave } from "weave/runtime";
 import { sreAgent } from "./agent.js";
 
 export const sreDemoApp = weave({

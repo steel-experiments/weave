@@ -1,32 +1,28 @@
 # Weave Docs
 
-This directory is the working source of truth for Weave, Blade, and the example apps that prove the architecture.
+This directory is the working source of truth for Weave and the example apps that prove the architecture.
 
 ## Current North Star
 
-Blade is the product north star.
+Weave's north star is to be a clean, durable, runtime-agnostic control plane (kernel), prepared as an open-source product.
 
-Weave is the durable control layer. Blade is the production operator we expect to run on top of it. The Steel docs sync agent is still important, but it should stay a focused Weave app and recurring audit workflow rather than inheriting every Blade feature.
+Blade is the primary consumer that proves Weave, but it is a separate product living in the Blade app (`apps/blade`); its product docs live there, not in this repository. The Steel docs sync agent is a second focused Weave app and recurring audit workflow.
 
 ## Start Here
 
 - `what-is-weave.md`: one-page product narrative for Weave
 - `overview.md`: Weave thesis, goals, and principles
 - `release-readiness.md`: current open-source release checklist and blockers
-- `blade/overview.md`: Blade product overview and north-star spec
 - `docs-operating-model.md`: how docs, slice plans, tests, and architecture updates should stay in sync
-- `blade/domain-model.md`: Blade vocabulary mapped to Weave primitives
-- `blade/slices/README.md`: Blade slice index and current implementation order
 - `docs-sync/README.md`: focused docs sync app area, with links back to the existing Steel docs sync plans
 - `docs-sync/slices/README.md`: Steel docs sync slice index and progress tracker
+- Blade product docs (overview, domain model, slices) live in the Blade app (`apps/blade/docs/`)
 
 ## Proposed Layout
 
 The docs are moving toward this information architecture:
 
 - `docs/`: root index, operating model, and currently un-migrated legacy docs
-- `docs/blade/`: Blade product direction, domain model, runtime strategy, and production slices
-- `docs/blade/slices/`: one progress-tracked markdown document per Blade slice
 - `docs/docs-sync/`: Steel docs sync app plan and scope
 - `docs/docs-sync/slices/`: one progress-tracked markdown document per docs sync slice
 - `docs/slices/`: shared slice template and rules used by all verticals
@@ -37,10 +33,7 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 
 ## Canonical Planning Docs
 
-- Product north star: `blade/overview.md`
-- Blade domain vocabulary: `blade/domain-model.md`
-- Current Blade slices: `blade/slices/README.md`
-- First shipped Blade implementation slice: `blade/slices/01-github-pr-review.md`
+- Blade product docs (overview, domain model, slices): the Blade app (`apps/blade/docs/`)
 - Docs sync focused app: `docs-sync/README.md`
 - Docs sync slice progress: `docs-sync/slices/README.md`
 - Shared slice template: `slices/template.md`
@@ -64,7 +57,6 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 
 - `north-star-sre-demo.md`: original SRE agent harness north-star demo, now best understood as a Blade SRE slice input
 - `steel-docs-sync-example.md`: product-shaped docs sync example
-- `blade/slices/01-github-pr-review.md`: shipped Blade PR review vertical implemented in `examples/blade`
 - `steel-docs-sync-missing-work.md`: original docs sync missing-work rollup, now split into `docs-sync/slices/`
 - `mvp.md`: smallest useful end-to-end Weave primitive definition
 - `poc-scope.md`: fixed decisions and success criteria for the first proof of concept
@@ -92,6 +84,6 @@ Every meaningful feature should have a slice document before implementation begi
 When a slice ships, update:
 
 - the slice document with actual behavior, test evidence, and remaining follow-up
-- the owning vertical overview, such as `blade/overview.md` or `docs-sync/README.md`
+- the owning vertical overview, such as `docs-sync/README.md` or the Blade app's docs
 - core architecture docs if a Weave primitive changed
 - glossary or domain-model docs if vocabulary changed

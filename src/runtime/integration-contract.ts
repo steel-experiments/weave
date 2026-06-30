@@ -1,8 +1,8 @@
 import type { ApiRouteHandler } from "./api-server.js";
-import type { AuthGateway } from "./auth-gateway.js";
-import type { ThreadEngine } from "./contracts.js";
-import { ThreadEventSchema, type ThreadEvent, type ThreadEventType } from "./events.js";
-import type { ThreadService } from "./thread-service.js";
+import type { AuthGateway } from "../auth-gateway.js";
+import type { ThreadEngine } from "../contracts.js";
+import { ThreadEventSchema, type ThreadEvent, type ThreadEventType } from "../events.js";
+import type { ThreadService } from "../thread-service.js";
 import type { AnyToolContract } from "./tool-contract.js";
 
 export type IntegrationRuntimeContext = {

@@ -310,6 +310,22 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
     );
   }
 
+  async heartbeatInbox(ids: number[], ownerId: string, ttlMs: number): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+
+    await this.pool.query(
+      `update weave.thread_inbox
+       set claimed_until = now() + ($3 * interval '1 millisecond'),
+           updated_at = now()
+       where id = any($1::bigint[])
+         and claimed_by = $2
+         and state = 'claimed'`,
+      [ids, ownerId, ttlMs],
+    );
+  }
+
   async deadLetterInbox(
     ids: number[],
     ownerId: string,
@@ -537,10 +553,8 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
       case "agent.step.completed":
       case "checkpoint.completed":
       case "agent.output.completed":
-      case "agent.finding.produced":
-      case "agent.remediation.proposed":
-      case "agent.incident_report.produced":
       case "agent.reply.produced":
+      case "domain.event":
         return currentStatus;
     }
   }
@@ -623,33 +637,7 @@ function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
     case "agent.response.produced":
     case "agent.reply.produced":
     case "agent.output.completed":
-    case "agent.finding.produced":
-    case "agent.remediation.proposed":
-    case "agent.incident_report.produced":
-    case "dev.initiative.started":
-    case "dev.initiative.spec_received":
-    case "dev.initiative.plan_proposed":
-    case "dev.initiative.plan_revised":
-    case "dev.initiative.plan_approved":
-    case "dev.initiative.plan_rejected":
-    case "dev.slice.proposed":
-    case "dev.slice.approved":
-    case "dev.slice.started":
-    case "dev.slice.completed":
-    case "dev.slice.failed":
-    case "dev.implementation.started":
-    case "dev.implementation.completed":
-    case "dev.verification.completed":
-    case "dev.review.completed":
-    case "dev.repair.started":
-    case "dev.repair.completed":
-    case "dev.pr.opened":
-    case "dev.pr.updated":
-    case "dev.pr.ready_for_review":
-    case "dev.source_checkpoint.proposed":
-    case "dev.source_checkpoint.created":
-    case "dev.source_checkpoint.failed":
-    case "dev.source_checkpoint.restored":
+    case "domain.event":
     default:
       return [];
   }

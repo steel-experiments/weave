@@ -12,19 +12,26 @@ import {
   type Principal,
 } from "../auth-gateway.js";
 import {
+  AUTH_DECISION_RECORDED,
+  AuthDecisionRecordedDataSchema,
   buildAuthDecisionEvent,
   hashProviderSubject,
   principalKindFromActor,
   recordAuthDecision,
   resourceFromAction,
+  type AuthDecisionRecordedData,
 } from "../auth-audit.js";
-import { createApiServer } from "../api-server.js";
+import { createApiServer } from "../runtime/api-server.js";
 import type { AppendOptions, AppendResult, CreateThreadOptions, ReadOptions, ThreadEngine } from "../contracts.js";
-import { AuthDecisionRecordedPayloadSchema, nowIso, ThreadEventSchema, ThreadProjectionSchema, type ThreadEvent, type ThreadProjection } from "../events.js";
+import { isDomainEvent, nowIso, ThreadEventSchema, ThreadProjectionSchema, type ThreadEvent, type ThreadProjection } from "../events.js";
 import { ThreadService } from "../thread-service.js";
 
+function authData(event: Extract<ThreadEvent, { type: "domain.event" }>): AuthDecisionRecordedData {
+  return AuthDecisionRecordedDataSchema.parse(event.payload.data);
+}
+
 async function testAuthDecisionPayloadSchemaValid(): Promise<void> {
-  const result = AuthDecisionRecordedPayloadSchema.safeParse({
+  const result = AuthDecisionRecordedDataSchema.safeParse({
     principalId: "user-1",
     principalKind: "user",
     provider: "web",
@@ -35,7 +42,7 @@ async function testAuthDecisionPayloadSchemaValid(): Promise<void> {
 }
 
 async function testAuthDecisionPayloadSchemaWithAllFields(): Promise<void> {
-  const result = AuthDecisionRecordedPayloadSchema.safeParse({
+  const result = AuthDecisionRecordedDataSchema.safeParse({
     principalId: "user-1",
     principalKind: "user",
     provider: "web",
@@ -49,7 +56,7 @@ async function testAuthDecisionPayloadSchemaWithAllFields(): Promise<void> {
 }
 
 async function testAuthDecisionPayloadSchemaRejectsInvalid(): Promise<void> {
-  const result = AuthDecisionRecordedPayloadSchema.safeParse({
+  const result = AuthDecisionRecordedDataSchema.safeParse({
     principalId: "",
     principalKind: "user",
     provider: "web",
@@ -60,7 +67,7 @@ async function testAuthDecisionPayloadSchemaRejectsInvalid(): Promise<void> {
 }
 
 async function testAuthDecisionPayloadSchemaRejectsInvalidDecision(): Promise<void> {
-  const result = AuthDecisionRecordedPayloadSchema.safeParse({
+  const result = AuthDecisionRecordedDataSchema.safeParse({
     principalId: "user-1",
     principalKind: "user",
     provider: "web",
@@ -121,17 +128,19 @@ async function testBuildAuthDecisionEventAllowed(): Promise<void> {
     correlationId: "c-1",
   });
 
-  assert.equal(event.type, "auth.decision.recorded");
+  assert.equal(event.type, "domain.event");
+  assert.equal(event.payload.kind, AUTH_DECISION_RECORDED);
   assert.equal(event.threadId, "t-1");
-  assert.equal(event.payload.principalId, "user-1");
-  assert.equal(event.payload.principalKind, "user");
-  assert.equal(event.payload.provider, "web");
-  assert.equal(event.payload.action, "thread.start");
-  assert.equal(event.payload.resource, "agent:sre");
-  assert.equal(event.payload.decision, "allowed");
-  assert.equal(event.payload.reason, undefined);
-  assert.ok(event.payload.subjectHash);
-  assert.equal(event.payload.subjectHash, hashProviderSubject("okta", "sub-123"));
+  const payload = authData(event);
+  assert.equal(payload.principalId, "user-1");
+  assert.equal(payload.principalKind, "user");
+  assert.equal(payload.provider, "web");
+  assert.equal(payload.action, "thread.start");
+  assert.equal(payload.resource, "agent:sre");
+  assert.equal(payload.decision, "allowed");
+  assert.equal(payload.reason, undefined);
+  assert.ok(payload.subjectHash);
+  assert.equal(payload.subjectHash, hashProviderSubject("okta", "sub-123"));
   assert.equal(event.correlationId, "c-1");
 }
 
@@ -152,10 +161,11 @@ async function testBuildAuthDecisionEventDenied(): Promise<void> {
     actor: { type: "user", id: "user-2" },
   });
 
-  assert.equal(event.payload.decision, "denied");
-  assert.equal(event.payload.reason, "No matching access rule");
-  assert.equal(event.payload.resource, "thread:t-2");
-  assert.equal(event.payload.subjectHash, undefined);
+  const payload = authData(event);
+  assert.equal(payload.decision, "denied");
+  assert.equal(payload.reason, "No matching access rule");
+  assert.equal(payload.resource, "thread:t-2");
+  assert.equal(payload.subjectHash, undefined);
 }
 
 async function testBuildAuthDecisionEventContainsNoSecrets(): Promise<void> {
@@ -181,8 +191,9 @@ async function testBuildAuthDecisionEventContainsNoSecrets(): Promise<void> {
   assert.equal(serialized.includes("bearer-token"), false);
   assert.equal(serialized.includes("displayName"), false);
   assert.equal(serialized.includes("Test User"), false);
-  assert.ok(event.payload.subjectHash);
-  assert.notEqual(event.payload.subjectHash, "super-secret-subject-id");
+  const payload = authData(event);
+  assert.ok(payload.subjectHash);
+  assert.notEqual(payload.subjectHash, "super-secret-subject-id");
 }
 
 async function testBuildAuthDecisionEventIsValidThreadEvent(): Promise<void> {
@@ -272,11 +283,12 @@ async function testRecordAuthDecisionAppendsToEngine(): Promise<void> {
   assert.equal(events.length, 1);
   const auditEvent = events[0];
   assert.ok(auditEvent);
-  assert.equal(auditEvent?.type, "auth.decision.recorded");
-  if (auditEvent?.type === "auth.decision.recorded") {
-    assert.equal(auditEvent.payload.principalId, "user-1");
-    assert.equal(auditEvent.payload.decision, "allowed");
-    assert.equal(auditEvent.payload.action, "thread.start");
+  assert.equal(auditEvent?.type, "domain.event");
+  if (auditEvent && isDomainEvent(auditEvent, AUTH_DECISION_RECORDED)) {
+    const payload = authData(auditEvent);
+    assert.equal(payload.principalId, "user-1");
+    assert.equal(payload.decision, "allowed");
+    assert.equal(payload.action, "thread.start");
   }
 }
 
@@ -310,18 +322,17 @@ async function testAuthAuditEventInspectableFromThreadHistory(): Promise<void> {
     const threadId = body.threadId as string;
 
     const events = await engine.read(threadId);
-    const auditEvents = events.filter((e) => e.type === "auth.decision.recorded");
+    const auditEvents = events.filter((e) => isDomainEvent(e, AUTH_DECISION_RECORDED));
     assert.equal(auditEvents.length, 1);
 
     const auditEvent = auditEvents[0];
     assert.ok(auditEvent);
-    if (auditEvent?.type === "auth.decision.recorded") {
-      assert.equal(auditEvent.payload.principalId, "ci-bot");
-      assert.equal(auditEvent.payload.provider, "ci");
-      assert.equal(auditEvent.payload.action, "thread.start");
-      assert.equal(auditEvent.payload.decision, "allowed");
-      assert.equal(auditEvent.payload.resource, "agent:repo.review");
-    }
+    const payload = authData(auditEvent);
+    assert.equal(payload.principalId, "ci-bot");
+    assert.equal(payload.provider, "ci");
+    assert.equal(payload.action, "thread.start");
+    assert.equal(payload.decision, "allowed");
+    assert.equal(payload.resource, "agent:repo.review");
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
@@ -367,15 +378,16 @@ async function testAuthAuditEventOnGateResolve(): Promise<void> {
     assert.equal(response.status, 200);
 
     const events = await engine.read(session.threadId);
-    const auditEvents = events.filter((e) => e.type === "auth.decision.recorded");
+    const auditEvents = events.filter((e) => isDomainEvent(e, AUTH_DECISION_RECORDED));
     assert.equal(auditEvents.length, 1);
 
     const auditEvent = auditEvents[0];
-    if (auditEvent?.type === "auth.decision.recorded") {
-      assert.equal(auditEvent.payload.principalId, "approver-1");
-      assert.equal(auditEvent.payload.action, "gate.resolve");
-      assert.equal(auditEvent.payload.decision, "allowed");
-      assert.equal(auditEvent.payload.resource, `thread:${session.threadId}`);
+    if (auditEvent) {
+      const payload = authData(auditEvent);
+      assert.equal(payload.principalId, "approver-1");
+      assert.equal(payload.action, "gate.resolve");
+      assert.equal(payload.decision, "allowed");
+      assert.equal(payload.resource, `thread:${session.threadId}`);
     }
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -405,14 +417,15 @@ async function testAuthAuditEventOnThreadRead(): Promise<void> {
     assert.equal(response.status, 200);
 
     const events = await engine.read(session.threadId);
-    const auditEvents = events.filter((e) => e.type === "auth.decision.recorded");
+    const auditEvents = events.filter((e) => isDomainEvent(e, AUTH_DECISION_RECORDED));
     assert.equal(auditEvents.length, 1);
 
     const auditEvent = auditEvents[0];
-    if (auditEvent?.type === "auth.decision.recorded") {
-      assert.equal(auditEvent.payload.principalId, "reader-1");
-      assert.equal(auditEvent.payload.action, "thread.read");
-      assert.equal(auditEvent.payload.decision, "allowed");
+    if (auditEvent) {
+      const payload = authData(auditEvent);
+      assert.equal(payload.principalId, "reader-1");
+      assert.equal(payload.action, "thread.read");
+      assert.equal(payload.decision, "allowed");
     }
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -490,7 +503,7 @@ async function testNoAuthDoesNotCreateAuditEvents(): Promise<void> {
     const body = response.body as Record<string, unknown>;
     const threadId = body.threadId as string;
     const events = await engine.read(threadId);
-    const auditEvents = events.filter((e) => e.type === "auth.decision.recorded");
+    const auditEvents = events.filter((e) => isDomainEvent(e, AUTH_DECISION_RECORDED));
     assert.equal(auditEvents.length, 0);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));

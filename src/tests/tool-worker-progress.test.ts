@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { z } from "zod";
 import type { AppendOptions, AppendResult, CreateThreadOptions, FollowCursor, ReadOptions, ThreadEngine } from "../contracts.js";
 import { deterministicUuid, eventKey, nowIso, ThreadProjectionSchema, type ThreadEvent, type ThreadProjection } from "../events.js";
-import { ContractToolWorker } from "../tool-worker.js";
-import { tool } from "../tool-contract.js";
+import { ContractToolWorker } from "../runtime/tool-worker.js";
+import { tool } from "../runtime/tool-contract.js";
 
 class MemoryThreadEngine implements ThreadEngine {
   private readonly threads = new Set<string>();

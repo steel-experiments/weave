@@ -21,8 +21,11 @@ import {
   GitWorktreeWorkspaceProvider,
   WorkspaceRefSchema,
   createWorkspaceAllocateTool,
-} from "weave";
-import { ThreadService, ContractToolWorker, ThreadRunner, createWeaveRuntime } from "weave/runtime";
+  ThreadService,
+  ContractToolWorker,
+  ThreadRunner,
+  createWeaveRuntime,
+} from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
 import { createApiServer } from "weave/server";
 import { DeterministicMockAgent, MockAsyncToolWorker } from "weave/testing";
@@ -49,6 +52,7 @@ import {
   createIdentityAdapterContractTests,
 } from "weave/auth";
 import { z } from "zod";
+import * as weaveRoot from "weave";
 
 const inputSchema = z.object({ text: z.string().min(1) });
 const outputSchema = z.object({ text: z.string().min(1) });
@@ -224,5 +228,31 @@ assert.equal(opencodePermissionProfile().type, "weave-opencode");
 assert.equal(echoApp.agents[0]?.name, "public-api.agent");
 assert.equal(echoApp.integrations?.[0]?.name, "public-api.integration");
 assert.deepEqual(echoIntegration.eventHandlers?.[0]?.eventTypes, ["agent.response.produced"]);
+
+const rootExports = weaveRoot as unknown as Record<string, unknown>;
+for (const infra of [
+  "createPool",
+  "migrate",
+  "PostgresThreadEngine",
+  "createApiServer",
+  "ThreadService",
+  "ContractToolWorker",
+  "createWeaveRuntime",
+  "DeterministicMockAgent",
+  "authGateway",
+  "createOpenCodeCliAdapter",
+  "agent",
+  "tool",
+  "weave",
+  "defineWeaveApp",
+  "capability",
+  "policy",
+  "defineEvent",
+  "integration",
+  "ThreadRunner",
+  "GitWorktreeWorkspaceProvider",
+]) {
+  assert.equal(rootExports[infra], undefined, `weave root (".") must not expose runtime/infra symbol: ${infra}`);
+}
 
 console.log("Public API export smoke test passed");

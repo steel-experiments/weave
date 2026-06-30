@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { request as httpRequest, type IncomingMessage, type Server } from "node:http";
 import { z } from "zod";
-import { agent } from "../agent-contract.js";
-import { createAgentPlanner } from "../agent-runner.js";
+import { agent } from "../runtime/agent-contract.js";
+import { createAgentPlanner } from "../runtime/agent-runner.js";
 import {
   allowEveryone,
   allowGroup,
@@ -34,13 +34,13 @@ import {
   type AuthorizationRequest,
   type Principal,
 } from "../auth-gateway.js";
-import { createApiServer } from "../api-server.js";
-import { capability } from "../capability-contract.js";
+import { createApiServer } from "../runtime/api-server.js";
+import { capability } from "../runtime/capability-contract.js";
 import type { AppendOptions, AppendResult, CreateThreadOptions, FollowCursor, ReadOptions, ThreadEngine } from "../contracts.js";
 import { nowIso, ThreadProjectionSchema, type ThreadEvent, type ThreadProjection } from "../events.js";
-import { policy, type PolicyAuthContext } from "../policy-contract.js";
+import { policy, type PolicyAuthContext } from "../runtime/policy-contract.js";
 import { ThreadService } from "../thread-service.js";
-import { tool } from "../tool-contract.js";
+import { tool } from "../runtime/tool-contract.js";
 
 async function testAuthGatewayDelegatesToIdentityAndAccess(): Promise<void> {
   const principal: Principal = { id: "user-1", provider: "test", aliases: [], groups: [] };

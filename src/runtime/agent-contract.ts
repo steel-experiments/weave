@@ -1,9 +1,10 @@
 import type { z } from "zod";
-import type { Actor, SessionMetadata, SessionSource, ThreadEvent, ThreadStatus } from "./events.js";
-import { WeaveError } from "./errors.js";
+import type { Actor, SessionMetadata, SessionSource, ThreadEvent, ThreadStatus } from "../events.js";
+import { WeaveError } from "../errors.js";
 import type { AgentPlanner } from "./runner.js";
 import type { AnyToolContract, ToolContract } from "./tool-contract.js";
-import type { MaybePromise } from "./types.js";
+import type { ThreadRef } from "../thread-ref.js";
+import type { MaybePromise } from "../types.js";
 
 export type ToolCallOptions = Record<string, unknown>;
 
@@ -19,17 +20,7 @@ export type GateRequest = {
 
 export type GateResolution = GateResolvedPayload;
 
-export type ThreadRef<Output = unknown> = {
-  threadId: string;
-  agentName: string;
-  parentThreadId?: string;
-  rootThreadId?: string;
-  parentScopeKey?: string;
-  parentStepKey?: string;
-  status?: ThreadStatus;
-  outputSchema?: z.ZodType<Output>;
-  output?: Output;
-};
+export type { ThreadRef };
 
 export type SpawnOptions = {
   prompt?: string;
@@ -153,6 +144,20 @@ export function defineEvent<const Type extends ThreadEvent["type"]>(
 }
 
 export const event = defineEvent;
+
+export function domainEvent<Data>(
+  kind: string,
+  schema: z.ZodType<Data>,
+  data: Data,
+  metadata: AgentEventMetadata = {},
+): AgentEventInput<"domain.event"> {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    throw new WeaveError("EVENT_PAYLOAD_INVALID", `Invalid payload for domain event ${kind}`, result.error);
+  }
+
+  return { ...metadata, type: "domain.event", payload: { kind, data: result.data } };
+}
 
 export type AgentContext<
   Tools extends readonly AnyToolContract[] = readonly AnyToolContract[],

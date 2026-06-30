@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { request as httpRequest, type IncomingMessage, type Server } from "node:http";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { agent } from "../agent-contract.js";
-import { createAgentPlanner } from "../agent-runner.js";
+import { agent } from "../runtime/agent-contract.js";
+import { createAgentPlanner } from "../runtime/agent-runner.js";
 import {
   allowEveryone,
   allowUser,
@@ -23,15 +23,15 @@ import {
   type IdentityProvider,
   type Principal,
 } from "../auth-gateway.js";
-import { createApiServer, type ApiRouteHandler } from "../api-server.js";
-import { capability } from "../capability-contract.js";
-import { defineIntegration, type IntegrationRuntimeContext } from "../integration-contract.js";
-import { weave } from "../app-contract.js";
+import { createApiServer, type ApiRouteHandler } from "../runtime/api-server.js";
+import { capability } from "../runtime/capability-contract.js";
+import { defineIntegration, type IntegrationRuntimeContext } from "../runtime/integration-contract.js";
+import { weave } from "../runtime/app-contract.js";
 import type { AppendOptions, AppendResult, CreateThreadOptions, FollowCursor, ReadOptions, ThreadEngine } from "../contracts.js";
 import { nowIso, ThreadProjectionSchema, type ThreadEvent, type ThreadProjection } from "../events.js";
-import { policy, type PolicyAuthContext } from "../policy-contract.js";
+import { policy, type PolicyAuthContext } from "../runtime/policy-contract.js";
 import { ThreadService } from "../thread-service.js";
-import { tool } from "../tool-contract.js";
+import { tool } from "../runtime/tool-contract.js";
 
 class MinimalEngine implements ThreadEngine {
   private readonly threads = new Map<string, CreateThreadOptions & { rootThreadId: string }>();

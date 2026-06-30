@@ -1,5 +1,13 @@
-import { agent, approvalPolicy, event } from "weave";
+import { agent, approvalPolicy, domainEvent, event } from "weave/runtime";
 import { z } from "zod";
+import {
+  FINDING_PRODUCED,
+  FindingProducedSchema,
+  INCIDENT_REPORT_PRODUCED,
+  IncidentReportProducedSchema,
+  REMEDIATION_PROPOSED,
+  RemediationProposedSchema,
+} from "./events.js";
 import {
   axiomSearchLogs,
   deployInspectRecentChanges,
@@ -48,7 +56,7 @@ export const sreAgent = agent({
 
     await ctx.emit(
       "finding:checkout-api-db-timeout",
-      event("agent.finding.produced", {
+      domainEvent(FINDING_PRODUCED, FindingProducedSchema, {
         findingId: ctx.uuid("finding:checkout-api-db-timeout"),
         severity: "critical",
         summary: `${logs.service} production errors correlate with ${logs.errorPattern} logs, elevated latency, and the latest deploy.`,
@@ -63,7 +71,7 @@ export const sreAgent = agent({
 
     await ctx.emit(
       "remediation:rebuild-nats-prod-1",
-      event("agent.remediation.proposed", {
+      domainEvent(REMEDIATION_PROPOSED, RemediationProposedSchema, {
         remediationId: ctx.uuid("remediation:rebuild-nats-prod-1"),
         actionToolName: "infra.rebuildNode",
         summary: "Rebuild nats-prod-1 after draining connections to clear suspected stale routing state.",
@@ -85,7 +93,7 @@ export const sreAgent = agent({
 
     if (approval.resolution === "denied") {
       const report = deniedReport();
-      await ctx.emit("incident-report:denied", event("agent.incident_report.produced", report));
+      await ctx.emit("incident-report:denied", domainEvent(INCIDENT_REPORT_PRODUCED, IncidentReportProducedSchema, report));
       await ctx.emit(
         "response:denied",
         event("agent.response.produced", { message: "Remediation was denied. Investigation report produced without action." }),
@@ -100,7 +108,7 @@ export const sreAgent = agent({
       release: deploy.release,
       errorPattern: logs.errorPattern,
     });
-    await ctx.emit("incident-report:final", event("agent.incident_report.produced", report));
+    await ctx.emit("incident-report:final", domainEvent(INCIDENT_REPORT_PRODUCED, IncidentReportProducedSchema, report));
     await ctx.emit("response:final", event("agent.response.produced", { message: `${report.title}: ${report.rootCause}` }));
     return report;
   },

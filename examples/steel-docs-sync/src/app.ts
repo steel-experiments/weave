@@ -1,4 +1,4 @@
-import { weave } from "weave";
+import { weave } from "weave/runtime";
 import { steelDocsAgent } from "./agent.js";
 
 export const steelDocsSyncApp = weave({

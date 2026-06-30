@@ -14,7 +14,7 @@ import {
   OperatorSourceCheckpointRestoreResultSchema,
   OperatorSourceCheckpointSummarySchema,
 } from "../development-operator.js";
-import { newEventId, nowIso } from "weave";
+import { newEventId, nowIso } from "weave/runtime";
 
 const gate = OperatorGateSummarySchema.parse({
   gateId: "11111111-1111-4111-8111-111111111111",
@@ -117,10 +117,10 @@ const projectedStatus = await getInitiativeStatus({
         eventId: newEventId(),
         threadId: "initiative-thread",
         seq: 10,
-        type: "dev.slice.approved",
+        type: "domain.event",
         occurredAt: nowIso(),
         actor: { type: "agent", id: "weave.maintainer" },
-        payload: { sliceId: "02-authenticated-integration-ingress", title: "Authenticated Integration Ingress", approvedBy: "maintainer" },
+        payload: { kind: "dev.slice.approved", data: { sliceId: "02-authenticated-integration-ingress", title: "Authenticated Integration Ingress", approvedBy: "maintainer" } },
       } }] });
     }
     throw new Error(`Unexpected query: ${sql}`);

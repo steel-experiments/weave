@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { createPool } from "../db.js";
 import { ThreadService } from "../thread-service.js";
 import { migrate } from "../migrate.js";
-import { MockAsyncToolWorker } from "../mock-tool-worker.js";
+import { MockAsyncToolWorker } from "../runtime/mock-tool-worker.js";
 import { PostgresThreadEngine } from "../postgres-engine.js";
-import { ThreadRunner } from "../runner.js";
+import { ThreadRunner } from "../runtime/runner.js";
 import type { ThreadEvent } from "../events.js";
 import { toMermaidTimeline } from "../timeline.js";
 

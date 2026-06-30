@@ -2,11 +2,20 @@ import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import {
   getAgent,
+  isDomainEvent,
   toMermaidTimeline,
   toTextTimeline,
   type ThreadEvent,
   type ThreadProjection,
-} from "weave";
+} from "weave/runtime";
+import {
+  FINDING_PRODUCED,
+  FindingProducedSchema,
+  INCIDENT_REPORT_PRODUCED,
+  IncidentReportProducedSchema,
+  REMEDIATION_PROPOSED,
+  RemediationProposedSchema,
+} from "./events.js";
 import {
   CompositeObservabilitySink,
   ContractToolWorker,
@@ -83,8 +92,8 @@ try {
       "sentry.findIssues",
       "deploy.inspectRecentChanges",
     ]);
-    assert(beforeApprovalEvents.some((event) => event.type === "agent.finding.produced"));
-    assert(beforeApprovalEvents.some((event) => event.type === "agent.remediation.proposed"));
+    assert(beforeApprovalEvents.some((event) => isDomainEvent(event, FINDING_PRODUCED)));
+    assert(beforeApprovalEvents.some((event) => isDomainEvent(event, REMEDIATION_PROPOSED)));
     const approvalGate = beforeApprovalEvents.find((event) => event.type === "gate.created");
     assert.equal(approvalGate?.payload.reason, "risky-remediation");
     assert.equal(approvalGate?.payload.proposedAction, "Approve rebuilding nats-prod-1 in production.");
@@ -115,10 +124,11 @@ try {
     ]);
     assertDomainToolOutputs(events);
 
-    const report = events.find((event) => event.type === "agent.incident_report.produced");
+    const report = events.find((event) => isDomainEvent(event, INCIDENT_REPORT_PRODUCED));
     const finalResponse = events.find((event) => event.type === "agent.response.produced");
     assert(report);
     assert(finalResponse);
+    const reportData = IncidentReportProducedSchema.parse(report.payload.data);
     assert.equal(finalProjection.pendingGateIds.length, 0);
     assert.equal(events.length, finalProjection.tailSeq);
     assert(spans.some((span) => span.name === "tool.execute axiom.searchLogs"));
@@ -171,7 +181,7 @@ try {
       console.log(toMermaidTimeline(events));
       console.log("```");
       console.log(`finalStatus=${finalProjection.status}`);
-      console.log(`incidentTitle=${report.payload.title}`);
+      console.log(`incidentTitle=${reportData.title}`);
       console.log(`finalMessage=${finalResponse.payload.message}`);
     }
   } finally {
@@ -214,6 +224,24 @@ async function logConversation(events: ThreadEvent[], finalProjection: ThreadPro
       toolNamesByCallId.set(event.payload.toolCallId, event.payload.toolName);
     }
 
+    if (isDomainEvent(event)) {
+      const kind = event.payload.kind;
+      if (kind === FINDING_PRODUCED) {
+        const data = FindingProducedSchema.parse(event.payload.data);
+        console.log();
+        await say("agent", `Finding (${data.severity}): ${data.summary}`, 650);
+      } else if (kind === REMEDIATION_PROPOSED) {
+        const data = RemediationProposedSchema.parse(event.payload.data);
+        await say("agent", `Proposed remediation (${data.risk} risk): ${data.summary}`, 650);
+      } else if (kind === INCIDENT_REPORT_PRODUCED) {
+        const data = IncidentReportProducedSchema.parse(event.payload.data);
+        console.log();
+        await say("agent", data.title, 700);
+        await say("agent", `Root cause - ${data.rootCause}`, 700);
+      }
+      continue;
+    }
+
     switch (event.type) {
       case "prompt.received":
         await say("user", event.payload.prompt);
@@ -237,15 +265,6 @@ async function logConversation(events: ThreadEvent[], finalProjection: ThreadPro
         break;
       }
 
-      case "agent.finding.produced":
-        console.log();
-        await say("agent", `Finding (${event.payload.severity}): ${event.payload.summary}`, 650);
-        break;
-
-      case "agent.remediation.proposed":
-        await say("agent", `Proposed remediation (${event.payload.risk} risk): ${event.payload.summary}`, 650);
-        break;
-
       case "gate.created":
         console.log();
         await say("system", `Approval required - ${event.payload.proposedAction ?? event.payload.reason}`, 900);
@@ -256,12 +275,6 @@ async function logConversation(events: ThreadEvent[], finalProjection: ThreadPro
         await say("human", `${event.payload.resolution}${comment}`, 700);
         break;
       }
-
-      case "agent.incident_report.produced":
-        console.log();
-        await say("agent", event.payload.title, 700);
-        await say("agent", `Root cause - ${event.payload.rootCause}`, 700);
-        break;
 
       case "agent.response.produced":
         await say("agent", event.payload.message, 700);

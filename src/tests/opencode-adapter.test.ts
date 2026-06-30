@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { capability } from "weave";
+import { capability } from "weave/runtime";
 import {
   OpenCodeAdapterError,
   buildOpenCodeChildEnv,
@@ -18,7 +18,7 @@ import {
 import { z } from "zod";
 
 const execFileAsync = promisify(execFile);
-const tempRoot = await mkdtemp(path.join(os.tmpdir(), "weave-core-opencode-adapter-"));
+const tempRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "weave-core-opencode-adapter-")));
 const OutputSchema = z.object({ summary: z.string().min(1), filesChanged: z.array(z.string()).default([]) });
 
 try {
@@ -79,7 +79,7 @@ try {
   const sanitizedEnv = buildOpenCodeChildEnv(denyAll, { PATH: "/bin" }, { PATH: "/usr/bin", HOME: "/home/test", GITHUB_TOKEN: "secret" });
   assert.deepEqual(sanitizedEnv, { PATH: "/bin", HOME: "/home/test" });
 
-  const adapterSource = await readFile(new URL("../opencode-adapter.ts", import.meta.url), "utf8");
+  const adapterSource = await readFile(new URL("../runtime/opencode-adapter.ts", import.meta.url), "utf8");
   assert.equal(adapterSource.includes("examples/weave-maintainer"), false);
 
   const successScenario = await createScenario("success");

@@ -1,5 +1,5 @@
-import type { ThreadEngine } from "./contracts.js";
-import { eventKey, nowIso, type ThreadEvent } from "./events.js";
+import type { ThreadEngine } from "../contracts.js";
+import { eventKey, nowIso, type ThreadEvent } from "../events.js";
 
 type ToolRequestedEvent = Extract<ThreadEvent, { type: "tool.requested" }>;
 

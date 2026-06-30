@@ -8,7 +8,7 @@ The goal is to make implementation slices small enough to build, review, test, a
 
 ## North Star
 
-Blade is the north-star product.
+Weave's north star is to be a clean, durable, runtime-agnostic kernel, prepared as an open-source product. Blade is the primary consumer that proves it, in its own app (`apps/blade`).
 
 Weave should keep owning the durable control primitives:
 
@@ -23,7 +23,7 @@ Weave should keep owning the durable control primitives:
 - gates
 - resumability
 
-Blade should own the production workflows:
+Blade should own the production workflows (in the Blade app, on top of Weave):
 
 - GitHub PR review
 - Slack engineering help
@@ -42,8 +42,8 @@ These describe what the product is trying to become.
 
 Current examples:
 
-- `blade/overview.md`
-- future Blade UX, runtime, policy, and domain docs
+- `what-is-weave.md` and `overview.md` for Weave's own product narrative
+- Blade's product docs (overview, domain model, runtime) live in the Blade app (`apps/blade/docs/`)
 
 These should not become task checklists. They should describe durable product direction, accepted vocabulary, and target architecture.
 
@@ -55,8 +55,8 @@ Slice docs are the day-to-day work trackers. They should be specific enough for 
 
 Current examples:
 
-- `blade/slices/01-github-pr-review.md`
 - `docs-sync/slices/*.md`
+- Blade slices live in the Blade app (`apps/blade/docs/slices/`)
 
 ### 3. Core Weave Architecture Docs
 
@@ -139,7 +139,7 @@ A slice is complete only when all of these are true:
 - the slice document reflects actual behavior, not just intended behavior
 - the owning vertical doc reflects the new capability
 - changed Weave primitives are reflected in core architecture docs
-- new terminology is reflected in `glossary.md` or `blade/domain-model.md`
+- new terminology is reflected in `glossary.md`, or the Blade app's domain model for Blade-specific terms
 - any follow-up work is captured as new proposed slices or explicit open questions
 
 ## Testing Rule
@@ -175,8 +175,8 @@ When a slice ships, update both levels:
 
 Example:
 
-- `blade/slices/01-github-pr-review.md` records exact GitHub review behavior, events, gates, and tests
-- `blade/overview.md` updates the PR Review section and MVP status once the vertical exists
+- a docs sync slice such as `docs-sync/slices/*.md` records exact behavior, events, gates, and tests
+- the owning vertical overview (for Blade, in the Blade app) gets a shorter capability update once the vertical exists
 
 ## Review Cadence
 

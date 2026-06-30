@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { NoopThreadArtifactStore, type ThreadArtifactStore } from "./artifacts.js";
-import type { ThreadEngine } from "./contracts.js";
+import { NoopThreadArtifactStore, type ThreadArtifactStore } from "../artifacts.js";
+import type { ThreadEngine } from "../contracts.js";
 import {
   EmptyCredentialProvider,
   ResolvedCredentials,
@@ -8,8 +8,8 @@ import {
   type CredentialRequest,
   type CredentialResolution,
 } from "./credentials.js";
-import { eventKey, nowIso, type ThreadEvent } from "./events.js";
-import { internalTryPromise, runInternalEffect } from "./internal-effect.js";
+import { eventKey, nowIso, type ThreadEvent } from "../events.js";
+import { internalTryPromise, runInternalEffect } from "../internal-effect.js";
 import { isCapabilityRequest, normalizeCapabilityDeclarations, type CapabilityDeclaration } from "./capability-contract.js";
 import {
   NoopObservabilitySink,
@@ -21,7 +21,7 @@ import {
   safeEmitSpan,
   type ObservabilityContext,
   type ObservabilitySink,
-} from "./observability.js";
+} from "../observability.js";
 import {
   RetryableToolError,
   ToolRegistry,

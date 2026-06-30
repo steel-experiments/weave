@@ -1,8 +1,8 @@
 import type { z } from "zod";
-import type { ThreadArtifactStore } from "./artifacts.js";
+import type { ThreadArtifactStore } from "../artifacts.js";
 import type { CredentialRequest, ResolvedCredentials } from "./credentials.js";
-import type { ThreadEvent } from "./events.js";
-import type { ToolObserver } from "./observability.js";
+import type { ThreadEvent } from "../events.js";
+import type { ToolObserver } from "../observability.js";
 import type { CapabilityDeclaration } from "./capability-contract.js";
 
 export type ToolCompletionOutput = {
@@ -18,7 +18,7 @@ export type ToolProgressUpdate = {
 
 export type ManualToolGate = {
   type: "manual-approval";
-  reason: "tool-result-requires-approval" | "risky-remediation";
+  reason: string;
   message?: string;
   proposedAction?: string;
 };

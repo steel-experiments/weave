@@ -1,20 +1,20 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
-import type { ThreadArtifactStore } from "./artifacts.js";
+import type { ThreadArtifactStore } from "../artifacts.js";
 import type { WeaveAppDefinition } from "./app-contract.js";
-import type { AuthContext, AuthGateway, AuthSummary } from "./auth-gateway.js";
-import { authRequestFromIncoming, toAuthSummary } from "./auth-gateway.js";
-import { recordAuthDecision } from "./auth-audit.js";
-import type { WeaveAction } from "./auth-gateway.js";
-import type { ThreadEngine } from "./contracts.js";
+import type { AuthContext, AuthGateway, AuthSummary } from "../auth-gateway.js";
+import { authRequestFromIncoming, toAuthSummary } from "../auth-gateway.js";
+import { recordAuthDecision } from "../auth-audit.js";
+import type { WeaveAction } from "../auth-gateway.js";
+import type { ThreadEngine } from "../contracts.js";
 import {
   ActorSchema,
   SessionMetadataSchema,
   SessionSourceSchema,
   type Actor,
   type ThreadEvent,
-} from "./events.js";
-import type { ThreadService } from "./thread-service.js";
+} from "../events.js";
+import type { ThreadService } from "../thread-service.js";
 import {
   NoopObservabilitySink,
   elapsedMs,
@@ -24,8 +24,8 @@ import {
   safeEmitSpan,
   type ObservabilityReader,
   type ObservabilitySink,
-} from "./observability.js";
-import { buildThreadSummary } from "./summary.js";
+} from "../observability.js";
+import { buildThreadSummary } from "../summary.js";
 import { createIntegrationRoutes } from "./integration-contract.js";
 
 const CreateThreadBodySchema = z.object({

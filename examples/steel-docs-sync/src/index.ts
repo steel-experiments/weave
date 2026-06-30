@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import {
-  ThreadArtifactSchema,
   getAgent,
+  isDomainEvent,
   type ThreadEvent,
   type ThreadProjection,
   type ThreadSummary,
-} from "weave";
+} from "weave/runtime";
 import { ContractToolWorker, ThreadRunner, ThreadService, createWeaveRuntime } from "weave/runtime";
-import { PostgresThreadArtifactStore, PostgresThreadEngine, createPool, migrate } from "weave/postgres";
+import { PostgresThreadArtifactStore, PostgresThreadEngine, ThreadArtifactSchema, createPool, migrate } from "weave/postgres";
 import { createApiServer } from "weave/server";
 import { z } from "zod";
 import { steelDocsSyncApp } from "./app.js";
+import { FINDING_PRODUCED, FindingProducedSchema } from "./events.js";
 import { startSteelFixtureServer } from "./fixtures.js";
 
 const ToolArtifactSchema = z.object({
@@ -91,14 +92,23 @@ try {
         ["agent:steel-docs", "model-review"],
       ],
     );
+    const findingSeverities = events
+      .filter((event) => isDomainEvent(event, FINDING_PRODUCED))
+      .map((event) => FindingProducedSchema.parse(event.payload.data).severity);
+    const findingBreakdown = {
+      critical: findingSeverities.filter((severity) => severity === "critical").length,
+      warning: findingSeverities.filter((severity) => severity === "warning").length,
+      info: findingSeverities.filter((severity) => severity === "info").length,
+    };
+
     assert.equal(finalProjection.status, "completed");
-    assert.equal(summary.outcome, "warning");
+    assert.equal(summary.outcome, "passed");
     assert.equal(summary.execution.status, "succeeded");
     assert.equal(summary.execution.errorCode, null);
-    assert.deepEqual(summary.findings, { critical: 0, warning: 2, info: 0 });
+    assert.deepEqual(findingBreakdown, { critical: 0, warning: 2, info: 0 });
     assert.equal(finalProjection.pendingGateIds.length, 0);
     assert.equal(events.length, finalProjection.tailSeq);
-    assert.equal(events.filter((event) => event.type === "agent.finding.produced").length, 2);
+    assert.equal(events.filter((event) => isDomainEvent(event, FINDING_PRODUCED)).length, 2);
 
     const toolCompleted = events.find((event) => event.type === "tool.completed");
     const finalResponse = events.find((event) => event.type === "agent.response.produced");

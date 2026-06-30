@@ -21,22 +21,21 @@ It contains:
 - a deterministic mock agent and mock tool worker
 - daemonized runner and tool-worker loops with explicit inbox claims
 - a mocked SRE north-star demo
-- Blade product planning as the current north-star direction
-- per-slice planning docs for Blade, docs sync, and future verticals
+- per-slice planning docs for docs sync and future verticals
 - typed authoring primitives like `defineTool`, `defineAgent`, and `defineWeaveApp`
 
 The docs are still the working source of truth for direction and scope.
 
 ## Current North Star
 
-Blade is the product north star for this repository.
+Weave's north star is to be a clean, durable, runtime-agnostic control plane (kernel) that other systems build on. It is being prepared as an open-source product.
 
-Weave is the durable control layer. Blade is the production operator we expect to run on top of it. The Steel docs sync app is still important, but it is a focused Weave app and recurring audit workflow rather than the full Blade product surface.
+Blade is the primary consumer that proves Weave under real organizational workflows, but Blade is a separate product: it lives in the Blade app (`apps/blade` in the Steel monorepo), and its product overview, domain model, and slices live there, not in this repository. The Steel docs sync app is a second, focused Weave app and recurring audit workflow.
 
 Use this split when making decisions:
 
 - Weave owns threads, events, inboxes, runners, workers, typed tools, credentials, gates, artifacts, and resumability.
-- Blade owns product workflows, specialist roles, prompts, integration UX, runtime choices, and Steel-specific operating taste.
+- Blade owns product workflows, specialist roles, prompts, integration UX, runtime choices, and Steel-specific operating taste — in its own app, on top of Weave.
 - Docs sync owns docs/API drift audits, source collection, findings, CI outcomes, and optional GitHub publishing.
 
 ## Who Is Who
@@ -110,8 +109,8 @@ Use `docs/slices/template.md` for new slices.
 
 Current slice areas:
 
-- `docs/blade/slices/`: Blade product slices
 - `docs/docs-sync/slices/`: Steel docs sync app slices
+- Blade product slices live in the Blade app (`apps/blade/docs/slices/`), not in this repository
 - future verticals should follow the same pattern
 
 A slice is not complete when code merges. It is complete only when:
@@ -121,7 +120,7 @@ A slice is not complete when code merges. It is complete only when:
 - the slice doc records actual behavior and test evidence
 - the owning vertical doc is updated
 - changed Weave primitives are reflected in core architecture docs
-- new terms are reflected in `docs/glossary.md` or `docs/blade/domain-model.md`
+- new terms are reflected in `docs/glossary.md`, or the Blade app's domain model for Blade-specific terms
 - follow-up work is captured as new slices or explicit open questions
 
 Test plans must prove the real module or vertical works. Mock external networks, model providers, GitHub, Slack, Sentry, Axiom, and sandbox providers at their boundaries, but do not mock the planner, service, engine, projection, worker, or tool module that the slice exists to build.
@@ -135,27 +134,31 @@ Read these files before making significant architectural changes:
 - `docs/glossary.md`: canonical terminology
 - `docs/architecture.md`: system boundaries and primitives
 - `docs/interface.md`: engine and thread interfaces
-- `docs/blade/overview.md`: Blade product north star
-- `docs/blade/domain-model.md`: Blade vocabulary mapped to Weave primitives
-- `docs/blade/slices/README.md`: current Blade slice index
+- Blade product docs (overview, domain model, slices) live in the Blade app (`apps/blade/docs/`), not in this repository
 - `docs/poc-scope.md`: fixed PoC decisions and non-goals
 - `docs/declarative-api.md`: current authoring API and why `defineThread` does not exist yet
 - `docs/research/README.md`: grouped comparison and research index
 - `README.md`: local setup, commands, and current implementation summary
 
-Code landmarks:
+Code landmarks. The tree is split into a kernel (`src/`, the durable thread/record/coordination core) and a runtime (`src/runtime/`, the replay/agent layer). A `kernel → runtime` import is forbidden and enforced by `npm run lint:boundaries`.
 
-- `src/events.ts`: typed event schemas and payload contracts
+Kernel (`src/`):
+
+- `src/events.ts`: closed kernel event union and payload contracts, plus the open `domain.event` extension point
+- `src/contracts.ts`: `ThreadEngine`/`ThreadLeaseStore` interfaces and append/read options (`expectedTailSeq` fencing)
 - `src/postgres-engine.ts`: durable event log, projections, inbox, leases, and gates
-- `src/thread-service.ts`: session and gate operations
-- `src/runner.ts`: bounded thread step execution
-- `src/daemons.ts`: inbox-claim-driven background processing
-- `src/tool-contract.ts`: `defineTool` and tool lifecycle contract
-- `src/agent-contract.ts`: `defineAgent`
-- `src/app-contract.ts`: `defineWeaveApp`
-- `src/credentials.ts`: scoped credential resolution model
+- `src/thread-service.ts`: session, gate, and read operations
 - `src/observability.ts`, `src/postgres-observability.ts`, `src/otlp-observability.ts`: observability sinks
-- `src/api-server.ts`: minimal HTTP surface for the PoC and demo flows
+
+Runtime (`src/runtime/`):
+
+- `src/runtime/runner.ts`: bounded thread step execution
+- `src/runtime/daemons.ts`: inbox-claim-driven background processing
+- `src/runtime/tool-contract.ts`: `defineTool` and tool lifecycle contract
+- `src/runtime/agent-contract.ts`: `defineAgent`
+- `src/runtime/app-contract.ts`: `defineWeaveApp`
+- `src/runtime/credentials.ts`: scoped credential resolution model
+- `src/runtime/api-server.ts`: minimal HTTP surface for the PoC and demo flows
 
 ## How To Make Good Changes Here
 
@@ -257,15 +260,12 @@ If you are new to the repo, start here:
 1. `docs/README.md`
 2. `docs/overview.md`
 3. `docs/docs-operating-model.md`
-4. `docs/blade/overview.md`
-5. `docs/blade/domain-model.md`
-6. `docs/blade/slices/README.md`
-7. `docs/glossary.md`
-8. `docs/architecture.md`
-9. `docs/interface.md`
-10. `docs/poc-scope.md`
-11. `docs/declarative-api.md`
-12. `README.md`
+4. `docs/glossary.md`
+5. `docs/architecture.md`
+6. `docs/interface.md`
+7. `docs/poc-scope.md`
+8. `docs/declarative-api.md`
+9. `README.md`
 
 ## Bottom Line
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Pool } from "pg";
 import { dashboardHtml, createLocalDashboardServer } from "../development-dashboard.js";
 import { buildDashboardState } from "../development-dashboard.js";
-import { newEventId, nowIso, type ThreadEvent } from "weave";
+import { newEventId, nowIso, type ThreadEvent } from "weave/runtime";
 import { migrate, PostgresThreadEngine } from "weave/postgres";
 
 const html = dashboardHtml();
@@ -39,15 +39,18 @@ try {
     {
       eventId: newEventId(),
       threadId,
-      type: "dev.initiative.started",
+      type: "domain.event",
       occurredAt: nowIso(),
       actor: { type: "agent", id: "weave.maintainer" },
       payload: {
-        initiative: "Dashboard State Regression",
-        repo: "weave",
-        baseBranch: "main",
-        workingBranch: "dashboard-state-regression",
-        contextFiles: ["README.md"],
+        kind: "dev.initiative.started",
+        data: {
+          initiative: "Dashboard State Regression",
+          repo: "weave",
+          baseBranch: "main",
+          workingBranch: "dashboard-state-regression",
+          contextFiles: ["README.md"],
+        },
       },
     },
     {

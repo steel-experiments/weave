@@ -1,4 +1,4 @@
-import { agent, event } from "weave";
+import { agent, event } from "weave/runtime";
 import { z } from "zod";
 import { zenChatCompletionTool } from "./tools.js";
 

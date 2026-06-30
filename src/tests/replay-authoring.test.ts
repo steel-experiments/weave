@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { agent, event } from "../agent-contract.js";
-import { createAgentPlanner } from "../agent-runner.js";
-import { createApiServer } from "../api-server.js";
-import { weave } from "../app-contract.js";
-import { capability, isCapabilityRequest } from "../capability-contract.js";
-import type { CredentialProvider, CredentialRequest, CredentialResolution, CredentialResolutionContext } from "../credentials.js";
+import { agent, domainEvent, event } from "../runtime/agent-contract.js";
+import { createAgentPlanner } from "../runtime/agent-runner.js";
+import { createApiServer } from "../runtime/api-server.js";
+import { weave } from "../runtime/app-contract.js";
+import { capability, isCapabilityRequest } from "../runtime/capability-contract.js";
+import type { CredentialProvider, CredentialRequest, CredentialResolution, CredentialResolutionContext } from "../runtime/credentials.js";
 import type {
   AppendOptions,
   AppendResult,
@@ -20,6 +20,7 @@ import { ParallelDurableEffectError, ReplayMismatchError, WeaveError } from "../
 import {
   deterministicUuid,
   eventKey,
+  isDomainEvent,
   nowIso,
   stableJsonHash,
   ThreadEventSchema,
@@ -27,15 +28,15 @@ import {
   type ThreadProjection,
   type ThreadEvent,
 } from "../events.js";
-import { approvalPolicy, policy } from "../policy-contract.js";
-import { ThreadRunner } from "../runner.js";
-import { createRuntimeAgentPlanner, createWeaveRuntime } from "../runtime.js";
+import { approvalPolicy, policy } from "../runtime/policy-contract.js";
+import { ThreadRunner } from "../runtime/runner.js";
+import { createRuntimeAgentPlanner, createWeaveRuntime } from "../runtime/runtime.js";
 import { buildThreadSummary } from "../summary.js";
 import { ThreadService } from "../thread-service.js";
 import { toMermaidTimeline, toTextTimeline } from "../timeline.js";
-import { RetryableToolError, tool, type AnyToolContract } from "../tool-contract.js";
-import { ContractToolWorker } from "../tool-worker.js";
-import { integrationEvent } from "../integration-contract.js";
+import { RetryableToolError, tool, type AnyToolContract } from "../runtime/tool-contract.js";
+import { ContractToolWorker } from "../runtime/tool-worker.js";
+import { integrationEvent } from "../runtime/integration-contract.js";
 
 const inputSchema = z.object({ query: z.string().min(1) });
 const outputSchema = z.object({
@@ -1211,6 +1212,14 @@ async function testReplayMismatch(): Promise<void> {
   );
 }
 
+const findingDataSchema = z.object({
+  findingId: z.string().uuid(),
+  severity: z.enum(["info", "warning", "critical"]),
+  summary: z.string().min(1),
+  evidence: z.array(z.object({ source: z.string().min(1), summary: z.string().min(1) })),
+});
+const FINDING_KIND = "agent.finding.produced";
+
 async function testEmitPayloadMismatch(): Promise<void> {
   const emitAgent = agent({
     name: "emit-agent",
@@ -1218,7 +1227,7 @@ async function testEmitPayloadMismatch(): Promise<void> {
     async run(ctx) {
       await ctx.emit(
         "final",
-        event("agent.finding.produced", {
+        domainEvent(FINDING_KIND, findingDataSchema, {
           findingId: ctx.uuid("final"),
           severity: "warning",
           summary: "new message",
@@ -1229,10 +1238,10 @@ async function testEmitPayloadMismatch(): Promise<void> {
   });
   const planner = createAgentPlanner(emitAgent);
   const history = initialHistory("emit-payload-mismatch");
-  const existingFinding: Extract<ThreadEvent, { type: "agent.finding.produced" }> = {
-    eventId: eventKey("emit-payload-mismatch", "agent.finding.produced", "agent:emit-agent:final"),
+  const existingFinding: Extract<ThreadEvent, { type: "domain.event" }> = {
+    eventId: eventKey("emit-payload-mismatch", "domain.event", "agent:emit-agent:final"),
     threadId: "emit-payload-mismatch",
-    type: "agent.finding.produced",
+    type: "domain.event",
     occurredAt: nowIso(),
     correlationId: history[0]?.correlationId,
     causationId: history.at(-1)?.eventId,
@@ -1240,10 +1249,13 @@ async function testEmitPayloadMismatch(): Promise<void> {
     stepKey: "final",
     actor: { type: "agent", id: "emit-agent" },
     payload: {
-      findingId: deterministicUuid("agent-context", "emit-payload-mismatch", "agent:emit-agent", "final"),
-      severity: "warning",
-      summary: "old message",
-      evidence: [{ source: "test", summary: "evidence" }],
+      kind: FINDING_KIND,
+      data: {
+        findingId: deterministicUuid("agent-context", "emit-payload-mismatch", "agent:emit-agent", "final"),
+        severity: "warning",
+        summary: "old message",
+        evidence: [{ source: "test", summary: "evidence" }],
+      },
     },
   };
 
@@ -1256,21 +1268,11 @@ async function testEmitPayloadMismatch(): Promise<void> {
 }
 
 async function testTypedEventFactoryAppendAndReplay(): Promise<void> {
-  const findingProduced = event({
-    type: "agent.finding.produced",
-    payload: z.object({
-      findingId: z.string().uuid(),
-      severity: z.enum(["info", "warning", "critical"]),
-      summary: z.string().min(1),
-      evidence: z.array(z.object({ source: z.string().min(1), summary: z.string().min(1) })),
-    }),
-    description: "Typed finding event for replay tests.",
-  });
   const emitAgent = agent({
     name: "typed-event-agent",
     input: inputSchema,
     async run(ctx) {
-      await ctx.emit("finding", findingProduced({
+      await ctx.emit("finding", domainEvent(FINDING_KIND, findingDataSchema, {
         findingId: ctx.id("finding"),
         severity: "info",
         summary: "Done",
@@ -1284,19 +1286,20 @@ async function testTypedEventFactoryAppendAndReplay(): Promise<void> {
 
   const firstPlan = await planner.plan("typed-event-append-replay", history);
   assert(firstPlan);
-  assert.equal(findingProduced.type, "agent.finding.produced");
-  assert.equal(findingProduced.description, "Typed finding event for replay tests.");
-  assert.equal(firstPlan.events.filter((planned) => planned.type === "agent.finding.produced").length, 1);
+  assert.equal(firstPlan.events.filter((planned) => isDomainEvent(planned, FINDING_KIND)).length, 1);
   assert.deepEqual(firstPlan.events[0]?.payload, {
-    findingId: deterministicUuid("agent-context", "typed-event-append-replay", "agent:typed-event-agent", "finding"),
-    severity: "info",
-    summary: "Done",
-    evidence: [{ source: "test", summary: "evidence" }],
+    kind: FINDING_KIND,
+    data: {
+      findingId: deterministicUuid("agent-context", "typed-event-append-replay", "agent:typed-event-agent", "finding"),
+      severity: "info",
+      summary: "Done",
+      evidence: [{ source: "test", summary: "evidence" }],
+    },
   });
 
   const replayPlan = await planner.plan("typed-event-append-replay", [...history, firstPlan.events[0] as ThreadEvent]);
   assert(replayPlan);
-  assert.equal(replayPlan.events.some((planned) => planned.type === "agent.finding.produced"), false);
+  assert.equal(replayPlan.events.some((planned) => isDomainEvent(planned, FINDING_KIND)), false);
   assert.equal(replayPlan.events[0]?.type, "agent.response.produced");
   assert.equal(replayPlan.events[1]?.type, "agent.output.completed");
 }
@@ -1315,10 +1318,10 @@ async function testTypedEventFactoryTypeMismatch(): Promise<void> {
   });
   const planner = createAgentPlanner(emitAgent);
   const history = initialHistory("typed-event-type-mismatch");
-  const existingFinding: Extract<ThreadEvent, { type: "agent.finding.produced" }> = {
-    eventId: eventKey("typed-event-type-mismatch", "agent.finding.produced", "agent:typed-event-type-mismatch-agent:final"),
+  const existingFinding: Extract<ThreadEvent, { type: "domain.event" }> = {
+    eventId: eventKey("typed-event-type-mismatch", "domain.event", "agent:typed-event-type-mismatch-agent:final"),
     threadId: "typed-event-type-mismatch",
-    type: "agent.finding.produced",
+    type: "domain.event",
     occurredAt: nowIso(),
     correlationId: history[0]?.correlationId,
     causationId: history.at(-1)?.eventId,
@@ -1326,10 +1329,13 @@ async function testTypedEventFactoryTypeMismatch(): Promise<void> {
     stepKey: "final",
     actor: { type: "agent", id: "typed-event-type-mismatch-agent" },
     payload: {
-      findingId: deterministicUuid("agent-context", "typed-event-type-mismatch", "agent:typed-event-type-mismatch-agent", "final"),
-      severity: "info",
-      summary: "existing finding",
-      evidence: [{ source: "test", summary: "evidence" }],
+      kind: FINDING_KIND,
+      data: {
+        findingId: deterministicUuid("agent-context", "typed-event-type-mismatch", "agent:typed-event-type-mismatch-agent", "final"),
+        severity: "info",
+        summary: "existing finding",
+        evidence: [{ source: "test", summary: "evidence" }],
+      },
     },
   };
 
@@ -1342,20 +1348,11 @@ async function testTypedEventFactoryTypeMismatch(): Promise<void> {
 }
 
 async function testTypedEventFactoryPayloadMismatch(): Promise<void> {
-  const findingProduced = event({
-    type: "agent.finding.produced",
-    payload: z.object({
-      findingId: z.string().uuid(),
-      severity: z.enum(["info", "warning", "critical"]),
-      summary: z.string().min(1),
-      evidence: z.array(z.object({ source: z.string().min(1), summary: z.string().min(1) })),
-    }),
-  });
   const emitAgent = agent({
     name: "typed-event-payload-mismatch-agent",
     input: inputSchema,
     async run(ctx) {
-      await ctx.emit("finding", findingProduced({
+      await ctx.emit("finding", domainEvent(FINDING_KIND, findingDataSchema, {
         findingId: ctx.id("finding"),
         severity: "warning",
         summary: "Changed",
@@ -1365,10 +1362,10 @@ async function testTypedEventFactoryPayloadMismatch(): Promise<void> {
   });
   const planner = createAgentPlanner(emitAgent);
   const history = initialHistory("typed-event-payload-mismatch");
-  const existingFinding: Extract<ThreadEvent, { type: "agent.finding.produced" }> = {
-    eventId: eventKey("typed-event-payload-mismatch", "agent.finding.produced", "agent:typed-event-payload-mismatch-agent:finding"),
+  const existingFinding: Extract<ThreadEvent, { type: "domain.event" }> = {
+    eventId: eventKey("typed-event-payload-mismatch", "domain.event", "agent:typed-event-payload-mismatch-agent:finding"),
     threadId: "typed-event-payload-mismatch",
-    type: "agent.finding.produced",
+    type: "domain.event",
     occurredAt: nowIso(),
     correlationId: history[0]?.correlationId,
     causationId: history.at(-1)?.eventId,
@@ -1376,10 +1373,13 @@ async function testTypedEventFactoryPayloadMismatch(): Promise<void> {
     stepKey: "finding",
     actor: { type: "agent", id: "typed-event-payload-mismatch-agent" },
     payload: {
-      findingId: deterministicUuid("agent-context", "typed-event-payload-mismatch", "agent:typed-event-payload-mismatch-agent", "finding"),
-      severity: "warning",
-      summary: "Original",
-      evidence: [{ source: "test", summary: "evidence" }],
+      kind: FINDING_KIND,
+      data: {
+        findingId: deterministicUuid("agent-context", "typed-event-payload-mismatch", "agent:typed-event-payload-mismatch-agent", "finding"),
+        severity: "warning",
+        summary: "Original",
+        evidence: [{ source: "test", summary: "evidence" }],
+      },
     },
   };
 
@@ -1543,7 +1543,7 @@ async function testEmitReplayDoesNotDuplicateEvent(): Promise<void> {
     async run(ctx) {
       await ctx.emit(
         "finding",
-        event("agent.finding.produced", {
+        domainEvent(FINDING_KIND, findingDataSchema, {
           findingId: ctx.uuid("finding"),
           severity: "info",
           summary: "replayed finding",
@@ -1558,15 +1558,13 @@ async function testEmitReplayDoesNotDuplicateEvent(): Promise<void> {
 
   const firstPlan = await planner.plan(threadId, history);
   assert(firstPlan);
-  assert.equal(firstPlan.events.filter((event) => event.type === "agent.finding.produced").length, 1);
-  const emittedFinding = firstPlan.events.find(
-    (planned): planned is Extract<ThreadEvent, { type: "agent.finding.produced" }> => planned.type === "agent.finding.produced",
-  );
+  assert.equal(firstPlan.events.filter((event) => isDomainEvent(event, FINDING_KIND)).length, 1);
+  const emittedFinding = firstPlan.events.find((planned) => isDomainEvent(planned, FINDING_KIND));
   assert(emittedFinding);
 
   const replayPlan = await planner.plan(threadId, [...history, emittedFinding]);
   assert(replayPlan);
-  assert.equal(replayPlan.events.some((planned) => planned.type === "agent.finding.produced"), false);
+  assert.equal(replayPlan.events.some((planned) => isDomainEvent(planned, FINDING_KIND)), false);
   assert.equal(replayPlan.events[0]?.type, "agent.response.produced");
   assert.equal(replayPlan.events[1]?.type, "agent.output.completed");
 
@@ -2120,14 +2118,15 @@ async function testApprovalPolicyEvaluation(): Promise<void> {
 }
 
 async function testTypedEventFactory(): Promise<void> {
-  const finding = event("agent.finding.produced", {
+  const finding = domainEvent(FINDING_KIND, findingDataSchema, {
     findingId: deterministicUuid("typed-event", "finding"),
     severity: "info",
     summary: "typed finding",
     evidence: [{ source: "test", summary: "evidence" }],
   });
-  assert.equal(finding.type, "agent.finding.produced");
-  assert.equal(finding.payload.summary, "typed finding");
+  assert.equal(finding.type, "domain.event");
+  assert.equal(finding.payload.kind, FINDING_KIND);
+  assert.equal(findingDataSchema.parse(finding.payload.data).summary, "typed finding");
 }
 
 async function testChildThreadEventSchemas(): Promise<void> {

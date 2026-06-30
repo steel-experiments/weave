@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { ThreadArtifactSchema, RetryableToolError, tool } from "weave";
+import { RetryableToolError, tool } from "weave/runtime";
+import { ThreadArtifactSchema } from "weave/postgres";
 import { z } from "zod";
 
 const SteelDocsAuditFindingSchema = z.object({

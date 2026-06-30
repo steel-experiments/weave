@@ -15,7 +15,7 @@ import {
   createWorkspaceStateTool,
   workspaceIdFor,
   workspacePathFor,
-} from "../workspace-provider.js";
+} from "../runtime/workspace-provider.js";
 
 const execFileAsync = promisify(execFile);
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), "weave-workspace-provider-"));

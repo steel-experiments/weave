@@ -4,7 +4,7 @@ import { ThreadService, createWeaveRuntime } from "weave/runtime";
 import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
 import { createApiServer } from "weave/server";
 import { z } from "zod";
-import type { ThreadEvent } from "weave";
+import type { ThreadEvent } from "weave/runtime";
 import { simpleAssistantApp } from "./app.js";
 
 const AssistantRequestSchema = z.object({

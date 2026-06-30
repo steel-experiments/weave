@@ -20,7 +20,7 @@ import {
   createOpenCodeCliRepairRunner,
 } from "../opencode-runner.js";
 import { RepairAgentInputSchema, createOpenCodeImplementationTool, createRepairTool, type OpenCodeImplementerInput } from "../development-orchestrator.js";
-import type { CapabilityDeclaration, PolicyRequest } from "weave";
+import type { CapabilityDeclaration, PolicyRequest } from "weave/runtime";
 
 const execFileAsync = promisify(execFile);
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), "weave-opencode-runner-"));

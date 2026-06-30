@@ -22,7 +22,7 @@ import {
   ReplayMismatchError,
   ToolFailedError,
   WeaveError,
-} from "./errors.js";
+} from "../errors.js";
 import {
   deterministicUuid,
   eventKey,
@@ -31,11 +31,11 @@ import {
   type Actor,
   type SessionMetadata,
   type ThreadEvent,
-} from "./events.js";
-import { internalTry, internalTryPromise, runInternalEffect, runInternalSyncEffect } from "./internal-effect.js";
+} from "../events.js";
+import { internalTry, internalTryPromise, runInternalEffect, runInternalSyncEffect } from "../internal-effect.js";
 import { isCapabilityRequest, normalizeCapabilityDeclarations, type CapabilityDeclaration } from "./capability-contract.js";
 import type { AgentPlan, AgentPlanner } from "./runner.js";
-import type { ThreadService } from "./thread-service.js";
+import type { ThreadService } from "../thread-service.js";
 import type { ToolContract } from "./tool-contract.js";
 import type { AnyPolicyRule, PolicyAuthContext, PolicyDecision, PolicyRequest } from "./policy-contract.js";
 
@@ -1434,10 +1434,7 @@ function capabilityDescriptors(capabilities: readonly CapabilityDeclaration[]): 
 
 function hasTerminalAgentResponse(events: readonly ThreadEvent[]): boolean {
   return events.some(
-    (event) =>
-      event.type === "agent.response.produced" ||
-      event.type === "agent.incident_report.produced" ||
-      event.type === "agent.failed",
+    (event) => event.type === "agent.response.produced" || event.type === "agent.failed",
   );
 }
 

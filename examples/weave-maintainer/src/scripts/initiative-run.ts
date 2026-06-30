@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { defineWeaveApp, GitWorktreeWorkspaceProvider, PostgresObservabilitySink, type CredentialProvider, type CredentialRequest, type CredentialResolution, type CredentialResolutionContext, type DevCommandResult, type DevReviewFinding, type ThreadEvent, type ThreadProjection, type WorkspaceProvider } from "weave";
-import { createPool, migrate, PostgresThreadEngine } from "weave/postgres";
+import { defineWeaveApp, GitWorktreeWorkspaceProvider, type CredentialProvider, type CredentialRequest, type CredentialResolution, type CredentialResolutionContext, type ThreadEvent, type ThreadProjection, type WorkspaceProvider } from "weave/runtime";
+import type { DevCommandResult, DevReviewFinding } from "../events.js";
+import { createPool, migrate, PostgresObservabilitySink, PostgresThreadEngine } from "weave/postgres";
 import { createWeaveRuntime, ThreadService } from "weave/runtime";
 import {
   createMarkdownInitiativePlanCompiler,

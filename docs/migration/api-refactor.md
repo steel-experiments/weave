@@ -23,7 +23,7 @@ The new preferred style is ordinary async TypeScript backed by replay-safe durab
 New agents should use `agent` with `run(ctx, input)`:
 
 ```ts
-import { agent, tool, weave } from "weave";
+import { agent, tool, weave } from "weave/runtime";
 import { z } from "zod";
 
 const inspectIssue = tool({
@@ -74,7 +74,7 @@ The stable key, such as `"inspect-issue"`, is part of replay identity. Do not ge
 Planner-style agents still work:
 
 ```ts
-import { defineAgent } from "weave";
+import { defineAgent } from "weave/runtime";
 
 const legacyAgent = defineAgent({
   name: "legacy.agent",
