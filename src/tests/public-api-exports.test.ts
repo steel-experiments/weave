@@ -25,8 +25,16 @@ import {
   ContractToolWorker,
   ThreadRunner,
   createWeaveRuntime,
+  ThreadQueryService,
 } from "weave/runtime";
-import { PostgresThreadEngine, createPool, migrate } from "weave/postgres";
+import {
+  PostgresThreadEngine,
+  appendTestGate,
+  createPool,
+  createTestThreadProjection,
+  migrate,
+  truncateWeaveForTest,
+} from "weave/postgres";
 import { createApiServer } from "weave/server";
 import { DeterministicMockAgent, MockAsyncToolWorker } from "weave/testing";
 import { createOpenCodeCliAdapter, opencodePermissionProfile } from "weave/opencode";
@@ -192,10 +200,14 @@ assert.equal(typeof createWeaveRuntime, "function");
 assert.equal(typeof ThreadRunner, "function");
 assert.equal(typeof ContractToolWorker, "function");
 assert.equal(typeof ThreadService, "function");
+assert.equal(typeof ThreadQueryService, "function");
 
 assert.equal(typeof PostgresThreadEngine, "function");
 assert.equal(typeof createPool, "function");
 assert.equal(typeof migrate, "function");
+assert.equal(typeof appendTestGate, "function");
+assert.equal(typeof createTestThreadProjection, "function");
+assert.equal(typeof truncateWeaveForTest, "function");
 
 assert.equal(typeof createApiServer, "function");
 
@@ -230,6 +242,7 @@ assert.equal(echoApp.integrations?.[0]?.name, "public-api.integration");
 assert.deepEqual(echoIntegration.eventHandlers?.[0]?.eventTypes, ["agent.response.produced"]);
 
 const rootExports = weaveRoot as unknown as Record<string, unknown>;
+assert.equal(typeof rootExports.ThreadQueryService, "function");
 for (const infra of [
   "createPool",
   "migrate",

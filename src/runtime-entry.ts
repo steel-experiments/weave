@@ -3,6 +3,7 @@ export * from "./errors.js";
 export * from "./events.js";
 export * from "./observability.js";
 export * from "./otlp-observability.js";
+export * from "./thread-query-service.js";
 export * from "./summary.js";
 export * from "./thread-service.js";
 export * from "./timeline.js";

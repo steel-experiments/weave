@@ -12,6 +12,7 @@ The project is currently a working proof of concept, not a published npm package
 - Human approval gates, durable sleeps, external signal waits, checkpoints, and child threads.
 - Runtime request policies that can allow, deny, or require approval before supported durable requests are recorded.
 - A Postgres-backed engine, inbox-based runner/tool daemons, and an HTTP API for local service mode.
+- A read-only `ThreadQueryService` boundary for hosts that need thread heads, ancestry, recent events, and cursor-paginated event pages without depending on storage tables.
 - Auth gateway primitives for protecting API ingress with pluggable identity providers and access rules.
 - A hardened `weave/opencode` adapter for bounded OpenCode CLI execution with explicit permission profiles, schema-validated output, sanitized env, and actual workspace diff enforcement.
 

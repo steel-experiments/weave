@@ -18,55 +18,24 @@ import {
   SessionMetadataSchema,
   ThreadEventSchema,
   ThreadProjectionSchema,
-  type SessionMetadata,
   type ThreadEvent,
   type ThreadProjection,
   type ThreadStatus,
 } from "./events.js";
+import type {
+  LatestChildReply,
+  ListThreadHeadsOptions,
+  RecentEventsResult,
+  ThreadHeadRead,
+  ThreadHeadReadWithDepth,
+  ThreadReadModel,
+} from "./thread-query-service.js";
 
 export type PostgresThreadEngineOptions = {
   inboxRoutes?: InboxRouteResolver;
 };
 
-export type ThreadHeadRead = {
-  threadId: string;
-  status: ThreadStatus;
-  parentThreadId: string | null;
-  rootThreadId: string;
-  parentScopeKey: string | null;
-  parentStepKey: string | null;
-  createdAt: string;
-  updatedAt: string;
-  metadata: SessionMetadata | null;
-};
-
-export type ThreadHeadReadWithDepth = ThreadHeadRead & { depth: number };
-
-export type ListThreadHeadsOptions = {
-  parentThreadId?: string | null;
-  parentThreadIdNotNull?: boolean;
-  statuses?: readonly ThreadStatus[];
-  updatedBefore?: string;
-  orderBy?: "created_asc" | "created_desc" | "updated_asc" | "updated_desc";
-  limit?: number;
-};
-
-export type RecentEventsResult = {
-  events: ThreadEvent[];
-  total: number;
-};
-
-export type LatestChildReply = {
-  parentThreadId: string;
-  childThreadId: string;
-  status: ThreadStatus;
-  summary: string | null;
-  eventId: string | null;
-  occurredAt: string | null;
-  updatedAt: string;
-};
-
-export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore {
+export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, ThreadReadModel {
   constructor(
     private readonly pool: Pool,
     private readonly options: PostgresThreadEngineOptions = {},

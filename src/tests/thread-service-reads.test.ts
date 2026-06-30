@@ -5,6 +5,7 @@ import { Pool } from "pg";
 import { newEventId, nowIso } from "../events.js";
 import { migrate } from "../migrate.js";
 import { PostgresThreadEngine } from "../postgres-engine.js";
+import { ThreadQueryService } from "../thread-query-service.js";
 import { ThreadService } from "../thread-service.js";
 
 const connectionString =
@@ -22,6 +23,7 @@ try {
 await migrate(pool);
 const engine = new PostgresThreadEngine(pool);
 const service = new ThreadService(engine);
+const queries = new ThreadQueryService(engine);
 
 after(async () => {
   await pool.end();
@@ -80,6 +82,51 @@ test("getEvents filters by type and preserves order", async () => {
   const limited = await service.getEvents(threadId, { type: "agent.reply.produced", limit: 1 });
   assert.equal(limited.length, 1);
   assert.equal(limited[0]?.type, "agent.reply.produced");
+});
+
+test("ThreadQueryService paginates filtered thread events with opaque cursors", async () => {
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  await engine.append(
+    Array.from({ length: 1000 }, (_, index) => ({
+      eventId: newEventId(),
+      threadId,
+      type: "domain.event" as const,
+      occurredAt: nowIso(),
+      correlationId: randomUUID(),
+      actor: { type: "system" as const, id: "test" },
+      payload: { kind: "noise", data: { index } },
+    })),
+  );
+  await appendReply(engine, threadId, "agent.reply.produced", "first");
+  await appendReply(engine, threadId, "agent.reply.produced", "second");
+
+  const first = await queries.listThreadEvents({
+    threadId,
+    types: ["agent.reply.produced"],
+    limit: 1,
+  });
+  assert.equal(first.events.length, 1);
+  assert.equal(first.events[0]?.type === "agent.reply.produced" ? first.events[0].payload.message : null, "first");
+  assert.ok(first.nextCursor);
+
+  const second = await queries.listThreadEvents({
+    threadId,
+    types: ["agent.reply.produced"],
+    cursor: first.nextCursor,
+    limit: 1,
+  });
+  assert.equal(second.events.length, 1);
+  assert.equal(second.events[0]?.type === "agent.reply.produced" ? second.events[0].payload.message : null, "second");
+  assert.equal(second.nextCursor, null);
+
+  await assert.rejects(
+    queries.listThreadEvents({ threadId, cursor: "not-a-valid-cursor" }),
+    /Invalid thread event cursor/,
+  );
+  await assert.rejects(
+    queries.listThreadEvents({ threadId, limit: 1001 }),
+    /Thread event page limit/,
+  );
 });
 
 test("custom inbox routes can deliver host consumers", async () => {
@@ -157,7 +204,7 @@ test("listOpenGates returns open gates and excludes resolved ones", async () => 
   assert.equal(open.length, 0);
 });
 
-test("postgres read model lists thread heads with metadata and children", async () => {
+test("ThreadQueryService lists thread heads with metadata and children", async () => {
   const parent = await service.startSession({
     prompt: "parent",
     source: "api",
@@ -172,11 +219,11 @@ test("postgres read model lists thread heads with metadata and children", async 
     idempotencyKey: `review-${randomUUID()}`,
   });
 
-  const head = await engine.getThreadHead(parent.threadId);
+  const head = await queries.getThreadHead(parent.threadId);
   assert.equal(head?.threadId, parent.threadId);
   assert.equal(head?.metadata?.role, "default");
 
-  const children = await engine.listThreadHeads({
+  const children = await queries.listThreadHeads({
     parentThreadId: parent.threadId,
     orderBy: "created_asc",
   });
@@ -185,7 +232,7 @@ test("postgres read model lists thread heads with metadata and children", async 
   assert.equal(children[0]?.metadata?.role, "reviewer");
 });
 
-test("postgres read model lists ancestors from child to root", async () => {
+test("ThreadQueryService lists ancestors from child to root", async () => {
   const parent = await service.startSession({
     prompt: "root",
     source: "api",
@@ -200,14 +247,14 @@ test("postgres read model lists ancestors from child to root", async () => {
     idempotencyKey: `child-${randomUUID()}`,
   });
 
-  const chain = await engine.listThreadAncestors(child.threadId);
+  const chain = await queries.listThreadAncestors(child.threadId);
   assert.equal(chain[0]?.threadId, child.threadId);
   assert.equal(chain[0]?.depth, 0);
   assert.equal(chain[1]?.threadId, parent.threadId);
   assert.equal(chain[1]?.depth, 1);
 });
 
-test("postgres read model finds latest child reply by metadata", async () => {
+test("ThreadQueryService finds latest child reply by metadata", async () => {
   const parent = await service.startSession({ prompt: "parent", source: "api", agentName: "blade" });
   const reviewer = await service.startChildSession({
     parentThreadId: parent.threadId,
@@ -226,7 +273,7 @@ test("postgres read model finds latest child reply by metadata", async () => {
   await appendReply(engine, dev.threadId, "agent.response.produced", "dev done");
   await appendReply(engine, reviewer.threadId, "agent.response.produced", "looks good");
 
-  const replies = await engine.listLatestChildRepliesByMetadata({
+  const replies = await queries.listLatestChildRepliesByMetadata({
     parentThreadIds: [parent.threadId],
     metadata: { role: "reviewer" },
     statuses: ["completed"],
@@ -238,7 +285,7 @@ test("postgres read model finds latest child reply by metadata", async () => {
   assert.equal(replies[0]?.summary, "looks good");
 });
 
-test("postgres read model lists recent events with a total count", async () => {
+test("ThreadQueryService lists recent events with a total count", async () => {
   const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
   await engine.append([
     {
@@ -257,7 +304,7 @@ test("postgres read model lists recent events with a total count", async () => {
     },
   ]);
 
-  const result = await engine.listRecentEvents({ types: ["tool.failed"], limit: 1 });
+  const result = await queries.listRecentEvents({ types: ["tool.failed"], limit: 1 });
   assert.equal(result.events.length, 1);
   assert.equal(result.events[0]?.type, "tool.failed");
   assert.equal(result.events[0]?.type === "tool.failed" ? result.events[0].payload.toolName : null, "github");
