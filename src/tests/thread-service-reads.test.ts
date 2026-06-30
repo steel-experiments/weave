@@ -152,6 +152,46 @@ test("custom inbox routes can deliver host consumers", async () => {
   assert.equal((await routedEngine.claimInbox(consumer, "test-egress", 10, 10_000)).length, 0);
 });
 
+test("ThreadQueryService lists dead-letter and stale claimed inbox items", async () => {
+  const consumer = `ops-${randomUUID()}`;
+  const routedEngine = new PostgresThreadEngine(pool, {
+    inboxRoutes(event) {
+      return event.type === "agent.reply.produced" ? [{ consumer }] : [];
+    },
+  });
+  const routedService = new ThreadService(routedEngine);
+  const routedQueries = new ThreadQueryService(routedEngine);
+
+  const deadLetterSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  await appendReply(routedEngine, deadLetterSession.threadId, "agent.reply.produced", "dead letter me");
+  const [deadLetterItem] = await routedEngine.claimInbox(consumer, "dead-letter-owner", 10, 10_000);
+  assert.ok(deadLetterItem);
+  await routedEngine.deadLetterInbox([deadLetterItem.id], "dead-letter-owner", "TEST_DEAD", "dead");
+
+  const staleSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  await appendReply(routedEngine, staleSession.threadId, "agent.reply.produced", "stale me");
+  const [staleItem] = await routedEngine.claimInbox(consumer, "stale-owner", 10, -60_000);
+  assert.ok(staleItem);
+
+  const deadLetters = await routedQueries.listThreadInboxItems({
+    states: ["dead-letter"],
+    consumers: [consumer],
+  });
+  assert.equal(deadLetters.length, 1);
+  assert.equal(deadLetters[0]?.threadId, deadLetterSession.threadId);
+  assert.equal(deadLetters[0]?.lastErrorCode, "TEST_DEAD");
+  assert.equal(await routedQueries.countThreadInboxItems({ states: ["dead-letter"], consumers: [consumer] }), 1);
+
+  const staleClaims = await routedQueries.listThreadInboxItems({
+    states: ["claimed"],
+    consumers: [consumer],
+    claimedUntilBefore: nowIso(),
+  });
+  assert.equal(staleClaims.length, 1);
+  assert.equal(staleClaims[0]?.threadId, staleSession.threadId);
+  assert.equal(staleClaims[0]?.claimedBy, "stale-owner");
+});
+
 test("getLatestReply returns the newest reply or response message", async () => {
   const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
   assert.equal(await service.getLatestReply(threadId), null);
@@ -309,6 +349,38 @@ test("ThreadQueryService lists recent events with a total count", async () => {
   assert.equal(result.events[0]?.type, "tool.failed");
   assert.equal(result.events[0]?.type === "tool.failed" ? result.events[0].payload.toolName : null, "github");
   assert.ok(result.total >= 1);
+});
+
+test("ThreadQueryService summarizes failed threads with latest failure metadata", async () => {
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  await engine.append([
+    {
+      eventId: newEventId(),
+      threadId,
+      type: "tool.failed",
+      occurredAt: nowIso(),
+      correlationId: randomUUID(),
+      actor: { type: "system", id: "test" },
+      payload: {
+        toolCallId: randomUUID(),
+        toolName: "github",
+        errorCode: "BROKEN",
+        message: "broken",
+      },
+    },
+  ]);
+
+  const summaries = await queries.listThreadHealthSummaries({
+    threadId,
+    statuses: ["failed"],
+    latestEventTypes: ["tool.failed", "agent.failed"],
+  });
+  assert.equal(summaries.length, 1);
+  assert.equal(summaries[0]?.threadId, threadId);
+  assert.equal(summaries[0]?.latestEventType, "tool.failed");
+  assert.equal(summaries[0]?.errorCode, "BROKEN");
+  assert.equal(summaries[0]?.message, "broken");
+  assert.equal(await queries.countThreadHealthSummaries({ threadId, statuses: ["failed"] }), 1);
 });
 
 function errorMessage(error: unknown): string {

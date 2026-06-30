@@ -1,4 +1,4 @@
-import type { ReadOptions, ThreadEngine } from "./contracts.js";
+import type { InboxConsumer, ReadOptions, ThreadEngine } from "./contracts.js";
 import type { SessionMetadata, ThreadEvent, ThreadStatus } from "./events.js";
 
 export type ThreadHeadRead = {
@@ -51,6 +51,46 @@ export type ThreadEventPage = {
   nextCursor: string | null;
 };
 
+export type ThreadInboxState = "pending" | "claimed" | "done" | "dead-letter";
+
+export type ThreadInboxItem = {
+  id: number;
+  threadId: string;
+  consumer: InboxConsumer;
+  eventSeq: number;
+  state: ThreadInboxState;
+  attempts: number;
+  visibleAt: string;
+  claimedBy: string | null;
+  claimedUntil: string | null;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  updatedAt: string;
+};
+
+export type ListThreadInboxItemsOptions = {
+  states?: readonly ThreadInboxState[];
+  consumers?: readonly InboxConsumer[];
+  claimedUntilBefore?: string;
+  visibleBefore?: string;
+  updatedBefore?: string;
+  orderBy?: "id_asc" | "id_desc" | "updated_asc" | "updated_desc" | "visible_asc";
+  limit?: number;
+};
+
+export type ThreadHealthSummary = ThreadHeadRead & {
+  latestEventType: ThreadEvent["type"] | null;
+  latestEventId: string | null;
+  latestEventOccurredAt: string | null;
+  errorCode: string | null;
+  message: string | null;
+};
+
+export type ListThreadHealthSummariesOptions = ListThreadHeadsOptions & {
+  threadId?: string;
+  latestEventTypes?: readonly ThreadEvent["type"][];
+};
+
 export interface ThreadReadModel extends Pick<ThreadEngine, "read"> {
   getThreadHead(threadId: string): Promise<ThreadHeadRead | null>;
   listThreadHeads(options?: ListThreadHeadsOptions & { threadId?: string }): Promise<ThreadHeadRead[]>;
@@ -65,6 +105,10 @@ export interface ThreadReadModel extends Pick<ThreadEngine, "read"> {
     metadata: Record<string, string>;
     statuses?: readonly ThreadStatus[];
   }): Promise<LatestChildReply[]>;
+  listThreadInboxItems(options?: ListThreadInboxItemsOptions): Promise<ThreadInboxItem[]>;
+  countThreadInboxItems(options?: ListThreadInboxItemsOptions): Promise<number>;
+  listThreadHealthSummaries(options?: ListThreadHealthSummariesOptions): Promise<ThreadHealthSummary[]>;
+  countThreadHealthSummaries(options?: ListThreadHealthSummariesOptions): Promise<number>;
 }
 
 export class ThreadQueryService {
@@ -99,6 +143,22 @@ export class ThreadQueryService {
     statuses?: readonly ThreadStatus[];
   }): Promise<LatestChildReply[]> {
     return this.readModel.listLatestChildRepliesByMetadata(options);
+  }
+
+  listThreadInboxItems(options: ListThreadInboxItemsOptions = {}): Promise<ThreadInboxItem[]> {
+    return this.readModel.listThreadInboxItems(options);
+  }
+
+  countThreadInboxItems(options: ListThreadInboxItemsOptions = {}): Promise<number> {
+    return this.readModel.countThreadInboxItems(options);
+  }
+
+  listThreadHealthSummaries(options: ListThreadHealthSummariesOptions = {}): Promise<ThreadHealthSummary[]> {
+    return this.readModel.listThreadHealthSummaries(options);
+  }
+
+  countThreadHealthSummaries(options: ListThreadHealthSummariesOptions = {}): Promise<number> {
+    return this.readModel.countThreadHealthSummaries(options);
   }
 
   async listThreadEvents(options: ListThreadEventsOptions): Promise<ThreadEventPage> {

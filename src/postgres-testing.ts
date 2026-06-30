@@ -11,6 +11,8 @@ export type CreateTestThreadProjectionOptions = {
   rootThreadId?: string | null;
   parentScopeKey?: string | null;
   parentStepKey?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type AppendTestGateOptions = {
@@ -39,9 +41,11 @@ export async function createTestThreadProjection(
        parent_thread_id,
        root_thread_id,
        parent_scope_key,
-       parent_step_key
+       parent_step_key,
+       created_at,
+       updated_at
      )
-     values ($1, $2, $3, $4, $5, $6, $7)`,
+     values ($1, $2, $3, $4, $5, $6, $7, coalesce($8::timestamptz, now()), coalesce($9::timestamptz, now()))`,
     [
       options.threadId,
       options.status ?? "idle",
@@ -50,6 +54,8 @@ export async function createTestThreadProjection(
       options.rootThreadId ?? options.threadId,
       options.parentScopeKey ?? null,
       options.parentStepKey ?? null,
+      options.createdAt ?? null,
+      options.updatedAt ?? null,
     ],
   );
 }

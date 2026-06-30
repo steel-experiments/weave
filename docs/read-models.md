@@ -14,3 +14,12 @@ Weave hosts should read durable thread state through read-model services rather 
 - Invalid cursors throw `Invalid thread event cursor`.
 
 The service may scan multiple storage pages to satisfy a filtered request. Consumers should not infer event count or storage layout from cursor values.
+
+## Operational Read Models
+
+`ThreadQueryService` also exposes operational projections for host health pages:
+
+- `listThreadInboxItems` / `countThreadInboxItems` return inbox rows by state, consumer, visibility time, claim expiry, or update time. This is the supported way to surface dead-lettered work and stale claims.
+- `listThreadHealthSummaries` / `countThreadHealthSummaries` return thread heads plus the latest matching event metadata. This is the supported way to build failed or stuck thread summaries without reading storage tables.
+
+Approvals are host-owned data, not Weave thread state. Hosts should join approval queue health from their own tables with Weave thread read models at the application boundary.

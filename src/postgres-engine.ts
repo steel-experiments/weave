@@ -25,9 +25,14 @@ import {
 import type {
   LatestChildReply,
   ListThreadHeadsOptions,
+  ListThreadHealthSummariesOptions,
+  ListThreadInboxItemsOptions,
   RecentEventsResult,
+  ThreadHealthSummary,
   ThreadHeadRead,
   ThreadHeadReadWithDepth,
+  ThreadInboxItem,
+  ThreadInboxState,
   ThreadReadModel,
 } from "./thread-query-service.js";
 
@@ -420,6 +425,87 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
       occurredAt: row.occurred_at?.toISOString() ?? null,
       updatedAt: row.updated_at.toISOString(),
     }));
+  }
+
+  async listThreadInboxItems(options: ListThreadInboxItemsOptions = {}): Promise<ThreadInboxItem[]> {
+    const { where, values } = threadInboxWhere(options);
+    const result = await this.pool.query<{
+      id: string;
+      thread_id: string;
+      consumer: InboxConsumer;
+      event_seq: number;
+      state: ThreadInboxState;
+      attempts: number;
+      visible_at: Date;
+      claimed_by: string | null;
+      claimed_until: Date | null;
+      last_error_code: string | null;
+      last_error_message: string | null;
+      updated_at: Date;
+    }>(
+      `select
+         id,
+         thread_id,
+         consumer,
+         event_seq,
+         state,
+         attempts,
+         visible_at,
+         claimed_by,
+         claimed_until,
+         last_error_code,
+         last_error_message,
+         updated_at
+       from weave.thread_inbox
+       ${where}
+       ${threadInboxOrderBy(options.orderBy)}
+       limit $${values.length + 1}`,
+      [...values, options.limit ?? 100],
+    );
+    return result.rows.map(rowToThreadInboxItem);
+  }
+
+  async countThreadInboxItems(options: ListThreadInboxItemsOptions = {}): Promise<number> {
+    const { where, values } = threadInboxWhere(options);
+    const result = await this.pool.query<{ total: string }>(
+      `select count(*)::text as total
+       from weave.thread_inbox
+       ${where}`,
+      values,
+    );
+    return Number(result.rows[0]?.total ?? 0);
+  }
+
+  async listThreadHealthSummaries(options: ListThreadHealthSummariesOptions = {}): Promise<ThreadHealthSummary[]> {
+    const { where, values } = threadHeadWhere(options);
+    const latestEventTypes = options.latestEventTypes && options.latestEventTypes.length > 0 ? options.latestEventTypes : null;
+    const latestTypeIndex = values.length + 1;
+    const result = await this.pool.query<{
+      id: string;
+      status: ThreadStatus;
+      parent_thread_id: string | null;
+      root_thread_id: string | null;
+      parent_scope_key: string | null;
+      parent_step_key: string | null;
+      created_at: Date;
+      updated_at: Date;
+      metadata_json: unknown;
+      latest_event_type: ThreadEvent["type"] | null;
+      latest_event_id: string | null;
+      latest_event_occurred_at: Date | null;
+      latest_payload_json: Record<string, unknown> | null;
+    }>(
+      `${threadHealthSummarySelect(latestTypeIndex)}
+       ${where}
+       ${threadHeadOrderBy(options.orderBy)}
+       limit $${latestTypeIndex + 1}`,
+      [...values, latestEventTypes, options.limit ?? 100],
+    );
+    return result.rows.map(rowToThreadHealthSummary);
+  }
+
+  async countThreadHealthSummaries(options: ListThreadHealthSummariesOptions = {}): Promise<number> {
+    return this.countThreadHeads(options);
   }
 
   async claimInbox(consumer: InboxConsumer, ownerId: string, limit = 20, ttlMs = 10_000): Promise<InboxWorkItem[]> {
@@ -838,6 +924,43 @@ const THREAD_HEAD_SELECT = `
     limit 1
   ) se on true`;
 
+function threadHealthSummarySelect(latestTypeIndex: number): string {
+  return `
+    select
+      t.id,
+      t.status,
+      t.parent_thread_id,
+      coalesce(t.root_thread_id, t.id) as root_thread_id,
+      t.parent_scope_key,
+      t.parent_step_key,
+      t.created_at,
+      t.updated_at,
+      se.payload_json->'metadata' as metadata_json,
+      le.latest_event_type,
+      le.latest_event_id,
+      le.latest_event_occurred_at,
+      le.latest_payload_json
+    from weave.thread t
+    left join lateral (
+      select payload_json
+      from weave.thread_event
+      where thread_id = t.id and type = 'session.started'
+      order by seq
+      limit 1
+    ) se on true
+    left join lateral (
+      select type as latest_event_type,
+             event_id::text as latest_event_id,
+             occurred_at as latest_event_occurred_at,
+             payload_json as latest_payload_json
+      from weave.thread_event
+      where thread_id = t.id
+        and ($${latestTypeIndex}::text[] is null or type = any($${latestTypeIndex}::text[]))
+      order by seq desc
+      limit 1
+    ) le on true`;
+}
+
 function threadHeadWhere(options: ListThreadHeadsOptions & { threadId?: string }): {
   where: string;
   values: unknown[];
@@ -908,6 +1031,110 @@ function rowToThreadHead(row: {
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     metadata: row.metadata_json == null ? null : SessionMetadataSchema.parse(row.metadata_json),
+  };
+}
+
+function threadInboxWhere(options: ListThreadInboxItemsOptions): {
+  where: string;
+  values: unknown[];
+} {
+  const values: unknown[] = [];
+  const clauses: string[] = [];
+  if (options.states && options.states.length > 0) {
+    values.push(options.states);
+    clauses.push(`state = any($${values.length}::text[])`);
+  }
+  if (options.consumers && options.consumers.length > 0) {
+    values.push(options.consumers);
+    clauses.push(`consumer = any($${values.length}::text[])`);
+  }
+  if (options.claimedUntilBefore) {
+    values.push(options.claimedUntilBefore);
+    clauses.push(`claimed_until < $${values.length}::timestamptz`);
+  }
+  if (options.visibleBefore) {
+    values.push(options.visibleBefore);
+    clauses.push(`visible_at < $${values.length}::timestamptz`);
+  }
+  if (options.updatedBefore) {
+    values.push(options.updatedBefore);
+    clauses.push(`updated_at < $${values.length}::timestamptz`);
+  }
+  return {
+    where: clauses.length > 0 ? `where ${clauses.join(" and ")}` : "",
+    values,
+  };
+}
+
+function threadInboxOrderBy(orderBy: ListThreadInboxItemsOptions["orderBy"]): string {
+  switch (orderBy) {
+    case "id_desc":
+      return "order by id desc";
+    case "updated_asc":
+      return "order by updated_at asc, id asc";
+    case "updated_desc":
+      return "order by updated_at desc, id desc";
+    case "visible_asc":
+      return "order by visible_at asc, id asc";
+    case "id_asc":
+    default:
+      return "order by id asc";
+  }
+}
+
+function rowToThreadInboxItem(row: {
+  id: string;
+  thread_id: string;
+  consumer: InboxConsumer;
+  event_seq: number;
+  state: ThreadInboxState;
+  attempts: number;
+  visible_at: Date;
+  claimed_by: string | null;
+  claimed_until: Date | null;
+  last_error_code: string | null;
+  last_error_message: string | null;
+  updated_at: Date;
+}): ThreadInboxItem {
+  return {
+    id: Number(row.id),
+    threadId: row.thread_id,
+    consumer: row.consumer,
+    eventSeq: row.event_seq,
+    state: row.state,
+    attempts: row.attempts,
+    visibleAt: row.visible_at.toISOString(),
+    claimedBy: row.claimed_by,
+    claimedUntil: row.claimed_until?.toISOString() ?? null,
+    lastErrorCode: row.last_error_code,
+    lastErrorMessage: row.last_error_message,
+    updatedAt: row.updated_at.toISOString(),
+  };
+}
+
+function rowToThreadHealthSummary(row: {
+  id: string;
+  status: ThreadStatus;
+  parent_thread_id: string | null;
+  root_thread_id: string | null;
+  parent_scope_key: string | null;
+  parent_step_key: string | null;
+  created_at: Date;
+  updated_at: Date;
+  metadata_json: unknown;
+  latest_event_type: ThreadEvent["type"] | null;
+  latest_event_id: string | null;
+  latest_event_occurred_at: Date | null;
+  latest_payload_json: Record<string, unknown> | null;
+}): ThreadHealthSummary {
+  const payload = row.latest_payload_json ?? {};
+  return {
+    ...rowToThreadHead(row),
+    latestEventType: row.latest_event_type,
+    latestEventId: row.latest_event_id,
+    latestEventOccurredAt: row.latest_event_occurred_at?.toISOString() ?? null,
+    errorCode: typeof payload.errorCode === "string" ? payload.errorCode : null,
+    message: typeof payload.message === "string" ? payload.message : null,
   };
 }
 

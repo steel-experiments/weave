@@ -201,6 +201,8 @@ assert.equal(typeof ThreadRunner, "function");
 assert.equal(typeof ContractToolWorker, "function");
 assert.equal(typeof ThreadService, "function");
 assert.equal(typeof ThreadQueryService, "function");
+assert.equal(typeof ThreadQueryService.prototype.listThreadInboxItems, "function");
+assert.equal(typeof ThreadQueryService.prototype.listThreadHealthSummaries, "function");
 
 assert.equal(typeof PostgresThreadEngine, "function");
 assert.equal(typeof createPool, "function");
