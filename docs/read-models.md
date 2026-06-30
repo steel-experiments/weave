@@ -23,3 +23,7 @@ The service may scan multiple storage pages to satisfy a filtered request. Consu
 - `listThreadHealthSummaries` / `countThreadHealthSummaries` return thread heads plus the latest matching event metadata. This is the supported way to build failed or stuck thread summaries without reading storage tables.
 
 Approvals are host-owned data, not Weave thread state. Hosts should join approval queue health from their own tables with Weave thread read models at the application boundary.
+
+## Operational Remediation
+
+`PostgresThreadEngine.requeueThreadInboxItems({ ids, states, expiredClaimsOnly, resetAttempts })` is the supported operational write for replaying problem inbox rows. It moves matching `dead-letter` or expired `claimed` rows back to `pending`, clears claim ownership, optionally clears error fields, and optionally resets attempts. Hosts should call this method instead of updating `weave.thread_inbox` directly.

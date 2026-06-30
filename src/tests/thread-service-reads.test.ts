@@ -152,7 +152,7 @@ test("custom inbox routes can deliver host consumers", async () => {
   assert.equal((await routedEngine.claimInbox(consumer, "test-egress", 10, 10_000)).length, 0);
 });
 
-test("ThreadQueryService lists dead-letter and stale claimed inbox items", async () => {
+test("ThreadQueryService lists and requeues dead-letter and stale claimed inbox items", async () => {
   const consumer = `ops-${randomUUID()}`;
   const routedEngine = new PostgresThreadEngine(pool, {
     inboxRoutes(event) {
@@ -174,6 +174,7 @@ test("ThreadQueryService lists dead-letter and stale claimed inbox items", async
   assert.ok(staleItem);
 
   const deadLetters = await routedQueries.listThreadInboxItems({
+    ids: [deadLetterItem.id],
     states: ["dead-letter"],
     consumers: [consumer],
   });
@@ -183,6 +184,7 @@ test("ThreadQueryService lists dead-letter and stale claimed inbox items", async
   assert.equal(await routedQueries.countThreadInboxItems({ states: ["dead-letter"], consumers: [consumer] }), 1);
 
   const staleClaims = await routedQueries.listThreadInboxItems({
+    ids: [staleItem.id],
     states: ["claimed"],
     consumers: [consumer],
     claimedUntilBefore: nowIso(),
@@ -190,6 +192,32 @@ test("ThreadQueryService lists dead-letter and stale claimed inbox items", async
   assert.equal(staleClaims.length, 1);
   assert.equal(staleClaims[0]?.threadId, staleSession.threadId);
   assert.equal(staleClaims[0]?.claimedBy, "stale-owner");
+
+  const requeued = await routedEngine.requeueThreadInboxItems({
+    ids: [deadLetterItem.id, staleItem.id],
+    states: ["dead-letter", "claimed"],
+    resetAttempts: true,
+  });
+  assert.equal(requeued.length, 2);
+  assert.deepEqual(
+    requeued.map((item) => item.state),
+    ["pending", "pending"],
+  );
+  assert.deepEqual(
+    requeued.map((item) => item.attempts),
+    [0, 0],
+  );
+  assert.equal(
+    await routedQueries.countThreadInboxItems({ states: ["dead-letter"], consumers: [consumer] }),
+    0,
+  );
+
+  const claimedAgain = await routedEngine.claimInbox(consumer, "retry-owner", 10, 10_000);
+  assert.equal(claimedAgain.length, 2);
+  assert.deepEqual(
+    claimedAgain.map((item) => item.threadId).sort(),
+    [deadLetterSession.threadId, staleSession.threadId].sort(),
+  );
 });
 
 test("getLatestReply returns the newest reply or response message", async () => {

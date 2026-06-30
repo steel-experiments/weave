@@ -205,6 +205,7 @@ assert.equal(typeof ThreadQueryService.prototype.listThreadInboxItems, "function
 assert.equal(typeof ThreadQueryService.prototype.listThreadHealthSummaries, "function");
 
 assert.equal(typeof PostgresThreadEngine, "function");
+assert.equal(typeof PostgresThreadEngine.prototype.requeueThreadInboxItems, "function");
 assert.equal(typeof createPool, "function");
 assert.equal(typeof migrate, "function");
 assert.equal(typeof appendTestGate, "function");

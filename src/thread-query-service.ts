@@ -69,6 +69,7 @@ export type ThreadInboxItem = {
 };
 
 export type ListThreadInboxItemsOptions = {
+  ids?: readonly number[];
   states?: readonly ThreadInboxState[];
   consumers?: readonly InboxConsumer[];
   claimedUntilBefore?: string;

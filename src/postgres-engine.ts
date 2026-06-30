@@ -40,6 +40,17 @@ export type PostgresThreadEngineOptions = {
   inboxRoutes?: InboxRouteResolver;
 };
 
+export type RequeueThreadInboxItemState = "claimed" | "dead-letter";
+
+export type RequeueThreadInboxItemsOptions = {
+  ids: readonly number[];
+  states?: readonly RequeueThreadInboxItemState[];
+  expiredClaimsOnly?: boolean;
+  resetAttempts?: boolean;
+  clearLastError?: boolean;
+  visibleAt?: string;
+};
+
 export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, ThreadReadModel {
   constructor(
     private readonly pool: Pool,
@@ -605,6 +616,67 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
     );
   }
 
+  async requeueThreadInboxItems(options: RequeueThreadInboxItemsOptions): Promise<ThreadInboxItem[]> {
+    const ids = normalizeInboxIds(options.ids);
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const states = options.states && options.states.length > 0 ? options.states : (["dead-letter", "claimed"] as const);
+    const result = await this.pool.query<{
+      id: string;
+      thread_id: string;
+      consumer: InboxConsumer;
+      event_seq: number;
+      state: ThreadInboxState;
+      attempts: number;
+      visible_at: Date;
+      claimed_by: string | null;
+      claimed_until: Date | null;
+      last_error_code: string | null;
+      last_error_message: string | null;
+      updated_at: Date;
+    }>(
+      `update weave.thread_inbox
+       set state = 'pending',
+           visible_at = coalesce($3::timestamptz, now()),
+           claimed_by = null,
+           claimed_until = null,
+           attempts = case when $4::boolean then 0 else attempts end,
+           last_error_code = case when $5::boolean then null else last_error_code end,
+           last_error_message = case when $5::boolean then null else last_error_message end,
+           updated_at = now()
+       where id = any($1::bigint[])
+         and state = any($2::text[])
+         and (
+           not $6::boolean
+           or state <> 'claimed'
+           or claimed_until <= now()
+         )
+       returning id,
+                 thread_id,
+                 consumer,
+                 event_seq,
+                 state,
+                 attempts,
+                 visible_at,
+                 claimed_by,
+                 claimed_until,
+                 last_error_code,
+                 last_error_message,
+                 updated_at`,
+      [
+        ids,
+        states,
+        options.visibleAt ?? null,
+        options.resetAttempts ?? false,
+        options.clearLastError ?? true,
+        options.expiredClaimsOnly ?? true,
+      ],
+    );
+    return result.rows.map(rowToThreadInboxItem);
+  }
+
   async listInbox(threadId: string): Promise<
     Array<{
       id: number;
@@ -1040,6 +1112,15 @@ function threadInboxWhere(options: ListThreadInboxItemsOptions): {
 } {
   const values: unknown[] = [];
   const clauses: string[] = [];
+  if (options.ids !== undefined) {
+    const ids = normalizeInboxIds(options.ids);
+    if (ids.length === 0) {
+      clauses.push("false");
+    } else {
+      values.push(ids);
+      clauses.push(`id = any($${values.length}::bigint[])`);
+    }
+  }
   if (options.states && options.states.length > 0) {
     values.push(options.states);
     clauses.push(`state = any($${values.length}::text[])`);
@@ -1064,6 +1145,16 @@ function threadInboxWhere(options: ListThreadInboxItemsOptions): {
     where: clauses.length > 0 ? `where ${clauses.join(" and ")}` : "",
     values,
   };
+}
+
+function normalizeInboxIds(ids: readonly number[]): number[] {
+  const normalized = [...new Set(ids.map((id) => Number(id)))];
+  for (const id of normalized) {
+    if (!Number.isSafeInteger(id) || id < 1) {
+      throw new Error("Inbox item ids must be positive safe integers");
+    }
+  }
+  return normalized;
 }
 
 function threadInboxOrderBy(orderBy: ListThreadInboxItemsOptions["orderBy"]): string {
