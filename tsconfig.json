@@ -13,6 +13,7 @@
     "baseUrl": ".",
     "paths": {
       "weave": ["./src/index.ts"],
+      "weave/core": ["./src/core-entry.ts"],
       "weave/runtime": ["./src/runtime-entry.ts"],
       "weave/postgres": ["./src/postgres-entry.ts"],
       "weave/server": ["./src/server-entry.ts"],
