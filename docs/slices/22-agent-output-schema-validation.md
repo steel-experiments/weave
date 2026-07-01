@@ -43,7 +43,7 @@ As a Weave app author, if I declare `agent({ output })`, invalid returned values
 
 ## Acceptance Criteria
 
-- [x] Valid declared outputs continue to emit `agent.response.produced` and `agent.output.completed`.
+- [x] Valid declared outputs continue to emit `agent.reply.produced` and `agent.output.completed`.
 - [x] Invalid declared outputs do not emit `agent.output.completed`.
 - [x] Invalid declared outputs become durable `agent.failed` with `AGENT_OUTPUT_INVALID` through `ThreadRunner`.
 - [x] Agents without output schemas keep current behavior.

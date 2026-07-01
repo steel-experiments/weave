@@ -22,10 +22,10 @@ Make `ctx.emit` payloads type-safe by adding a typed event factory that is check
 As a Weave app author, I can write:
 
 ```ts
-await ctx.emit("final", event("agent.response.produced", { message }));
+await ctx.emit("final", event("agent.reply.produced", { message }));
 ```
 
-and have TypeScript check that the payload matches `agent.response.produced`.
+and have TypeScript check that the payload matches `agent.reply.produced`.
 
 ## Architecture Impact
 

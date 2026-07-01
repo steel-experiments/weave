@@ -42,7 +42,7 @@ As an app author, I can trust that stable-keyed durable effects append once, rep
 ## Test Plan
 
 - `ThreadRunner` test with more than 1000 events and durable events after the first page.
-- Terminal idempotency test for `agent.response.produced` and `agent.output.completed`.
+- Terminal idempotency test for `agent.reply.produced` and `agent.output.completed`.
 - Lifecycle tests for `ctx.tool`, `ctx.gate`, `ctx.checkpoint`, `ctx.emit`, `ctx.spawn`, and `ctx.join`.
 - Effect-kind reuse mismatch tests.
 - Parallel durable effect rejection tests for homogeneous and mixed effect kinds.
@@ -70,7 +70,7 @@ As an app author, I can trust that stable-keyed durable effects append once, rep
 Shipped behavior:
 
 - Confirmed existing coverage for full-history replay, duplicate tool prevention, effect-kind reuse mismatch, checkpoint/gate/spawn payload mismatch, child join variants, and parallel durable effect rejection.
-- Added terminal idempotency coverage proving completed run-first agents do not append duplicate `agent.response.produced` or `agent.output.completed` events on later runner passes.
+- Added terminal idempotency coverage proving completed run-first agents do not append duplicate `agent.reply.produced` or `agent.output.completed` events on later runner passes.
 - Added `ctx.emit` replay coverage proving an already emitted event is treated as a no-op before terminal output is appended.
 - Updated the declarative API docs to state terminal response/output replay idempotency explicitly.
 

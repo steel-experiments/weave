@@ -42,7 +42,7 @@ Event contract definition:
 
 ```ts
 const responseProduced = event({
-  type: "agent.response.produced",
+  type: "agent.reply.produced",
   payload: z.object({
     message: z.string().min(1),
   }),
@@ -68,11 +68,11 @@ Compatibility forms:
 
 ```ts
 await ctx.emit("final-response", {
-  type: "agent.response.produced",
+  type: "agent.reply.produced",
   payload: { message },
 });
 
-await ctx.emit("final-response", event("agent.response.produced", { message }));
+await ctx.emit("final-response", event("agent.reply.produced", { message }));
 
 ctx.uuid("finding:auth-docs") === ctx.id("finding:auth-docs");
 ```

@@ -180,7 +180,7 @@ DBOS records workflow progress and checkpoints. Weave records semantically meani
 - `agent.finding.produced`
 - `agent.remediation.proposed`
 - `agent.incident_report.produced`
-- `agent.response.produced`
+- `agent.reply.produced`
 
 That is closer to an audit ledger for agent work than a generic workflow trace.
 

@@ -42,7 +42,7 @@ As an integration author, I can declare handlers for specific Weave event types 
 
 ## Test Plan
 
-- Handler for `agent.response.produced` receives typed payload.
+- Handler for `agent.reply.produced` receives typed payload.
 - Handler for `tool.completed` receives normalized payload.
 - Invalid event payload is rejected before handler execution where practical.
 - Existing integration event handlers continue to typecheck.
@@ -74,7 +74,7 @@ As an integration author, I can declare handlers for specific Weave event types 
 - Handler payload type is inferred from the selected `ThreadEvent["type"]`.
 - The helper validates events with `ThreadEventSchema` before invoking handler logic.
 - Existing raw `IntegrationEventHandler` objects remain compatible in `integration({ eventHandlers })`.
-- Added tests for typed `agent.response.produced` payloads, legacy `tool.completed` normalization, invalid payload rejection, wrong event type rejection, and public exports.
+- Added tests for typed `agent.reply.produced` payloads, legacy `tool.completed` normalization, invalid payload rejection, wrong event type rejection, and public exports.
 - Updated `docs/declarative-api.md` and `docs/event-taxonomy.md`.
 - Verified with `npm test` and `npm run typecheck`.
 

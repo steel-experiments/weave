@@ -76,7 +76,7 @@ The append path routes events into the inbox transactionally.
 - `credential.failed`
 - `tool.failed`
 - `gate.created`
-- `agent.response.produced`
+- `agent.reply.produced`
 - `agent.output.completed`
 - `agent.finding.produced`
 - `agent.remediation.proposed`

@@ -94,7 +94,7 @@ sequenceDiagram
   Human->>Thread: gate.resolved
   Worker->>Thread: tool.progress and tool.completed
   Thread-->>Runner: Resume from durable events
-  Runner->>Thread: agent.response.produced
+  Runner->>Thread: agent.reply.produced
   Thread-->>Ingress: Publish final update
 ```
 

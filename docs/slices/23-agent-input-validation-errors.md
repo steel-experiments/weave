@@ -44,7 +44,7 @@ As an operator, if a run-first agent cannot decode its thread input, the thread 
 ## Acceptance Criteria
 
 - [x] Invalid run-first agent input records durable `agent.failed` with `AGENT_INPUT_INVALID` through `ThreadRunner`.
-- [x] Invalid input does not emit `agent.response.produced` or `agent.output.completed`.
+- [x] Invalid input does not emit `agent.reply.produced` or `agent.output.completed`.
 - [x] Valid inputs keep current behavior.
 - [x] Existing replay tests and demos still pass.
 

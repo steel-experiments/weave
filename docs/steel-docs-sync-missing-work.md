@@ -239,8 +239,8 @@ The current `agent.finding.produced` event is useful but not specific enough for
 ### Current Relevant Code
 
 - `src/events.ts` has `agent.finding.produced` with severity, summary, and evidence.
-- `src/events.ts` has `agent.response.produced` with a message.
-- `src/postgres-engine.ts` marks `agent.response.produced` as completed.
+- `src/events.ts` has `agent.reply.produced` with a message.
+- `src/postgres-engine.ts` marks `agent.reply.produced` as completed.
 - `src/api-server.ts` returns raw events and a simple projection.
 
 ### Required Work

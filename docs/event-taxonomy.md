@@ -47,7 +47,7 @@ App code should prefer defining reusable event factories with `event({ type, pay
 
 ```ts
 const responseProduced = event({
-  type: "agent.response.produced",
+  type: "agent.reply.produced",
   payload: z.object({
     message: z.string().min(1),
   }),
@@ -69,7 +69,7 @@ The lower-level raw form remains supported for compatibility:
 
 ```ts
 await ctx.emit("final-response", {
-  type: "agent.response.produced",
+  type: "agent.reply.produced",
   payload: { message },
 });
 ```
@@ -80,7 +80,7 @@ Integrations can use `integrationEvent({ type, handle })` to handle known event 
 
 ```ts
 const responseHandler = integrationEvent({
-  type: "agent.response.produced",
+  type: "agent.reply.produced",
   handle(event) {
     event.payload.message;
   },
@@ -122,7 +122,7 @@ The PoC uses this event set.
 - `child_thread.completed`
 - `child_thread.failed`
 - `runner.resumed`
-- `agent.response.produced`
+- `agent.reply.produced`
 - `dev.initiative.started`
 - `dev.initiative.spec_received`
 - `dev.initiative.plan_proposed`
@@ -695,7 +695,7 @@ const RunnerResumedEvent = EventEnvelopeBase.extend({
 })
 
 const AgentResponseProducedEvent = EventEnvelopeBase.extend({
-  type: z.literal("agent.response.produced"),
+  type: z.literal("agent.reply.produced"),
   payload: AgentResponseProducedPayload,
 })
 
@@ -801,7 +801,7 @@ Not every durable event needs to wake the runner.
 - `credential.failed`
 - `gate.created`
 - `runner.resumed`
-- `agent.response.produced`
+- `agent.reply.produced`
 - `agent.output.completed`
 - `agent.finding.produced`
 - `agent.remediation.proposed`

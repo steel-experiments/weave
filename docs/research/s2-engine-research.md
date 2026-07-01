@@ -314,7 +314,7 @@ Examples:
 - `tool.progress`
 - `gate.created`
 - `gate.resolved`
-- `agent.response.produced`
+- `agent.reply.produced`
 
 ### Follow
 

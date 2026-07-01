@@ -227,7 +227,7 @@ For Weave, this should become thread-specific rather than session-dashboard-spec
 Suggested adaptation:
 
 - `RuntimeAdapter` exposes thread-relevant state such as active session IDs, harness metadata, current turn status, and accessible tool surface
-- `IngressAdapter` translates harness events into thread events like `prompt.received`, `tool.requested`, `tool.completed`, `gate.created`, and `agent.response.produced`
+- `IngressAdapter` translates harness events into thread events like `prompt.received`, `tool.requested`, `tool.completed`, `gate.created`, and `agent.reply.produced`
 - adapters remain harness-specific, but the thread sees one stable event envelope
 
 This would fit naturally with `agent-adapters.md` and `engine-contracts.md`.

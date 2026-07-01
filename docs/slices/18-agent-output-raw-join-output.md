@@ -13,7 +13,7 @@ Store raw `agent.run` return values durably and expose child raw output through 
 
 ## Non-goals
 
-- Do not remove `agent.response.produced`.
+- Do not remove `agent.reply.produced`.
 - Do not persist `undefined` return values as raw output.
 - Do not add output schema validation on join yet.
 
@@ -31,7 +31,7 @@ if (result.status === "completed") {
 ## Architecture Impact
 
 - Adds `agent.output.completed` with raw `output` and optional `summary`.
-- Run-first agents append `agent.response.produced` for display and `agent.output.completed` for raw non-`undefined` outputs.
+- Run-first agents append `agent.reply.produced` for display and `agent.output.completed` for raw non-`undefined` outputs.
 - `child_thread.completed` can carry raw `output` alongside `outputSummary`.
 - `ThreadService.mirrorChildTerminalEvent` copies child raw output into the parent terminal event.
 - `ctx.join` returns `AgentRun.output` when the parent completion event contains raw output.

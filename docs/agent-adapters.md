@@ -66,7 +66,7 @@ Thread approach:
 - replay events
 - construct input
 - invoke the agent once
-- emit `agent.response.produced`
+- emit `agent.reply.produced`
 
 Good fit for:
 

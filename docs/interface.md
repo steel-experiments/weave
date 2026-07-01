@@ -281,7 +281,7 @@ Suggested initial event set:
 - `gate.resolved`
 - `runner.slept`
 - `runner.resumed`
-- `agent.response.produced`
+- `agent.reply.produced`
 - `thread.link.created`
 
 ## Runner Contract

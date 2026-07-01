@@ -88,7 +88,7 @@ Suggested first event types:
 - `gate.created`
 - `gate.resolved`
 - `runner.resumed`
-- `agent.response.produced`
+- `agent.reply.produced`
 
 ## MVP Success Criteria
 

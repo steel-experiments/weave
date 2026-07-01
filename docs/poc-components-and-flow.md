@@ -114,7 +114,7 @@ Responsibilities:
 
 It does not call tools directly.
 
-Instead it emits `tool.requested` or `gate.created` or `agent.response.produced`.
+Instead it emits `tool.requested` or `gate.created` or `agent.reply.produced`.
 
 Decision table:
 
@@ -270,7 +270,7 @@ The exact schema can evolve, but the PoC needs these shapes.
 3. Runner reads thread history including the resolved gate.
 4. Mock agent adapter emits:
    - `agent.step.started`
-   - `agent.response.produced`
+   - `agent.reply.produced`
    - `agent.step.completed`
 5. Projection status becomes `completed`.
 6. Runner releases lease.

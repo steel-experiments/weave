@@ -288,7 +288,7 @@ Scope:
 - define one agent and one `steelDocs.auditSources` tool
 - run from a script like `npm run steel-docs:demo`
 - use fixed sample inputs for `steel-dev/docs`
-- produce final `agent.response.produced`
+- produce final `agent.reply.produced`
 
 Acceptance criteria:
 

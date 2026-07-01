@@ -74,7 +74,7 @@ Capability contracts are metadata by themselves. They affect runtime behavior on
 
 ```ts
 const notifyOnResponse = integrationEvent({
-  type: "agent.response.produced",
+  type: "agent.reply.produced",
   async handle(event, context) {
     await sendNotification(event.payload.message, context.integrationName);
   },
@@ -768,7 +768,7 @@ await ctx.tool("send-email", sendEmail, {
 
 ```ts
 const responseProduced = event({
-  type: "agent.response.produced",
+  type: "agent.reply.produced",
   payload: z.object({
     message: z.string().min(1),
   }),
@@ -913,7 +913,7 @@ return result.output ?? result.outputSummary;
 
 `ctx.join` is durable and requires its own stable key. If the parent has a matching `child_thread.completed` event, it returns `{ status: "completed", thread, output, outputSummary }`. If the parent has a matching `child_thread.failed` event, it returns `{ status: "failed", thread, errorCode, message }`, or throws `ChildThreadFailedError` when `throwOnFailure: true` is set. When the `ThreadRef` came from `ctx.spawn` and the child agent declares an output schema, raw joined output is decoded against that schema before it is returned; invalid stored output raises `ReplayMismatchError`.
 
-Run-first agents store raw non-`undefined` return values in `agent.output.completed`. If the agent declares an `output` schema, Weave validates the returned value before emitting `agent.response.produced` or `agent.output.completed`. Invalid output raises `AGENT_OUTPUT_INVALID`, which the runner records as `agent.failed`. The raw output is canonical replay data; `agent.response.produced` remains the timeline/display message. Child completion mirroring copies `agent.output.completed.payload.output` into `child_thread.completed.payload.output`, making it available as `AgentRun.output` from `ctx.join`.
+Run-first agents store raw non-`undefined` return values in `agent.output.completed`. If the agent declares an `output` schema, Weave validates the returned value before emitting `agent.reply.produced` or `agent.output.completed`. Invalid output raises `AGENT_OUTPUT_INVALID`, which the runner records as `agent.failed`. The raw output is canonical replay data; `agent.reply.produced` remains the timeline/display message. Child completion mirroring copies `agent.output.completed.payload.output` into `child_thread.completed.payload.output`, making it available as `AgentRun.output` from `ctx.join`.
 
 When no parent terminal event exists, `ctx.join` asks `ThreadService.mirrorChildTerminalEvent` to mirror a terminal child projection into the parent. If the child is still running, the parent runner pass suspends. Mirrored terminal events wake the parent runner with `child-completed` or `child-failed`. Mirroring is idempotent for a parent scope/step and child thread.
 
@@ -1035,7 +1035,7 @@ After:
 async run(ctx, input) {
   const result = await ctx.tool("stable-key", tool, input);
   await ctx.emit("final-response", {
-    type: "agent.response.produced",
+    type: "agent.reply.produced",
     payload: { message: summarizeResult(result) },
   });
   return result;

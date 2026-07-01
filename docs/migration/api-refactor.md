@@ -206,7 +206,7 @@ Before:
 
 ```ts
 await ctx.emit("final-response", {
-  type: "agent.response.produced",
+  type: "agent.reply.produced",
   payload: { message },
 });
 ```
@@ -215,7 +215,7 @@ After:
 
 ```ts
 const responseProduced = event({
-  type: "agent.response.produced",
+  type: "agent.reply.produced",
   payload: z.object({
     message: z.string().min(1),
   }),
