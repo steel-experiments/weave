@@ -717,7 +717,7 @@ const approvedPlan = await planner.plan(threadId, [
 assert(approvedPlan);
 assert.equal(approvedPlan.resumeReason, "gate-resolved");
 assert.equal(approvedPlan.events.some((candidate) => isDomainEvent(candidate, "dev.slice.approved")), true);
-assert.equal(approvedPlan.events.at(-1)?.type, "agent.output.completed");
+assert.equal(approvedPlan.events.at(-1)?.type, "agent.completed");
 
 const outputCompleted = approvedPlan.events.find((candidate): candidate is Extract<ThreadEvent, { type: "agent.output.completed" }> =>
   candidate.type === "agent.output.completed",
