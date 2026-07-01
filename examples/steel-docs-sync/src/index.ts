@@ -111,7 +111,7 @@ try {
     assert.equal(events.filter((event) => isDomainEvent(event, FINDING_PRODUCED)).length, 2);
 
     const toolCompleted = events.find((event) => event.type === "tool.completed");
-    const finalResponse = events.find((event) => event.type === "agent.response.produced");
+    const finalResponse = events.find((event) => event.type === "agent.reply.produced");
     assert(toolCompleted);
     assert(finalResponse);
     const artifacts = readArtifacts(toolCompleted.payload.output);

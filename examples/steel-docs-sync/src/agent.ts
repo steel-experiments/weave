@@ -17,7 +17,7 @@ export const SteelDocsSessionMetadataSchema = z.object({
 });
 
 const responseProduced = event({
-  type: "agent.response.produced",
+  type: "agent.reply.produced",
   payload: z.object({
     message: z.string().min(1),
   }),

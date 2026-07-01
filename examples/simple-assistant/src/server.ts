@@ -66,7 +66,7 @@ async function assistantRoute(request: IncomingMessage, response: ServerResponse
 
   const projection = await waitForTerminal(session.threadId, body.waitMs ?? 60_000);
   const events = await engine.read(session.threadId);
-  const finalResponse = events.find((event) => event.type === "agent.response.produced");
+  const finalResponse = events.find((event) => event.type === "agent.reply.produced");
 
   if (projection.status !== "completed" || !finalResponse) {
     writeJson(response, 502, {

@@ -125,7 +125,7 @@ try {
     assertDomainToolOutputs(events);
 
     const report = events.find((event) => isDomainEvent(event, INCIDENT_REPORT_PRODUCED));
-    const finalResponse = events.find((event) => event.type === "agent.response.produced");
+    const finalResponse = events.find((event) => event.type === "agent.reply.produced");
     assert(report);
     assert(finalResponse);
     const reportData = IncidentReportProducedSchema.parse(report.payload.data);
@@ -276,7 +276,7 @@ async function logConversation(events: ThreadEvent[], finalProjection: ThreadPro
         break;
       }
 
-      case "agent.response.produced":
+      case "agent.reply.produced":
         await say("agent", event.payload.message, 700);
         break;
     }

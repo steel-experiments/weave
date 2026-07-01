@@ -96,7 +96,7 @@ export const sreAgent = agent({
       await ctx.emit("incident-report:denied", domainEvent(INCIDENT_REPORT_PRODUCED, IncidentReportProducedSchema, report));
       await ctx.emit(
         "response:denied",
-        event("agent.response.produced", { message: "Remediation was denied. Investigation report produced without action." }),
+        event("agent.reply.produced", { message: "Remediation was denied. Investigation report produced without action." }),
       );
       return report;
     }
@@ -109,7 +109,7 @@ export const sreAgent = agent({
       errorPattern: logs.errorPattern,
     });
     await ctx.emit("incident-report:final", domainEvent(INCIDENT_REPORT_PRODUCED, IncidentReportProducedSchema, report));
-    await ctx.emit("response:final", event("agent.response.produced", { message: `${report.title}: ${report.rootCause}` }));
+    await ctx.emit("response:final", event("agent.reply.produced", { message: `${report.title}: ${report.rootCause}` }));
     return report;
   },
 });

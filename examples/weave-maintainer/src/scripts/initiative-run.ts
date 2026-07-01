@@ -272,7 +272,7 @@ function collectPendingGates(tree: readonly InitiativeRunThread[]): PendingGate[
 }
 
 function isThreadTerminal(thread: InitiativeRunThread): boolean {
-  return thread.projection.status === "completed" || thread.projection.status === "failed" || thread.events.some((event) => event.type === "agent.response.produced" || event.type === "agent.failed");
+  return thread.projection.status === "completed" || thread.projection.status === "failed" || thread.events.some((event) => event.type === "agent.reply.produced" || event.type === "agent.failed");
 }
 
 async function reconcileTerminalChildren(service: ThreadService, tree: readonly InitiativeRunThread[]): Promise<boolean> {

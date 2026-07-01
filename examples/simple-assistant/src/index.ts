@@ -33,7 +33,7 @@ try {
     const session = await service.startSession({ prompt, agentName: "assistant" });
     const projection = await waitForCompletion(engine, session.threadId);
     const events = await engine.read(session.threadId);
-    const finalResponse = events.find((threadEvent) => threadEvent.type === "agent.response.produced");
+    const finalResponse = events.find((threadEvent) => threadEvent.type === "agent.reply.produced");
 
     if (projection.status !== "completed" || !finalResponse) {
       throw new Error(`Assistant did not complete. Final status: ${projection.status}. ${describeFailure(events)}`);

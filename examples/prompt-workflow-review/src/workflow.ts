@@ -614,7 +614,7 @@ function statusForEvents(events: readonly ThreadEvent[]): ThreadProjection["stat
   if (events.some((event) => event.type === "tool.failed" || event.type === "agent.failed")) {
     return "failed";
   }
-  if (events.some((event) => event.type === "agent.response.produced")) {
+  if (events.some((event) => event.type === "agent.reply.produced")) {
     return "completed";
   }
   if (events.some((event) => event.type === "gate.created") && !events.some((event) => event.type === "gate.resolved")) {

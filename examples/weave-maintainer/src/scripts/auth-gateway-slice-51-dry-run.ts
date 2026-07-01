@@ -360,7 +360,7 @@ function isThreadTerminal(thread: DryRunThread): boolean {
   return (
     thread.projection.status === "completed" ||
     thread.projection.status === "failed" ||
-    thread.events.some((event) => event.type === "agent.response.produced" || event.type === "agent.failed")
+    thread.events.some((event) => event.type === "agent.reply.produced" || event.type === "agent.failed")
   );
 }
 
@@ -472,7 +472,7 @@ function shouldPrintLiveEvent(event: ThreadEvent): boolean {
     "child_thread.failed",
     "gate.created",
     "agent.failed",
-    "agent.response.produced",
+    "agent.reply.produced",
   ].includes(event.type);
 }
 

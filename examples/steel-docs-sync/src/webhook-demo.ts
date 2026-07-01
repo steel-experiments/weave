@@ -136,7 +136,7 @@ try {
     const promptReceived = events.find((event) => event.type === "prompt.received");
     const toolRequested = events.find((event) => event.type === "tool.requested");
     const toolCompleted = events.find((event) => event.type === "tool.completed");
-    const finalResponse = events.find((event) => event.type === "agent.response.produced");
+    const finalResponse = events.find((event) => event.type === "agent.reply.produced");
 
     const findingSeverities = events
       .filter((event) => isDomainEvent(event, FINDING_PRODUCED))
@@ -187,7 +187,7 @@ try {
     );
     const baselines = readBaselines(toolCompleted.payload.output);
     assert(baselines.every((baseline) => baseline.previousArtifactId === null));
-    assert(finalResponse?.type === "agent.response.produced");
+    assert(finalResponse?.type === "agent.reply.produced");
 
     const flakySuccessPayload: SteelDocsSyncWebhookPayload = {
       ...payload,

@@ -31,7 +31,7 @@ export const assistantAgent = agent({
 
     await ctx.emit(
       "final-response",
-      event("agent.response.produced", {
+      event("agent.reply.produced", {
         message: completion.message,
       }),
     );
