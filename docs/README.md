@@ -6,7 +6,7 @@ This directory is the working source of truth for Weave and the example apps tha
 
 Weave's north star is to be a clean, durable, runtime-agnostic control plane (kernel), prepared as an open-source product.
 
-Blade is the primary consumer that proves Weave, but it is a separate product living in the Blade app (`apps/blade`); its product docs live there, not in this repository. The Steel docs sync agent is a second focused Weave app and recurring audit workflow.
+Weave is proven by the host applications built on top of it. The Steel docs sync agent is a focused Weave app and recurring audit workflow.
 
 ## Start Here
 
@@ -16,7 +16,6 @@ Blade is the primary consumer that proves Weave, but it is a separate product li
 - `docs-operating-model.md`: how docs, slice plans, tests, and architecture updates should stay in sync
 - `docs-sync/README.md`: focused docs sync app area, with links back to the existing Steel docs sync plans
 - `docs-sync/slices/README.md`: Steel docs sync slice index and progress tracker
-- Blade product docs (overview, domain model, slices) live in the Blade app (`apps/blade/docs/`)
 
 ## Proposed Layout
 
@@ -33,7 +32,6 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 
 ## Canonical Planning Docs
 
-- Blade product docs (overview, domain model, slices): the Blade app (`apps/blade/docs/`)
 - Docs sync focused app: `docs-sync/README.md`
 - Docs sync slice progress: `docs-sync/slices/README.md`
 - Shared slice template: `slices/template.md`
@@ -55,7 +53,7 @@ This structure is intentionally incremental. Existing root-level docs are not mo
 
 ## Existing Vertical And Demo Docs
 
-- `north-star-sre-demo.md`: original SRE agent harness north-star demo, now best understood as a Blade SRE slice input
+- `north-star-sre-demo.md`: original SRE agent harness north-star demo, now best understood as an SRE slice input for a host application
 - `steel-docs-sync-example.md`: product-shaped docs sync example
 - `steel-docs-sync-missing-work.md`: original docs sync missing-work rollup, now split into `docs-sync/slices/`
 - `mvp.md`: smallest useful end-to-end Weave primitive definition
@@ -84,6 +82,6 @@ Every meaningful feature should have a slice document before implementation begi
 When a slice ships, update:
 
 - the slice document with actual behavior, test evidence, and remaining follow-up
-- the owning vertical overview, such as `docs-sync/README.md` or the Blade app's docs
+- the owning vertical overview, such as `docs-sync/README.md` or a host application's docs
 - core architecture docs if a Weave primitive changed
 - glossary or domain-model docs if vocabulary changed

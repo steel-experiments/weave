@@ -2,7 +2,7 @@
 
 ## Status
 
-- Vertical: `<blade | docs-sync | weave-core | other>`
+- Vertical: `<host | docs-sync | weave-core | other>`
 - Status: `<Proposed | Planned | In Progress | Blocked | Shipped | Superseded>`
 - Last updated: `YYYY-MM-DD`
 - Owner: `<person or agent role>`
@@ -21,14 +21,14 @@ Write the capability from the user's point of view.
 
 Example:
 
-As an engineer, I can request Blade on a GitHub PR and inspect a durable review thread before a review is published.
+As an engineer, I can request a review on a GitHub PR and inspect a durable review thread before a review is published.
 
 ## Architecture Impact
 
 List the expected changes to:
 
 - Weave primitives
-- Blade product concepts
+- host product concepts
 - app-specific code
 - event taxonomy
 - tool contracts

@@ -19,7 +19,7 @@ Make the durable kernel a standalone, provable layer: move the replay/agent laye
 
 ## User Outcome
 
-As a host author (Blade), I can depend on `weave` and `weave/postgres` and get the durable thread/record/coordination core with no agent-authoring or replay machinery pulled in, and a static check guarantees the kernel cannot regress into depending on the runtime.
+As a host author, I can depend on `weave` and `weave/postgres` and get the durable thread/record/coordination core with no agent-authoring or replay machinery pulled in, and a static check guarantees the kernel cannot regress into depending on the runtime.
 
 ## Architecture Impact
 
@@ -40,14 +40,14 @@ This extends slice `07-package-subpaths-runtime-boundary` (which separated autho
 3. Rewrite `src/index.ts` to export kernel modules only; rewrite `src/runtime-entry.ts` to export kernel + all runtime.
 4. Add `.dependency-cruiser.cjs` with the `core-no-runtime` rule; add `lint:boundaries`; chain into `typecheck`; add the `dependency-cruiser` devDependency.
 5. Repoint authoring imports in tests and examples to `weave/runtime`.
-6. Verify kernel typecheck, boundary lint, consumer (Blade) typecheck, core tests, and example typechecks.
+6. Verify kernel typecheck, boundary lint, consumer typecheck, core tests, and example typechecks.
 
 ## Test Plan
 
 - Kernel `tsc --noEmit` passes.
 - `npm run lint:boundaries` passes, and an injected `kernel → src/runtime/` import is caught as an error (negative proof).
 - `grep` confirms no kernel module imports `src/runtime/`.
-- Consumer Blade `tsc --noEmit` is unchanged (resolves entirely from `weave` and `weave/postgres`).
+- The kernel consumer `tsc --noEmit` is unchanged (resolves entirely from `weave` and `weave/postgres`).
 - Core test suite passes against Postgres.
 - Example workspaces typecheck.
 
@@ -56,7 +56,7 @@ This extends slice `07-package-subpaths-runtime-boundary` (which separated autho
 - [x] `weave` entry exposes kernel contracts only; authoring/runtime symbols are absent.
 - [x] `weave/runtime` exposes the full authoring + runtime surface and re-exports the kernel.
 - [x] `core-no-runtime` boundary rule is enforced and demonstrably catches violations.
-- [x] Blade typechecks unchanged on kernel-only imports.
+- [x] The kernel consumer typechecks unchanged on kernel-only imports.
 - [x] Core tests and example typechecks pass.
 
 ## Progress
@@ -75,7 +75,7 @@ Shipped in submodule commit `4bea2a7` (70 files, +204/-158).
 - Shipped behavior: kernel-only `weave` entry; runtime behind `weave/runtime`; `core-no-runtime` boundary enforced by dependency-cruiser.
 - Public API smoke test (`src/tests/public-api-exports.test.ts`) updated to import authoring from `weave/runtime` and to assert the `weave` root does not expose `agent`, `tool`, `weave`, `defineWeaveApp`, `capability`, `policy`, `defineEvent`, `integration`, `ThreadRunner`, or `GitWorktreeWorkspaceProvider`.
 - Tests added/changed: `public-api-exports.test.ts` (negative-surface assertions), `opencode-adapter.test.ts` (repointed import + corrected moved path; also fixed a pre-existing macOS `/var`→`/private` worktree-root failure via `realpath`).
-- Commands run: kernel `tsc --noEmit` (clean); `npm run lint:boundaries` (clean, plus a verified violation-catch); boundary `grep` (0 hits); Blade `tsc --noEmit` (exit 0, unchanged); core tests against `postgres://steel:steel@localhost:5544/steel` (12/12); five example workspaces typechecked directly.
+- Commands run: kernel `tsc --noEmit` (clean); `npm run lint:boundaries` (clean, plus a verified violation-catch); boundary `grep` (0 hits); consumer `tsc --noEmit` (exit 0, unchanged); core tests against `postgres://steel:steel@localhost:5544/steel` (12/12); five example workspaces typechecked directly.
 - Known gaps: `credentials` and `capability-contract` currently live in `src/runtime/`; if brokered credentials become a kernel routing primitive they would move back. `weave/runtime` is still an in-package subpath, not a separate npm package.
 - Follow-up: docs conformance for the split (this pass); packaging decision for OSS publication recorded in `docs/release-readiness.md`.
 

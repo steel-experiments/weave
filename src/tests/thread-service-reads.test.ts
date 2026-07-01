@@ -33,7 +33,7 @@ test("getSessionMetadata returns the session.started metadata", async () => {
   const { threadId } = await service.startSession({
     prompt: "hello",
     source: "api",
-    agentName: "blade",
+    agentName: "assistant",
     metadata: { role: "dev", actor: "slack:U1" },
   });
   const meta = await service.getSessionMetadata(threadId);
@@ -66,7 +66,7 @@ async function appendReply(
 }
 
 test("getEvents filters by type and preserves order", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
   await appendReply(engine, threadId, "agent.reply.produced", "first");
   await appendReply(engine, threadId, "agent.reply.produced", "second");
 
@@ -85,7 +85,7 @@ test("getEvents filters by type and preserves order", async () => {
 });
 
 test("ThreadQueryService paginates filtered thread events with opaque cursors", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
   await engine.append(
     Array.from({ length: 1000 }, (_, index) => ({
       eventId: newEventId(),
@@ -137,7 +137,7 @@ test("custom inbox routes can deliver host consumers", async () => {
     },
   });
   const routedService = new ThreadService(routedEngine);
-  const { threadId } = await routedService.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  const { threadId } = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant" });
   await appendReply(routedEngine, threadId, "agent.reply.produced", "egress me");
 
   const items = await routedEngine.claimInbox(consumer, "test-egress", 10, 10_000);
@@ -162,13 +162,13 @@ test("ThreadQueryService lists and requeues dead-letter and stale claimed inbox 
   const routedService = new ThreadService(routedEngine);
   const routedQueries = new ThreadQueryService(routedEngine);
 
-  const deadLetterSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  const deadLetterSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant" });
   await appendReply(routedEngine, deadLetterSession.threadId, "agent.reply.produced", "dead letter me");
   const [deadLetterItem] = await routedEngine.claimInbox(consumer, "dead-letter-owner", 10, 10_000);
   assert.ok(deadLetterItem);
   await routedEngine.deadLetterInbox([deadLetterItem.id], "dead-letter-owner", "TEST_DEAD", "dead");
 
-  const staleSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  const staleSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant" });
   await appendReply(routedEngine, staleSession.threadId, "agent.reply.produced", "stale me");
   const [staleItem] = await routedEngine.claimInbox(consumer, "stale-owner", 10, -60_000);
   assert.ok(staleItem);
@@ -221,7 +221,7 @@ test("ThreadQueryService lists and requeues dead-letter and stale claimed inbox 
 });
 
 test("getLatestReply returns the newest reply or response message", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
   assert.equal(await service.getLatestReply(threadId), null);
 
   await appendReply(engine, threadId, "agent.reply.produced", "turn-1");
@@ -237,7 +237,7 @@ test("listOpenGates returns open gates and excludes resolved ones", async () => 
   const { threadId } = await service.startSession({
     prompt: "p",
     source: "api",
-    agentName: "blade",
+    agentName: "assistant",
   });
   const gateId = randomUUID();
   await engine.append([
@@ -247,7 +247,7 @@ test("listOpenGates returns open gates and excludes resolved ones", async () => 
       type: "gate.created",
       occurredAt: nowIso(),
       correlationId: randomUUID(),
-      scopeKey: "agent:blade",
+      scopeKey: "agent:assistant",
       stepKey: "approval:42",
       actor: { type: "system", id: "test" },
       payload: {
@@ -276,12 +276,12 @@ test("ThreadQueryService lists thread heads with metadata and children", async (
   const parent = await service.startSession({
     prompt: "parent",
     source: "api",
-    agentName: "blade",
+    agentName: "assistant",
     metadata: { role: "default", prompt: "parent brief" },
   });
   const child = await service.startChildSession({
     parentThreadId: parent.threadId,
-    agentName: "blade",
+    agentName: "assistant",
     input: { role: "reviewer", prompt: "review brief" },
     prompt: "review brief",
     idempotencyKey: `review-${randomUUID()}`,
@@ -304,12 +304,12 @@ test("ThreadQueryService lists ancestors from child to root", async () => {
   const parent = await service.startSession({
     prompt: "root",
     source: "api",
-    agentName: "blade",
+    agentName: "assistant",
     metadata: { prompt: "root" },
   });
   const child = await service.startChildSession({
     parentThreadId: parent.threadId,
-    agentName: "blade",
+    agentName: "assistant",
     input: { prompt: "child" },
     prompt: "child",
     idempotencyKey: `child-${randomUUID()}`,
@@ -323,17 +323,17 @@ test("ThreadQueryService lists ancestors from child to root", async () => {
 });
 
 test("ThreadQueryService finds latest child reply by metadata", async () => {
-  const parent = await service.startSession({ prompt: "parent", source: "api", agentName: "blade" });
+  const parent = await service.startSession({ prompt: "parent", source: "api", agentName: "assistant" });
   const reviewer = await service.startChildSession({
     parentThreadId: parent.threadId,
-    agentName: "blade",
+    agentName: "assistant",
     input: { role: "reviewer" },
     prompt: "review",
     idempotencyKey: `reviewer-${randomUUID()}`,
   });
   const dev = await service.startChildSession({
     parentThreadId: parent.threadId,
-    agentName: "blade",
+    agentName: "assistant",
     input: { role: "dev" },
     prompt: "dev",
     idempotencyKey: `dev-${randomUUID()}`,
@@ -354,7 +354,7 @@ test("ThreadQueryService finds latest child reply by metadata", async () => {
 });
 
 test("ThreadQueryService lists recent events with a total count", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
   await engine.append([
     {
       eventId: newEventId(),
@@ -380,7 +380,7 @@ test("ThreadQueryService lists recent events with a total count", async () => {
 });
 
 test("ThreadQueryService summarizes failed threads with latest failure metadata", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "blade" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
   await engine.append([
     {
       eventId: newEventId(),

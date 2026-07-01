@@ -405,19 +405,19 @@ Each child thread owns its own event timeline, projection, leases, inbox work, t
 
 This preserves the core Weave principle: a thread is the durable unit of agent work. A sub-agent task is agent work, so it deserves its own thread.
 
-#### Blade Task Threads
+#### Host Task Threads
 
-Blade should model task work as child threads:
+A host application should model task work as child threads:
 
 ```txt
-Blade parent thread
+host parent thread
   ├── task thread: sync docs
   ├── task thread: investigate alert
   ├── task thread: generate report
   └── task thread: run remediation
 ```
 
-The Blade agent can spawn child tasks:
+The host agent can spawn child tasks:
 
 ```ts
 const task = await ctx.spawn("sync-docs", docsSyncAgent, {
@@ -426,11 +426,11 @@ const task = await ctx.spawn("sync-docs", docsSyncAgent, {
 });
 ```
 
-An API can also attach a child task under an existing Blade thread:
+An API can also attach a child task under an existing host thread:
 
 ```ts
 await service.startChildSession({
-  parentThreadId: bladeThreadId,
+  parentThreadId: hostThreadId,
   agentName: "docs.sync",
   input: {
     repo: "acme/docs",
@@ -583,7 +583,7 @@ These fields answer:
 - what children does this thread own?
 - what root session does this task belong to?
 - what parent step spawned this child?
-- is this task attached to a larger Blade session?
+- is this task attached to a larger host session?
 
 #### Events
 

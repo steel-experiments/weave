@@ -8,7 +8,7 @@ The goal is to make implementation slices small enough to build, review, test, a
 
 ## North Star
 
-Weave's north star is to be a clean, durable, runtime-agnostic kernel, prepared as an open-source product. Blade is the primary consumer that proves it, in its own app (`apps/blade`).
+Weave's north star is to be a clean, durable, runtime-agnostic kernel, prepared as an open-source product. It is proven by the host applications built on top of it.
 
 Weave should keep owning the durable control primitives:
 
@@ -23,7 +23,7 @@ Weave should keep owning the durable control primitives:
 - gates
 - resumability
 
-Blade should own the production workflows (in the Blade app, on top of Weave):
+A host application should own the production workflows (on top of Weave):
 
 - GitHub PR review
 - Slack engineering help
@@ -32,7 +32,7 @@ Blade should own the production workflows (in the Blade app, on top of Weave):
 - background implementation
 - child sessions and recurring automations
 
-The Steel docs sync agent is a focused Weave app and a useful recurring automation. It should reuse Weave primitives and later Blade lessons, but it does not need Blade's full product surface, specialist roster, sandbox UX, or broad integration scope.
+The Steel docs sync agent is a focused Weave app and a useful recurring automation. It should reuse Weave primitives and lessons from broader host applications, but it does not need a full host product surface, specialist roster, sandbox UX, or broad integration scope.
 
 ## Document Layers
 
@@ -43,7 +43,6 @@ These describe what the product is trying to become.
 Current examples:
 
 - `what-is-weave.md` and `overview.md` for Weave's own product narrative
-- Blade's product docs (overview, domain model, runtime) live in the Blade app (`apps/blade/docs/`)
 
 These should not become task checklists. They should describe durable product direction, accepted vocabulary, and target architecture.
 
@@ -56,7 +55,6 @@ Slice docs are the day-to-day work trackers. They should be specific enough for 
 Current examples:
 
 - `docs-sync/slices/*.md`
-- Blade slices live in the Blade app (`apps/blade/docs/slices/`)
 
 ### 3. Core Weave Architecture Docs
 
@@ -83,7 +81,7 @@ Current examples:
 - `steel-docs-sync-example.md`
 - `north-star-sre-demo.md`
 
-Over time, SRE should likely move under Blade as a product slice input. Docs sync can remain separate because it is a focused audit automation rather than the full Blade operator.
+Over time, SRE should likely move under a host application as a product slice input. Docs sync can remain separate because it is a focused audit automation rather than a full host operator.
 
 ### 5. Research Docs
 
@@ -139,7 +137,7 @@ A slice is complete only when all of these are true:
 - the slice document reflects actual behavior, not just intended behavior
 - the owning vertical doc reflects the new capability
 - changed Weave primitives are reflected in core architecture docs
-- new terminology is reflected in `glossary.md`, or the Blade app's domain model for Blade-specific terms
+- new terminology is reflected in `glossary.md`, or a host application's domain model for host-specific terms
 - any follow-up work is captured as new proposed slices or explicit open questions
 
 ## Testing Rule
@@ -176,7 +174,7 @@ When a slice ships, update both levels:
 Example:
 
 - a docs sync slice such as `docs-sync/slices/*.md` records exact behavior, events, gates, and tests
-- the owning vertical overview (for Blade, in the Blade app) gets a shorter capability update once the vertical exists
+- the owning vertical overview (for a host application, in its own app) gets a shorter capability update once the vertical exists
 
 ## Review Cadence
 
@@ -185,7 +183,7 @@ At the end of a meaningful slice or cluster of slices, do an architecture review
 The review should ask:
 
 - did the implementation deepen or violate the Weave thread model?
-- did product-specific Blade logic leak into Weave core?
+- did product-specific host logic leak into Weave core?
 - did app-specific docs sync behavior become too generic too early?
 - are events still durable facts rather than hidden state transitions?
 - are artifacts inspectable enough for humans to trust results?

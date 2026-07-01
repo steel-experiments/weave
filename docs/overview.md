@@ -128,11 +128,9 @@ The long-term ambition is to become the shared event and control substrate for o
 
 ## Primary Consumer
 
-Blade is the primary consumer that proves Weave in production-shaped workflows. It is a separate product living in the Blade app (`apps/blade`), not in this repository.
+Weave is proven by the host applications built on top of it in production-shaped workflows. Each such host is a separate product on top of the kernel.
 
-The original SRE agent harness remains a strong target workflow, but it is best treated as one Blade slice rather than a separate north star.
-
-See the Blade app's `docs/overview.md` for the product direction and `north-star-sre-demo.md` for the SRE workflow input.
+The original SRE agent harness remains a strong target workflow, but it is best treated as one host application slice rather than a separate north star.
 
 ## Principles
 

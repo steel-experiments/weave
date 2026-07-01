@@ -18,15 +18,15 @@ Done in publish prep:
 - `exports` point at the built `dist/` files; `files` narrows the publish manifest to `dist`, `README.md`, and `LICENSE`; `prepack` builds before pack/publish.
 - CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm run typecheck`, `npm run build`, `npm test` against a Postgres service, and `npm pack --dry-run`.
 - Repository metadata (`repository`, `homepage`, `bugs`, `author`) added with the current `steel-experiments/weave` URL.
-- Blade product-planning docs relocated to the Blade app (`apps/blade/docs/`); the north-star framing now treats Blade as the primary consumer rather than this repo's product.
+- Host product-planning docs are kept in their own apps, not this repository; the north-star framing now treats host applications as the consumers rather than this repo's product.
 
 Remaining before `npm publish`:
 
 - Flip `private: true` to `false` (kept as a safety latch during prep).
-- Confirm the npm package name. `weave` is unscoped and likely already taken on the public registry; a scope such as `@steel/weave` would change consumer imports — including the in-repo Blade app, which imports `weave` and `weave/postgres`. Finalize the public repository URL at the same time.
+- Confirm the npm package name. `weave` is unscoped and likely already taken on the public registry; a scope such as `@steel/weave` would change consumer imports — including any host application that imports `weave` and `weave/postgres`. Finalize the public repository URL at the same time.
 - Decide whether the kernel and runtime ship as one package with subpaths or as two separate npm packages. Current decision: one package with subpaths (see Packaging Decision below). The narrower-root question is resolved — the root `weave` export is now kernel-only.
 - Add public project governance docs before launch: `CONTRIBUTING.md`, `SECURITY.md`, and a changelog or release notes policy.
-- Keep Blade-specific product planning out of `docs/`.
+- Keep host-specific product planning out of `docs/`.
 - Revoke any API keys that have ever existed in local ignored `.env` files before the repository becomes public.
 
 ## Recommended Publish Shape
@@ -46,7 +46,7 @@ Weave will be published as an open-source product, with the kernel as the headli
 Decision: ship one npm package with the subpaths above, not separate `weave` and `weave-runtime` packages — for now. Rationale:
 
 - The boundary that matters for consumers (kernel cannot depend on runtime) is already physical (`src/` vs `src/runtime/`) and statically enforced (`core-no-runtime`), so a single package does not blur it.
-- The only kernel consumer today, Blade, imports `weave` and `weave/postgres` and never touches `weave/runtime`; subpaths already give it a clean kernel-only dependency.
+- The kernel consumer today imports `weave` and `weave/postgres` and never touches `weave/runtime`; subpaths already give it a clean kernel-only dependency.
 - Splitting into separate packages adds versioning, lockfile, and release-coordination overhead with no consumer currently asking for independent runtime releases.
 - The seam is mechanical to promote later: `src/runtime/` becomes its own package depending on the kernel, with no source moves. Promote when there is a real need for independent versioning, a runtime-only consumer, or a kernel that must stay frozen while the runtime churns.
 
@@ -59,7 +59,7 @@ Revisit this decision at the point a build pipeline and publish manifest are add
 - Current API reference and replay semantics: `docs/declarative-api.md`.
 - Architecture and vocabulary: `docs/architecture.md` and `docs/glossary.md`.
 - Migration guidance: `docs/migration/api-refactor.md`.
-- Internal planning material remains in `docs/`, especially Blade and slice planning docs. Keep these clearly labeled or move non-public planning material before the first public release if the repository should read as product-first rather than roadmap-first.
+- Internal planning material remains in `docs/`, especially slice planning docs. Keep these clearly labeled or move non-public planning material before the first public release if the repository should read as product-first rather than roadmap-first.
 
 ## Verification Checklist
 

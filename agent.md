@@ -30,12 +30,12 @@ The docs are still the working source of truth for direction and scope.
 
 Weave's north star is to be a clean, durable, runtime-agnostic control plane (kernel) that other systems build on. It is being prepared as an open-source product.
 
-Blade is the primary consumer that proves Weave under real organizational workflows, but Blade is a separate product: it lives in the Blade app (`apps/blade` in the Steel monorepo), and its product overview, domain model, and slices live there, not in this repository. The Steel docs sync app is a second, focused Weave app and recurring audit workflow.
+Weave is proven by the host applications built on top of it. The Steel docs sync app is one such focused Weave app and recurring audit workflow.
 
 Use this split when making decisions:
 
 - Weave owns threads, events, inboxes, runners, workers, typed tools, credentials, gates, artifacts, and resumability.
-- Blade owns product workflows, specialist roles, prompts, integration UX, runtime choices, and Steel-specific operating taste — in its own app, on top of Weave.
+- A host application owns product workflows, specialist roles, prompts, integration UX, runtime choices, and product-specific operating taste — in its own app, on top of Weave.
 - Docs sync owns docs/API drift audits, source collection, findings, CI outcomes, and optional GitHub publishing.
 
 ## Who Is Who
@@ -110,7 +110,6 @@ Use `docs/slices/template.md` for new slices.
 Current slice areas:
 
 - `docs/docs-sync/slices/`: Steel docs sync app slices
-- Blade product slices live in the Blade app (`apps/blade/docs/slices/`), not in this repository
 - future verticals should follow the same pattern
 
 A slice is not complete when code merges. It is complete only when:
@@ -120,7 +119,7 @@ A slice is not complete when code merges. It is complete only when:
 - the slice doc records actual behavior and test evidence
 - the owning vertical doc is updated
 - changed Weave primitives are reflected in core architecture docs
-- new terms are reflected in `docs/glossary.md`, or the Blade app's domain model for Blade-specific terms
+- new terms are reflected in `docs/glossary.md`, or a host application's domain model for host-specific terms
 - follow-up work is captured as new slices or explicit open questions
 
 Test plans must prove the real module or vertical works. Mock external networks, model providers, GitHub, Slack, Sentry, Axiom, and sandbox providers at their boundaries, but do not mock the planner, service, engine, projection, worker, or tool module that the slice exists to build.
@@ -134,7 +133,6 @@ Read these files before making significant architectural changes:
 - `docs/glossary.md`: canonical terminology
 - `docs/architecture.md`: system boundaries and primitives
 - `docs/interface.md`: engine and thread interfaces
-- Blade product docs (overview, domain model, slices) live in the Blade app (`apps/blade/docs/`), not in this repository
 - `docs/poc-scope.md`: fixed PoC decisions and non-goals
 - `docs/declarative-api.md`: current authoring API and why `defineThread` does not exist yet
 - `docs/research/README.md`: grouped comparison and research index

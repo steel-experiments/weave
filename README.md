@@ -135,7 +135,7 @@ runtime.toolDaemon.start();
 
 ## Package Boundaries
 
-Weave is split into a **kernel** and a **runtime**. The kernel is the durable thread/record/coordination core: events, the engine contract, projections, leases, the inbox, gates, lineage, and the read-only `ThreadService`. It carries no agent-authoring or replay machinery, so a host can build directly on the log — this is how Blade consumes Weave. The runtime is the replay/agent layer on top: `agent`/`tool`/`weave` authoring, the durable `ctx.*` API, runners, daemons, and tool workers.
+Weave is split into a **kernel** and a **runtime**. The kernel is the durable thread/record/coordination core: events, the engine contract, projections, leases, the inbox, gates, lineage, and the read-only `ThreadService`. It carries no agent-authoring or replay machinery, so a host can build directly on the log. The runtime is the replay/agent layer on top: `agent`/`tool`/`weave` authoring, the durable `ctx.*` API, runners, daemons, and tool workers.
 
 A `kernel → runtime` import is forbidden and enforced statically by `npm run lint:boundaries` (dependency-cruiser). Only the runtime-facing entry barrels may re-export the runtime.
 
@@ -281,4 +281,4 @@ Runtime (`src/runtime/`, exported from `weave/runtime`, `weave/server`, `weave/t
 - `docs/glossary.md`: core vocabulary.
 - `docs/migration/api-refactor.md`: migration guide from planner-first and legacy tool-output patterns.
 - `docs/release-readiness.md`: open-source release checklist and known blockers.
-- `docs/README.md`: full documentation index, including internal planning docs and Blade north-star material.
+- `docs/README.md`: full documentation index, including internal planning docs and north-star material.

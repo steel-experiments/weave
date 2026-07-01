@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This directory groups comparison and research notes that inform Weave and Blade but are not themselves the active implementation plan.
+This directory groups comparison and research notes that inform Weave but are not themselves the active implementation plan.
 
 Use these docs to understand prior reasoning, external systems, and design pressure. Use slice docs and architecture docs for current work.
 
@@ -37,8 +37,8 @@ Use these docs to understand prior reasoning, external systems, and design press
 
 Research should become implementation only after it is linked from one of these places:
 
-- a slice document under `../docs-sync/slices/`, the Blade app, or another vertical
+- a slice document under `../docs-sync/slices/`, a host application, or another vertical
 - a core architecture doc such as `../architecture.md`, `../interface.md`, `../event-taxonomy.md`, or `../runnable-inbox.md`
-- a product north-star doc, such as the Blade app's `docs/overview.md`
+- a product north-star doc, such as a host application's `docs/overview.md`
 
 Until then, treat it as useful context, not committed direction.

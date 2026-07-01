@@ -201,7 +201,7 @@ The implementation is split into a kernel and a runtime, and the boundary is enf
 - The **kernel** (`src/`, published as `weave`, `weave/postgres`, `weave/auth`) owns the durable thread/record/coordination core from the Thread Layer above: the event log and closed event union, the `ThreadEngine`/`ThreadLeaseStore` contracts and Postgres engine, projections, the inbox, gates, timers, signals, lineage, the auth gateway, and the read-only `ThreadService`. It depends on nothing in the runtime.
 - The **runtime** (`src/runtime/`, published as `weave/runtime` and friends) is the replay/agent layer from the Agent and Tool/Worker layers above: `agent`/`tool`/`weave` authoring, the durable `ctx.*` context, the replay runner, daemons, and tool workers. It is a strict superset of the kernel.
 
-This lets a host build directly on the durable log without adopting Weave's replay/authoring model. Blade does exactly this: it consumes the kernel (`weave`, `weave/postgres`) and runs its own turn loop over the event log, because its agent runtime is an opaque external process rather than a replayed `agent.run`.
+This lets a host build directly on the durable log without adopting Weave's replay/authoring model — for example, a host whose agent runtime is an opaque external process can consume the kernel (`weave`, `weave/postgres`) and run its own turn loop over the event log rather than a replayed `agent.run`.
 
 ### Trace continuity
 

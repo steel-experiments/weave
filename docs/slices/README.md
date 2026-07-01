@@ -2,7 +2,7 @@
 
 This directory contains shared rules and templates for vertical implementation slices.
 
-Use `template.md` when creating a new slice under a vertical such as `docs-sync/slices/` (Blade slices live in the Blade app).
+Use `template.md` when creating a new slice under a vertical such as `docs-sync/slices/`.
 
 ## Required Pattern
 
@@ -11,7 +11,7 @@ Each slice should be independently reviewable.
 It should define:
 
 - what user-visible capability changes
-- what Weave or Blade architecture changes
+- what Weave or host architecture changes
 - what code paths are expected to change
 - what tests prove the slice works
 - what docs must be updated when it ships

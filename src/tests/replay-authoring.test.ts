@@ -873,7 +873,7 @@ async function testReplyProducedIsNonTerminalAcrossTurns(): Promise<void> {
           payload: { message: `reply ${turn}` },
         });
         const next = await ctx.waitForSignal(`prompt:${turn + 1}`, {
-          signal: "blade.prompt",
+          signal: "assistant.prompt",
           schema: z.object({ close: z.boolean().default(false) }),
         });
         if (next.close) {
@@ -892,7 +892,7 @@ async function testReplyProducedIsNonTerminalAcrossTurns(): Promise<void> {
     events.find(
       (event): event is Extract<ThreadEvent, { type: "signal.waiting" }> =>
         event.type === "signal.waiting" &&
-        event.payload.signalName === "blade.prompt" &&
+        event.payload.signalName === "assistant.prompt" &&
         !events.some(
           (other) => other.type === "signal.received" && other.payload.waitId === event.payload.waitId,
         ),
@@ -911,7 +911,7 @@ async function testReplyProducedIsNonTerminalAcrossTurns(): Promise<void> {
     await service.deliverSignal({
       threadId,
       waitId: waiting.payload.waitId,
-      signal: "blade.prompt",
+      signal: "assistant.prompt",
       payload: { close: false },
     });
     const resumed = await runner.runOnce(threadId);
@@ -928,7 +928,7 @@ async function testReplyProducedIsNonTerminalAcrossTurns(): Promise<void> {
   await service.deliverSignal({
     threadId,
     waitId: lastWaiting.payload.waitId,
-    signal: "blade.prompt",
+    signal: "assistant.prompt",
     payload: { close: true },
   });
   const finalRun = await runner.runOnce(threadId);

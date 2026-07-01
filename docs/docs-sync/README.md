@@ -4,19 +4,19 @@
 
 The Steel docs sync app is a focused Weave app for auditing docs drift across `steel-dev/docs`, live docs, `llms.txt`, and canonical API reference inputs.
 
-It should remain smaller than Blade.
+It should remain smaller than a broad host operator.
 
-Blade is the broad internal AI operator. Docs sync is a recurring docs and API audit workflow that uses Weave primitives without needing Blade's full specialist set, sandbox UX, Slack/Discord support surface, or background implementation abilities.
+A broad host application can be a full internal AI operator. Docs sync is a recurring docs and API audit workflow that uses Weave primitives without needing a broad operator's full specialist set, sandbox UX, Slack/Discord support surface, or background implementation abilities.
 
-## Relationship To Blade
+## Relationship To Host Applications
 
-Docs sync should share lessons with Blade's Docs And Examples Agent, but it should not become the Blade product surface by accident.
+Docs sync should share lessons with a host application's docs and examples agent, but it should not become a broad host product surface by accident.
 
 Recommended split:
 
 - Weave owns durable threads, events, tools, artifacts, inboxes, gates, credentials, and resumability.
 - Docs sync owns Steel docs audit prompts, source collection, drift checks, findings, CI result handling, and optional GitHub publishing.
-- Blade may later call or wrap a docs sync workflow as one specialist capability.
+- A host application may later call or wrap a docs sync workflow as one specialist capability.
 
 ## Existing Source Docs
 
