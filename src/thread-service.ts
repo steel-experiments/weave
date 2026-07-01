@@ -615,37 +615,68 @@ export class ThreadService {
     comment?: string,
     actor?: Actor,
   ): Promise<void> {
-    const events = await this.engine.read(threadId);
-    const gateCreated = events.find(
-      (event) => event.type === "gate.created" && event.payload.gateId === gateId,
-    );
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const events = await readAllEvents(this.engine, threadId);
+      const gateCreated = events.find(
+        (event) => event.type === "gate.created" && event.payload.gateId === gateId,
+      );
 
-    if (!gateCreated) {
-      throw new Error(`Gate not found: ${gateId}`);
+      if (!gateCreated) {
+        throw new Error(`Gate not found: ${gateId}`);
+      }
+
+      const alreadyResolved = events.find(
+        (event): event is Extract<ThreadEvent, { type: "gate.resolved" }> =>
+          event.type === "gate.resolved" && event.payload.gateId === gateId,
+      );
+
+      if (alreadyResolved) {
+        if (alreadyResolved.payload.resolution === resolution) {
+          return;
+        }
+        throw new Error(`Gate already resolved: ${gateId}`);
+      }
+
+      try {
+        await this.engine.append(
+          [
+            {
+              eventId: deterministicUuid("gate-resolved", threadId, gateId),
+              threadId,
+              type: "gate.resolved",
+              occurredAt: nowIso(),
+              correlationId: gateCreated.correlationId,
+              causationId: gateCreated.eventId,
+              idempotencyKey: `gate-resolved:${gateId}`,
+              scopeKey: gateCreated.scopeKey,
+              stepKey: gateCreated.stepKey,
+              actor: actor ?? { type: "human", id: "demo-approver" },
+              payload: { gateId, resolution, comment },
+            },
+          ],
+          { expectedTailSeq: nextSeq(events) },
+        );
+        return;
+      } catch (error) {
+        if (isExpectedTailConflict(error)) {
+          continue;
+        }
+        throw error;
+      }
     }
 
-    const alreadyResolved = events.some(
-      (event) => event.type === "gate.resolved" && event.payload.gateId === gateId,
-    );
-
-    if (alreadyResolved) {
-      throw new Error(`Gate already resolved: ${gateId}`);
+    const events = await readAllEvents(this.engine, threadId);
+    if (
+      events.some(
+        (event) =>
+          event.type === "gate.resolved" &&
+          event.payload.gateId === gateId &&
+          event.payload.resolution === resolution,
+      )
+    ) {
+      return;
     }
-
-    await this.engine.append([
-      {
-        eventId: newEventId(),
-        threadId,
-        type: "gate.resolved",
-        occurredAt: nowIso(),
-        correlationId: gateCreated.correlationId,
-        causationId: gateCreated.eventId,
-        scopeKey: gateCreated.scopeKey,
-        stepKey: gateCreated.stepKey,
-        actor: actor ?? { type: "human", id: "demo-approver" },
-        payload: { gateId, resolution, comment },
-      },
-    ]);
+    throw new Error(`Gate resolution lost race: ${gateId}`);
   }
 
   async deliverSignal(input: DeliverSignalInput): Promise<DeliverSignalResult> {
@@ -1094,6 +1125,31 @@ async function appendChildTerminalEvent(
 
 function newestEvent(events: readonly ThreadEvent[]): ThreadEvent | undefined {
   return events.at(-1);
+}
+
+async function readAllEvents(engine: ThreadEngine, threadId: string): Promise<ThreadEvent[]> {
+  const events: ThreadEvent[] = [];
+  let fromSeq = 0;
+  while (true) {
+    const page = await engine.read(threadId, { fromSeq, limit: 1000 });
+    if (page.length === 0) {
+      return events;
+    }
+    events.push(...page);
+    fromSeq = nextSeq(page);
+    if (page.length < 1000) {
+      return events;
+    }
+  }
+}
+
+function nextSeq(events: readonly ThreadEvent[]): number {
+  const newest = newestEvent(events);
+  return newest?.seq === undefined ? events.length : newest.seq + 1;
+}
+
+function isExpectedTailConflict(error: unknown): boolean {
+  return error instanceof Error && /^Expected tail /.test(error.message);
 }
 
 function newestEventOfType<Type extends ThreadEvent["type"]>(

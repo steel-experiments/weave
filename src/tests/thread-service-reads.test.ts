@@ -285,6 +285,81 @@ test("listOpenGates returns open gates and excludes resolved ones", async () => 
   assert.equal(open.length, 0);
 });
 
+test("resolveGate is idempotent under concurrent repeated resolution", async () => {
+  const { threadId } = await service.startSession({
+    prompt: "p",
+    source: "api",
+    agentName: "assistant",
+  });
+  const gateId = randomUUID();
+  await engine.append([
+    {
+      eventId: newEventId(),
+      threadId,
+      type: "gate.created",
+      occurredAt: nowIso(),
+      correlationId: randomUUID(),
+      scopeKey: "agent:assistant",
+      stepKey: "approval:concurrent",
+      actor: { type: "system", id: "test" },
+      payload: {
+        gateId,
+        gateType: "manual-approval",
+        reason: "tool-result-requires-approval",
+        proposedAction: "PUT repos/o/r/pulls/1/merge",
+      },
+    },
+  ]);
+
+  await Promise.all([
+    service.resolveGate(threadId, gateId, "approved", "operator-a"),
+    service.resolveGate(threadId, gateId, "approved", "operator-b"),
+  ]);
+
+  const events = await engine.read(threadId);
+  const resolved = events.filter((event) => event.type === "gate.resolved" && event.payload.gateId === gateId);
+  assert.equal(resolved.length, 1);
+  assert.equal(resolved[0]?.type === "gate.resolved" ? resolved[0].payload.resolution : null, "approved");
+});
+
+test("resolveGate rejects concurrent conflicting resolution", async () => {
+  const { threadId } = await service.startSession({
+    prompt: "p",
+    source: "api",
+    agentName: "assistant",
+  });
+  const gateId = randomUUID();
+  await engine.append([
+    {
+      eventId: newEventId(),
+      threadId,
+      type: "gate.created",
+      occurredAt: nowIso(),
+      correlationId: randomUUID(),
+      scopeKey: "agent:assistant",
+      stepKey: "approval:conflict",
+      actor: { type: "system", id: "test" },
+      payload: {
+        gateId,
+        gateType: "manual-approval",
+        reason: "tool-result-requires-approval",
+        proposedAction: "PUT repos/o/r/pulls/1/merge",
+      },
+    },
+  ]);
+
+  const results = await Promise.allSettled([
+    service.resolveGate(threadId, gateId, "approved", "operator-a"),
+    service.resolveGate(threadId, gateId, "denied", "operator-b"),
+  ]);
+
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+  const events = await engine.read(threadId);
+  const resolved = events.filter((event) => event.type === "gate.resolved" && event.payload.gateId === gateId);
+  assert.equal(resolved.length, 1);
+});
+
 test("ThreadQueryService lists thread heads with metadata and children", async () => {
   const parent = await service.startSession({
     prompt: "parent",
