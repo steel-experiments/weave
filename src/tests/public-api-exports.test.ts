@@ -127,7 +127,7 @@ const echoIntegration = integration({
   tools: [echoTool],
   eventHandlers: [
     integrationEvent({
-      type: "agent.response.produced",
+      type: "agent.reply.produced",
       handle(event) {
         assert.equal(event.payload.message.length > 0, true);
       },
@@ -161,18 +161,18 @@ assert.equal(typeof GitWorktreeWorkspaceProvider, "function");
 assert.equal(typeof WorkspaceRefSchema.parse, "function");
 assert.equal(createWorkspaceAllocateTool(new GitWorktreeWorkspaceProvider()).name, "workspace.allocate");
 
-const emitted = event("agent.response.produced", { message: "ok" });
-const defined = defineEvent("agent.response.produced", { message: "ok" });
-const responseProduced = event({
-  type: "agent.response.produced",
+const emitted = event("agent.reply.produced", { message: "ok" });
+const defined = defineEvent("agent.reply.produced", { message: "ok" });
+const replyProduced = event({
+  type: "agent.reply.produced",
   payload: z.object({ message: z.string().min(1) }),
-  description: "Public API response event.",
+  description: "Public API reply event.",
 });
-assert.equal(emitted.type, "agent.response.produced");
+assert.equal(emitted.type, "agent.reply.produced");
 assert.deepEqual(defined.payload, { message: "ok" });
-assert.equal(responseProduced.type, "agent.response.produced");
-assert.equal(responseProduced.description, "Public API response event.");
-assert.deepEqual(responseProduced({ message: "ok" }).payload, { message: "ok" });
+assert.equal(replyProduced.type, "agent.reply.produced");
+assert.equal(replyProduced.description, "Public API reply event.");
+assert.deepEqual(replyProduced({ message: "ok" }).payload, { message: "ok" });
 
 const approval = approvalPolicy({
   name: "public-api.policy",
@@ -246,7 +246,7 @@ assert.equal(opencodePermissionProfile().type, "weave-opencode");
 
 assert.equal(echoApp.agents[0]?.name, "public-api.agent");
 assert.equal(echoApp.integrations?.[0]?.name, "public-api.integration");
-assert.deepEqual(echoIntegration.eventHandlers?.[0]?.eventTypes, ["agent.response.produced"]);
+assert.deepEqual(echoIntegration.eventHandlers?.[0]?.eventTypes, ["agent.reply.produced"]);
 
 const rootExports = weaveRoot as unknown as Record<string, unknown>;
 assert.equal(typeof rootExports.ThreadQueryService, "function");

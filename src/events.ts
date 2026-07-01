@@ -43,7 +43,7 @@ export const AgentStepStartedPayloadSchema = z.object({
 
 export const AgentStepCompletedPayloadSchema = z.object({
   stepId: z.string().uuid(),
-  outcome: z.enum(["requested-tool", "created-gate", "produced-response", "no-op"]),
+  outcome: z.enum(["requested-tool", "created-gate", "produced-reply", "no-op"]),
 });
 
 export const AgentFailedPayloadSchema = z.object({
@@ -200,7 +200,7 @@ export const GateCreatedPayloadSchema = z.object({
 
 export const GateResolvedPayloadSchema = z.object({
   gateId: z.string().uuid(),
-  resolution: z.enum(["approved", "denied"]),
+  resolution: z.enum(["approved", "denied", "expired"]),
   comment: z.string().optional(),
 });
 
@@ -224,12 +224,12 @@ export const RunnerResumedPayloadSchema = z.object({
   ]),
 });
 
-export const AgentResponseProducedPayloadSchema = z.object({
+export const AgentReplyProducedPayloadSchema = z.object({
   message: z.string().min(1),
 });
 
-export const AgentReplyProducedPayloadSchema = z.object({
-  message: z.string().min(1),
+export const AgentCompletedPayloadSchema = z.object({
+  reason: z.enum(["agent-run-complete", "manual-complete"]).optional(),
 });
 
 export const AgentOutputCompletedPayloadSchema = z.object({
@@ -378,14 +378,14 @@ const RunnerResumedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: RunnerResumedPayloadSchema,
 });
 
-const AgentResponseProducedEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal("agent.response.produced"),
-  payload: AgentResponseProducedPayloadSchema,
-});
-
 const AgentReplyProducedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("agent.reply.produced"),
   payload: AgentReplyProducedPayloadSchema,
+});
+
+const AgentCompletedEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("agent.completed"),
+  payload: AgentCompletedPayloadSchema,
 });
 
 const AgentOutputCompletedEventSchema = EventEnvelopeBaseSchema.extend({
@@ -436,8 +436,8 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   GateResolvedEventSchema,
   DomainEventSchema,
   RunnerResumedEventSchema,
-  AgentResponseProducedEventSchema,
   AgentReplyProducedEventSchema,
+  AgentCompletedEventSchema,
   AgentOutputCompletedEventSchema,
   CheckpointCompletedEventSchema,
   ChildThreadSpawnedEventSchema,

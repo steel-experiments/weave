@@ -13,7 +13,7 @@ export function buildThreadSummary(projection: ThreadProjection, events: ThreadE
   let executionMessage: string | null = null;
 
   for (const event of events) {
-    if (event.type === "agent.response.produced" || event.type === "agent.reply.produced") {
+    if (event.type === "agent.reply.produced") {
       finalMessage = event.payload.message;
       continue;
     }

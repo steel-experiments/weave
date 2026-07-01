@@ -49,14 +49,13 @@ test("getSessionMetadata returns null for an unknown thread", async () => {
 async function appendReply(
   engine: PostgresThreadEngine,
   threadId: string,
-  type: "agent.reply.produced" | "agent.response.produced",
   message: string,
 ): Promise<void> {
   await engine.append([
     {
       eventId: newEventId(),
       threadId,
-      type,
+      type: "agent.reply.produced",
       occurredAt: nowIso(),
       correlationId: randomUUID(),
       actor: { type: "system", id: "test" },
@@ -65,10 +64,24 @@ async function appendReply(
   ]);
 }
 
+async function appendCompleted(engine: PostgresThreadEngine, threadId: string): Promise<void> {
+  await engine.append([
+    {
+      eventId: newEventId(),
+      threadId,
+      type: "agent.completed",
+      occurredAt: nowIso(),
+      correlationId: randomUUID(),
+      actor: { type: "system", id: "test" },
+      payload: { reason: "manual-complete" },
+    },
+  ]);
+}
+
 test("getEvents filters by type and preserves order", async () => {
   const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
-  await appendReply(engine, threadId, "agent.reply.produced", "first");
-  await appendReply(engine, threadId, "agent.reply.produced", "second");
+  await appendReply(engine, threadId, "first");
+  await appendReply(engine, threadId, "second");
 
   const all = await service.getEvents(threadId);
   assert.ok(all.length >= 4);
@@ -97,8 +110,8 @@ test("ThreadQueryService paginates filtered thread events with opaque cursors", 
       payload: { kind: "noise", data: { index } },
     })),
   );
-  await appendReply(engine, threadId, "agent.reply.produced", "first");
-  await appendReply(engine, threadId, "agent.reply.produced", "second");
+  await appendReply(engine, threadId, "first");
+  await appendReply(engine, threadId, "second");
 
   const first = await queries.listThreadEvents({
     threadId,
@@ -138,7 +151,7 @@ test("custom inbox routes can deliver host consumers", async () => {
   });
   const routedService = new ThreadService(routedEngine);
   const { threadId } = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant" });
-  await appendReply(routedEngine, threadId, "agent.reply.produced", "egress me");
+  await appendReply(routedEngine, threadId, "egress me");
 
   const items = await routedEngine.claimInbox(consumer, "test-egress", 10, 10_000);
   assert.equal(items.length, 1);
@@ -163,13 +176,13 @@ test("ThreadQueryService lists and requeues dead-letter and stale claimed inbox 
   const routedQueries = new ThreadQueryService(routedEngine);
 
   const deadLetterSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant" });
-  await appendReply(routedEngine, deadLetterSession.threadId, "agent.reply.produced", "dead letter me");
+  await appendReply(routedEngine, deadLetterSession.threadId, "dead letter me");
   const [deadLetterItem] = await routedEngine.claimInbox(consumer, "dead-letter-owner", 10, 10_000);
   assert.ok(deadLetterItem);
   await routedEngine.deadLetterInbox([deadLetterItem.id], "dead-letter-owner", "TEST_DEAD", "dead");
 
   const staleSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant" });
-  await appendReply(routedEngine, staleSession.threadId, "agent.reply.produced", "stale me");
+  await appendReply(routedEngine, staleSession.threadId, "stale me");
   const [staleItem] = await routedEngine.claimInbox(consumer, "stale-owner", 10, -60_000);
   assert.ok(staleItem);
 
@@ -220,12 +233,12 @@ test("ThreadQueryService lists and requeues dead-letter and stale claimed inbox 
   );
 });
 
-test("getLatestReply returns the newest reply or response message", async () => {
+test("getLatestReply returns the newest reply message", async () => {
   const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
   assert.equal(await service.getLatestReply(threadId), null);
 
-  await appendReply(engine, threadId, "agent.reply.produced", "turn-1");
-  await appendReply(engine, threadId, "agent.response.produced", "final");
+  await appendReply(engine, threadId, "turn-1");
+  await appendReply(engine, threadId, "final");
 
   const latest = await service.getLatestReply(threadId);
   assert.equal(latest?.message, "final");
@@ -338,8 +351,10 @@ test("ThreadQueryService finds latest child reply by metadata", async () => {
     prompt: "dev",
     idempotencyKey: `dev-${randomUUID()}`,
   });
-  await appendReply(engine, dev.threadId, "agent.response.produced", "dev done");
-  await appendReply(engine, reviewer.threadId, "agent.response.produced", "looks good");
+  await appendReply(engine, dev.threadId, "dev done");
+  await appendCompleted(engine, dev.threadId);
+  await appendReply(engine, reviewer.threadId, "looks good");
+  await appendCompleted(engine, reviewer.threadId);
 
   const replies = await queries.listLatestChildRepliesByMetadata({
     parentThreadIds: [parent.threadId],

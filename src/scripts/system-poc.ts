@@ -73,13 +73,14 @@ try {
       "gate.resolved",
       "runner.resumed",
       "agent.step.started",
-      "agent.response.produced",
+      "agent.reply.produced",
+      "agent.completed",
       "agent.step.completed",
     ]);
     assert.equal(events.length, finalProjection.tailSeq);
 
-    const finalResponse = events.find((event) => event.type === "agent.response.produced");
-    assert(finalResponse?.payload.message.includes("Approved result"));
+    const finalReply = events.find((event) => event.type === "agent.reply.produced");
+    assert(finalReply?.payload.message.includes("Approved result"));
 
     console.log("API-driven system PoC verified");
     console.log(`api=${baseUrl}`);
@@ -91,7 +92,7 @@ try {
     console.log(toMermaidTimeline(events));
     console.log("```");
     console.log(`finalStatus=${finalProjection.status}`);
-    console.log(`finalMessage=${finalResponse?.payload.message}`);
+    console.log(`finalMessage=${finalReply?.payload.message}`);
   } finally {
     await runnerDaemon.stop();
     await toolDaemon.stop();

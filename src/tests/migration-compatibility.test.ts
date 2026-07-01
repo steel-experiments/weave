@@ -52,7 +52,7 @@ async function testMainEraSchemaMigratesWithoutReset(): Promise<void> {
     assert.equal(projection.parentStepKey, null);
 
     const events = await engine.read("legacy-thread");
-    assert.equal(events.length, 4);
+    assert.equal(events.length, 5);
     const completed = events.find((event) => event.type === "tool.completed");
     assert(completed?.type === "tool.completed");
     assert.deepEqual(completed.payload, {
@@ -150,7 +150,7 @@ async function createMainEraSchema(pool: Pool): Promise<void> {
     );
 
     insert into weave.thread(id, status, next_seq)
-    values ('legacy-thread', 'completed', 4);
+    values ('legacy-thread', 'completed', 5);
 
     insert into weave.thread_event(
       thread_id,
@@ -208,7 +208,7 @@ async function createMainEraSchema(pool: Pool): Promise<void> {
         'legacy-thread',
         3,
         '00000000-0000-4000-8000-000000000004',
-        'agent.response.produced',
+        'agent.reply.produced',
         now(),
         '99999999-9999-4999-8999-999999999999',
         '00000000-0000-4000-8000-000000000003',
@@ -216,6 +216,19 @@ async function createMainEraSchema(pool: Pool): Promise<void> {
         'agent',
         'legacy-agent',
         '{"message":"Legacy final response"}'::jsonb
+      ),
+      (
+        'legacy-thread',
+        4,
+        '00000000-0000-4000-8000-000000000005',
+        'agent.completed',
+        now(),
+        '99999999-9999-4999-8999-999999999999',
+        '00000000-0000-4000-8000-000000000004',
+        null,
+        'agent',
+        'legacy-agent',
+        '{"reason":"manual-complete"}'::jsonb
       );
   `);
 }

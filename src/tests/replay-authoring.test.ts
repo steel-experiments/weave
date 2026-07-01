@@ -727,14 +727,14 @@ async function testSleepFiredResumesAgent(): Promise<void> {
   assert.equal(firedRun.reason, "timer-fired");
   events = await engine.read(threadId);
   assert.equal(events.filter((event) => event.type === "timer.fired").length, 1);
-  assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+  assert.equal(events.some((event) => event.type === "agent.completed"), false);
 
   const completedRun = await runner.runOnce(threadId);
   assert.equal(completedRun.acted, true);
   assert.equal(completedRun.reason, "timer-fired");
   events = await engine.read(threadId);
   assert.equal(events.filter((event) => event.type === "timer.fired").length, 1);
-  assert.equal(events.some((event) => event.type === "agent.response.produced"), true);
+  assert.equal(events.some((event) => event.type === "agent.completed"), true);
 }
 
 async function testSleepTargetMismatch(): Promise<void> {
@@ -902,7 +902,7 @@ async function testReplyProducedIsNonTerminalAcrossTurns(): Promise<void> {
   assert.equal(firstRun.acted, true);
   let events = await engine.read(threadId);
   assert.equal(events.filter((event) => event.type === "agent.reply.produced").length, 1);
-  assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+  assert.equal(events.some((event) => event.type === "agent.completed"), false);
   assert.notEqual((await engine.getProjection(threadId))?.status, "completed");
 
   for (let turn = 1; turn <= 2; turn += 1) {
@@ -919,7 +919,7 @@ async function testReplyProducedIsNonTerminalAcrossTurns(): Promise<void> {
     assert.equal(resumed.reason, "signal-received");
     events = await engine.read(threadId);
     assert.equal(events.filter((event) => event.type === "agent.reply.produced").length, turn + 1);
-    assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+    assert.equal(events.some((event) => event.type === "agent.completed"), false);
     assert.notEqual((await engine.getProjection(threadId))?.status, "completed");
   }
 
@@ -934,8 +934,8 @@ async function testReplyProducedIsNonTerminalAcrossTurns(): Promise<void> {
   const finalRun = await runner.runOnce(threadId);
   assert.equal(finalRun.acted, true);
   events = await engine.read(threadId);
-  assert.equal(events.filter((event) => event.type === "agent.reply.produced").length, 3);
-  assert.equal(events.filter((event) => event.type === "agent.response.produced").length, 1);
+  assert.equal(events.filter((event) => event.type === "agent.reply.produced").length, 4);
+  assert.equal(events.filter((event) => event.type === "agent.completed").length, 1);
   assert.equal((await engine.getProjection(threadId))?.status, "completed");
 }
 
@@ -1025,13 +1025,13 @@ async function testCompletedRunFirstAgentIsTerminal(): Promise<void> {
   assert.equal(firstRun.acted, true);
   assert.equal(firstRun.reason, "new-prompt");
   const afterFirstRun = await engine.read(threadId);
-  assert.equal(afterFirstRun.filter((event) => event.type === "agent.response.produced").length, 1);
+  assert.equal(afterFirstRun.filter((event) => event.type === "agent.completed").length, 1);
   assert.equal(afterFirstRun.filter((event) => event.type === "agent.output.completed").length, 1);
 
   const secondRun = await runner.runOnce(threadId);
   assert.deepEqual(secondRun, { acted: false, appendedEvents: 0, reason: "no-plan" });
   const afterSecondRun = await engine.read(threadId);
-  assert.equal(afterSecondRun.filter((event) => event.type === "agent.response.produced").length, 1);
+  assert.equal(afterSecondRun.filter((event) => event.type === "agent.completed").length, 1);
   assert.equal(afterSecondRun.filter((event) => event.type === "agent.output.completed").length, 1);
 }
 
@@ -1077,7 +1077,7 @@ async function testRunnerReadsFullReplayHistory(): Promise<void> {
   assert.equal(result.reason, "tool-completed");
   const events = await engine.read(threadId, { limit: 2000 });
   assert.equal(events.filter((event) => event.type === "tool.requested").length, 1);
-  assert(events.some((event) => event.type === "agent.response.produced"));
+  assert(events.some((event) => event.type === "agent.completed"));
 }
 
 async function testDecodeFailure(): Promise<void> {
@@ -1300,20 +1300,21 @@ async function testTypedEventFactoryAppendAndReplay(): Promise<void> {
   const replayPlan = await planner.plan("typed-event-append-replay", [...history, firstPlan.events[0] as ThreadEvent]);
   assert(replayPlan);
   assert.equal(replayPlan.events.some((planned) => isDomainEvent(planned, FINDING_KIND)), false);
-  assert.equal(replayPlan.events[0]?.type, "agent.response.produced");
+  assert.equal(replayPlan.events[0]?.type, "agent.reply.produced");
   assert.equal(replayPlan.events[1]?.type, "agent.output.completed");
+  assert.equal(replayPlan.events[2]?.type, "agent.completed");
 }
 
 async function testTypedEventFactoryTypeMismatch(): Promise<void> {
-  const responseProduced = event({
-    type: "agent.response.produced",
+  const replyProduced = event({
+    type: "agent.reply.produced",
     payload: z.object({ message: z.string().min(1) }),
   });
   const emitAgent = agent({
     name: "typed-event-type-mismatch-agent",
     input: inputSchema,
     async run(ctx) {
-      await ctx.emit("final", responseProduced({ message: "Done" }));
+      await ctx.emit("final", replyProduced({ message: "Done" }));
     },
   });
   const planner = createAgentPlanner(emitAgent);
@@ -1392,13 +1393,13 @@ async function testTypedEventFactoryPayloadMismatch(): Promise<void> {
 }
 
 async function testTypedEventFactorySchemaValidation(): Promise<void> {
-  const responseProduced = event({
-    type: "agent.response.produced",
+  const replyProduced = event({
+    type: "agent.reply.produced",
     payload: z.object({ message: z.string().min(1) }),
   });
 
   assert.throws(
-    () => responseProduced({ message: 123 } as unknown as { message: string }),
+    () => replyProduced({ message: 123 } as unknown as { message: string }),
     (error: unknown) => error instanceof WeaveError && error.code === "EVENT_PAYLOAD_INVALID",
   );
 }
@@ -1442,7 +1443,7 @@ async function testRawEmitCompatibility(): Promise<void> {
     input: inputSchema,
     async run(ctx) {
       await ctx.emit("final", {
-        type: "agent.response.produced",
+        type: "agent.reply.produced",
         payload: { message: "raw still works" },
       });
     },
@@ -1455,23 +1456,23 @@ async function testRawEmitCompatibility(): Promise<void> {
 
 async function testTypedIntegrationEventHandlers(): Promise<void> {
   const messages: string[] = [];
-  const responseHandler = integrationEvent({
-    type: "agent.response.produced",
+  const replyHandler = integrationEvent({
+    type: "agent.reply.produced",
     handle(event) {
       messages.push(event.payload.message);
     },
   });
-  assert.deepEqual(responseHandler.eventTypes, ["agent.response.produced"]);
+  assert.deepEqual(replyHandler.eventTypes, ["agent.reply.produced"]);
 
-  const responseEvent: Extract<ThreadEvent, { type: "agent.response.produced" }> = {
-    eventId: eventKey("integration-handler", "agent.response.produced", "response"),
+  const replyEvent: Extract<ThreadEvent, { type: "agent.reply.produced" }> = {
+    eventId: eventKey("integration-handler", "agent.reply.produced", "reply"),
     threadId: "integration-handler",
-    type: "agent.response.produced",
+    type: "agent.reply.produced",
     occurredAt: nowIso(),
     actor: { type: "agent", id: "test" },
     payload: { message: "hello" },
   };
-  await responseHandler.handle(responseEvent, integrationRuntimeContext("integration-handler"));
+  await replyHandler.handle(replyEvent, integrationRuntimeContext("integration-handler"));
   assert.deepEqual(messages, ["hello"]);
 
   const outputs: unknown[] = [];
@@ -1500,9 +1501,9 @@ async function testTypedIntegrationEventHandlers(): Promise<void> {
   assert.deepEqual(outputs, [{ summary: "legacy", requiresManualApproval: false, data: { result: "ok" } }]);
 
   assert.throws(() => {
-    responseHandler.handle(
+    replyHandler.handle(
       {
-        ...responseEvent,
+        ...replyEvent,
         payload: { message: "" },
       } as ThreadEvent,
       integrationRuntimeContext("integration-handler"),
@@ -1510,15 +1511,15 @@ async function testTypedIntegrationEventHandlers(): Promise<void> {
   });
 
   assert.throws(() => {
-    responseHandler.handle(
+    replyHandler.handle(
       {
-        ...responseEvent,
+        ...replyEvent,
         type: "agent.failed",
         payload: { errorCode: "FAILED", message: "failed" },
       } as ThreadEvent,
       integrationRuntimeContext("integration-handler"),
     );
-  }, /Integration handler expected agent\.response\.produced, received agent\.failed/);
+  }, /Integration handler expected agent\.reply\.produced, received agent\.failed/);
 }
 
 function typedOutput(events: readonly ThreadEvent[]): {
@@ -1565,8 +1566,9 @@ async function testEmitReplayDoesNotDuplicateEvent(): Promise<void> {
   const replayPlan = await planner.plan(threadId, [...history, emittedFinding]);
   assert(replayPlan);
   assert.equal(replayPlan.events.some((planned) => isDomainEvent(planned, FINDING_KIND)), false);
-  assert.equal(replayPlan.events[0]?.type, "agent.response.produced");
+  assert.equal(replayPlan.events[0]?.type, "agent.reply.produced");
   assert.equal(replayPlan.events[1]?.type, "agent.output.completed");
+  assert.equal(replayPlan.events[2]?.type, "agent.completed");
 
   const terminalPlan = await planner.plan(threadId, [...history, ...firstPlan.events]);
   assert.equal(terminalPlan, null);
@@ -1582,7 +1584,7 @@ async function testCheckpointReplay(): Promise<void> {
         computeCalls += 1;
         return { normalized: "hello" };
       });
-      await ctx.emit("final", event("agent.response.produced", { message: value.normalized }));
+      await ctx.emit("final", event("agent.reply.produced", { message: value.normalized }));
     },
   });
   const planner = createAgentPlanner(checkpointAgent);
@@ -1601,8 +1603,9 @@ async function testCheckpointReplay(): Promise<void> {
   const secondPlan = await planner.plan("checkpoint-replay", [...history, firstPlan.events[0]]);
   assert(secondPlan);
   assert.equal(computeCalls, 1);
-  assert.equal(secondPlan.events.length, 1);
-  assert.equal(secondPlan.events[0]?.type, "agent.response.produced");
+  assert.equal(secondPlan.events.length, 2);
+  assert.equal(secondPlan.events[0]?.type, "agent.reply.produced");
+  assert.equal(secondPlan.events[1]?.type, "agent.completed");
 }
 
 async function testCheckpointMismatch(): Promise<void> {
@@ -1680,13 +1683,14 @@ async function testDomainToolOutputReplay(): Promise<void> {
 
   const secondPlan = await planner.plan("domain-output-replay", [...history, request, completion]);
   assert(secondPlan);
-  assert.equal(secondPlan.events[0]?.type, "agent.response.produced");
+  assert.equal(secondPlan.events[0]?.type, "agent.reply.produced");
   assert.deepEqual(secondPlan.events[0]?.payload, { message: "ok:1" });
   assert.equal(secondPlan.events[1]?.type, "agent.output.completed");
   assert.deepEqual(secondPlan.events[1]?.payload, {
     output: "ok:1",
     summary: "ok:1",
   });
+  assert.equal(secondPlan.events[2]?.type, "agent.completed");
 }
 
 async function testLegacyTopLevelToolCompletionCompatibility(): Promise<void> {
@@ -1785,17 +1789,27 @@ async function testLegacyEventsWithoutDurableIdentityRemainReadable(): Promise<v
       data: { result: "legacy" },
     },
   });
-  const finalResponse: Extract<ThreadEvent, { type: "agent.response.produced" }> = {
-    eventId: eventKey(threadId, "agent.response.produced", "legacy-final-response"),
+  const finalReply: Extract<ThreadEvent, { type: "agent.reply.produced" }> = {
+    eventId: eventKey(threadId, "agent.reply.produced", "legacy-final-reply"),
     threadId,
-    type: "agent.response.produced",
+    type: "agent.reply.produced",
     occurredAt: nowIso(),
     correlationId: history[0]?.correlationId,
     causationId: legacyCompletion.eventId,
     actor: { type: "agent", id: "legacy-agent" },
     payload: { message: "Legacy final response" },
   };
-  const events = [...history, legacyRequest, legacyCompletion, finalResponse];
+  const finalCompleted: Extract<ThreadEvent, { type: "agent.completed" }> = {
+    eventId: eventKey(threadId, "agent.completed", "legacy-final-completed"),
+    threadId,
+    type: "agent.completed",
+    occurredAt: nowIso(),
+    correlationId: history[0]?.correlationId,
+    causationId: finalReply.eventId,
+    actor: { type: "agent", id: "legacy-agent" },
+    payload: { reason: "manual-complete" },
+  };
+  const events = [...history, legacyRequest, legacyCompletion, finalReply, finalCompleted];
   const engine = new MemoryThreadEngine(events);
   const projection = await engine.getProjection(threadId);
   assert(projection);
@@ -1803,7 +1817,7 @@ async function testLegacyEventsWithoutDurableIdentityRemainReadable(): Promise<v
   const summary = buildThreadSummary(projection, await engine.read(threadId));
   assert.equal(summary.finalMessage, "Legacy final response");
   assert.match(toTextTimeline(events), /tool.completed/);
-  assert.match(toMermaidTimeline(events), /agent.response.produced/);
+  assert.match(toMermaidTimeline(events), /agent.completed/);
 
   const planner = createAgentPlanner(lookupAgent);
   const plan = await planner.plan(threadId, await engine.read(threadId));
@@ -1866,7 +1880,7 @@ async function testInvalidAgentInputRecordsFailure(): Promise<void> {
   );
   assert(failed);
   assert.equal(failed.payload.errorCode, "AGENT_INPUT_INVALID");
-  assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+  assert.equal(events.some((event) => event.type === "agent.completed"), false);
   assert.equal(events.some((event) => event.type === "agent.output.completed"), false);
 }
 
@@ -2053,8 +2067,10 @@ async function testGateReplay(): Promise<void> {
   const resolvedPlan = await planner.plan("gate-replay", [...history, gateCreated, gateResolved]);
   assert(resolvedPlan);
   assert.equal(resolvedPlan.resumeReason, "gate-resolved");
-  assert.equal(resolvedPlan.events[0]?.type, "agent.response.produced");
+  assert.equal(resolvedPlan.events[0]?.type, "agent.reply.produced");
   assert.deepEqual(resolvedPlan.events[0]?.payload, { message: "approved" });
+  assert.equal(resolvedPlan.events[1]?.type, "agent.output.completed");
+  assert.equal(resolvedPlan.events[2]?.type, "agent.completed");
 }
 
 async function testGatePayloadMismatch(): Promise<void> {
@@ -2330,7 +2346,7 @@ async function testSpawnCreatesChildSession(): Promise<void> {
   const replayPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
   assert(replayPlan);
   assert.equal(replayPlan.resumeReason, "child-spawned");
-  assert.equal(replayPlan.events[0]?.type, "agent.response.produced");
+  assert.equal(replayPlan.events[0]?.type, "agent.reply.produced");
   const spawnedAgain = (await engine.read(parentThreadId)).filter((event) => event.type === "child_thread.spawned");
   assert.equal(spawnedAgain.length, 1);
 }
@@ -2487,9 +2503,9 @@ async function testJoinMirrorsCompletedChild(): Promise<void> {
   assert(spawned);
   await engine.append([
     {
-      eventId: eventKey(spawned.payload.childThreadId, "agent.response.produced", "done"),
+      eventId: eventKey(spawned.payload.childThreadId, "agent.reply.produced", "done"),
       threadId: spawned.payload.childThreadId,
-      type: "agent.response.produced",
+      type: "agent.reply.produced",
       occurredAt: nowIso(),
       correlationId: spawned.correlationId,
       actor: { type: "agent", id: "child-agent" },
@@ -2508,6 +2524,7 @@ async function testJoinMirrorsCompletedChild(): Promise<void> {
       },
     },
   ]);
+  await appendAgentCompleted(engine, spawned.payload.childThreadId, "child-agent", spawned.correlationId);
 
   assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
   const completed = (await engine.read(parentThreadId)).find(
@@ -2526,7 +2543,7 @@ async function testJoinMirrorsCompletedChild(): Promise<void> {
   const finalPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
   assert(finalPlan);
   assert.equal(finalPlan.resumeReason, "child-completed");
-  assert.equal(finalPlan.events[0]?.type, "agent.response.produced");
+  assert.equal(finalPlan.events[0]?.type, "agent.reply.produced");
   assert.deepEqual(finalPlan.events[0]?.payload, { message: "answer=42" });
   assert.equal(finalPlan.events[1]?.type, "agent.output.completed");
   assert.deepEqual(finalPlan.events[1]?.payload, {
@@ -2550,14 +2567,15 @@ async function testChildTerminalMirroringIdempotency(): Promise<void> {
   });
   await engine.append([
     {
-      eventId: eventKey(child.threadId, "agent.response.produced", "done"),
+      eventId: eventKey(child.threadId, "agent.reply.produced", "done"),
       threadId: child.threadId,
-      type: "agent.response.produced",
+      type: "agent.reply.produced",
       occurredAt: nowIso(),
       actor: { type: "agent", id: "child-agent" },
       payload: { message: "child done" },
     },
   ]);
+  await appendAgentCompleted(engine, child.threadId, "child-agent");
 
   const firstMirror = await service.mirrorChildTerminalEvent({
     parentThreadId,
@@ -2605,9 +2623,9 @@ async function testJoinValidatesStructuredChildOutput(): Promise<void> {
   assert(spawned);
   await engine.append([
     {
-      eventId: eventKey(spawned.payload.childThreadId, "agent.response.produced", "done"),
+      eventId: eventKey(spawned.payload.childThreadId, "agent.reply.produced", "done"),
       threadId: spawned.payload.childThreadId,
-      type: "agent.response.produced",
+      type: "agent.reply.produced",
       occurredAt: nowIso(),
       correlationId: spawned.correlationId,
       actor: { type: "agent", id: "structured-child-agent" },
@@ -2626,6 +2644,7 @@ async function testJoinValidatesStructuredChildOutput(): Promise<void> {
       },
     },
   ]);
+  await appendAgentCompleted(engine, spawned.payload.childThreadId, "structured-child-agent", spawned.correlationId);
 
   assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
   const finalPlan = await planner.plan(parentThreadId, await engine.read(parentThreadId));
@@ -2654,9 +2673,9 @@ async function testJoinRejectsInvalidStructuredChildOutput(): Promise<void> {
   assert(spawned);
   await engine.append([
     {
-      eventId: eventKey(spawned.payload.childThreadId, "agent.response.produced", "done"),
+      eventId: eventKey(spawned.payload.childThreadId, "agent.reply.produced", "done"),
       threadId: spawned.payload.childThreadId,
-      type: "agent.response.produced",
+      type: "agent.reply.produced",
       occurredAt: nowIso(),
       correlationId: spawned.correlationId,
       actor: { type: "agent", id: "structured-child-agent" },
@@ -2675,6 +2694,7 @@ async function testJoinRejectsInvalidStructuredChildOutput(): Promise<void> {
       },
     },
   ]);
+  await appendAgentCompleted(engine, spawned.payload.childThreadId, "structured-child-agent", spawned.correlationId);
 
   assert.equal(await planner.plan(parentThreadId, await engine.read(parentThreadId)), null);
   await assert.rejects(
@@ -2786,14 +2806,15 @@ async function testCancelChildThreadIdempotencyAndTerminalRejection(): Promise<v
   });
   await engine.append([
     {
-      eventId: eventKey(completedChild.threadId, "agent.response.produced", "done"),
+      eventId: eventKey(completedChild.threadId, "agent.reply.produced", "done"),
       threadId: completedChild.threadId,
-      type: "agent.response.produced",
+      type: "agent.reply.produced",
       occurredAt: nowIso(),
       actor: { type: "agent", id: "completed-child-agent" },
       payload: { message: "done" },
     },
   ]);
+  await appendAgentCompleted(engine, completedChild.threadId, "completed-child-agent");
 
   await assert.rejects(
     async () => {
@@ -2893,14 +2914,15 @@ async function testJoinRejectsUnrelatedChild(): Promise<void> {
   });
   await engine.append([
     {
-      eventId: eventKey(child.threadId, "agent.response.produced", "done"),
+      eventId: eventKey(child.threadId, "agent.reply.produced", "done"),
       threadId: child.threadId,
-      type: "agent.response.produced",
+      type: "agent.reply.produced",
       occurredAt: nowIso(),
       actor: { type: "agent", id: "child-agent" },
       payload: { message: "done" },
     },
   ]);
+  await appendAgentCompleted(engine, child.threadId, "child-agent");
   const parentBAgent = agent({
     name: "parent-b",
     input: inputSchema,
@@ -2973,14 +2995,15 @@ async function testListChildren(): Promise<void> {
 
   await engine.append([
     {
-      eventId: eventKey(attached.threadId, "agent.response.produced", "done"),
+      eventId: eventKey(attached.threadId, "agent.reply.produced", "done"),
       threadId: attached.threadId,
-      type: "agent.response.produced",
+      type: "agent.reply.produced",
       occurredAt: nowIso(),
       actor: { type: "agent", id: "attached-agent" },
       payload: { message: "done" },
     },
   ]);
+  await appendAgentCompleted(engine, attached.threadId, "attached-agent");
 
   const completedChildren = await service.listChildren(parentThreadId, { status: "completed" });
   assert.deepEqual(
@@ -3041,14 +3064,15 @@ async function testContextChildrenFilters(): Promise<void> {
   });
   await engine.append([
     {
-      eventId: eventKey(first.threadId, "agent.response.produced", "done"),
+      eventId: eventKey(first.threadId, "agent.reply.produced", "done"),
       threadId: first.threadId,
-      type: "agent.response.produced",
+      type: "agent.reply.produced",
       occurredAt: nowIso(),
       actor: { type: "agent", id: "first-agent" },
       payload: { message: "done" },
     },
   ]);
+  await appendAgentCompleted(engine, first.threadId, "first-agent");
   const parentAgent = agent({
     name: "parent-agent",
     input: inputSchema,
@@ -3275,7 +3299,7 @@ async function testAppendEventIdempotencyReusesExistingEvent(): Promise<void> {
   });
   const input = {
     threadId: session.threadId,
-    type: "agent.response.produced" as const,
+    type: "agent.reply.produced" as const,
     actor: { type: "agent", id: "blade" } as const,
     payload: { message: "done" },
     idempotencyKey: "response:done",
@@ -3335,7 +3359,7 @@ async function testUnknownRootSessionAgentRecordsFailure(): Promise<void> {
   );
   assert(failed);
   assert.equal(failed.payload.errorCode, "AGENT_NOT_FOUND");
-  assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+  assert.equal(events.some((event) => event.type === "agent.completed"), false);
   assert.equal(events.some((event) => event.type === "agent.output.completed"), false);
 }
 
@@ -3374,7 +3398,7 @@ async function testUnknownChildSessionAgentRecordsFailure(): Promise<void> {
   );
   assert(failed);
   assert.equal(failed.payload.errorCode, "AGENT_NOT_FOUND");
-  assert.equal(events.some((event) => event.type === "agent.response.produced"), false);
+  assert.equal(events.some((event) => event.type === "agent.completed"), false);
   assert.equal(events.some((event) => event.type === "agent.output.completed"), false);
 }
 
@@ -3545,6 +3569,25 @@ function initialHistory(threadId: string): ThreadEvent[] {
   };
 
   return [sessionStarted, promptReceived];
+}
+
+async function appendAgentCompleted(
+  engine: MemoryThreadEngine,
+  threadId: string,
+  actorId: string,
+  correlationId?: string,
+): Promise<void> {
+  await engine.append([
+    {
+      eventId: eventKey(threadId, "agent.completed", "done"),
+      threadId,
+      type: "agent.completed",
+      occurredAt: nowIso(),
+      ...(correlationId ? { correlationId } : {}),
+      actor: { type: "agent", id: actorId },
+      payload: { reason: "manual-complete" },
+    },
+  ]);
 }
 
 function requestedEvent(threadId: string): Extract<ThreadEvent, { type: "tool.requested" }> {
@@ -3784,7 +3827,7 @@ function statusForEvents(events: readonly ThreadEvent[]): ThreadProjection["stat
     return "failed";
   }
 
-  if (events.some((event) => event.type === "agent.response.produced")) {
+  if (events.some((event) => event.type === "agent.completed")) {
     return "completed";
   }
 

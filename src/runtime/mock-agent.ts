@@ -49,8 +49,8 @@ export class DeterministicMockAgent {
           event.type === "gate.resolved" && event.payload.gateId === gateCreated.payload.gateId,
       );
 
-      const responseProduced = events.some((event) => event.type === "agent.response.produced");
-      if (gateResolved && !responseProduced) {
+      const agentCompleted = events.some((event) => event.type === "agent.completed");
+      if (gateResolved && !agentCompleted) {
         return this.produceResponse(threadId, gateResolved, toolCompleted);
       }
     }
@@ -176,14 +176,24 @@ export class DeterministicMockAgent {
           payload: { stepId, reason: "gate-resolved" },
         },
         {
-          eventId: eventKey(threadId, "agent.response.produced", "final"),
+          eventId: eventKey(threadId, "agent.reply.produced", "final"),
           threadId,
-          type: "agent.response.produced",
+          type: "agent.reply.produced",
           occurredAt: nowIso(),
           correlationId: gateResolved.correlationId,
           causationId: gateResolved.eventId,
           actor: { type: "agent", id: "mock-agent" },
           payload: { message },
+        },
+        {
+          eventId: eventKey(threadId, "agent.completed", "final"),
+          threadId,
+          type: "agent.completed",
+          occurredAt: nowIso(),
+          correlationId: gateResolved.correlationId,
+          causationId: gateResolved.eventId,
+          actor: { type: "agent", id: "mock-agent" },
+          payload: { reason: "agent-run-complete" },
         },
         {
           eventId: eventKey(threadId, "agent.step.completed", "produce-response"),
@@ -193,7 +203,7 @@ export class DeterministicMockAgent {
           correlationId: gateResolved.correlationId,
           causationId: gateResolved.eventId,
           actor: { type: "agent", id: "mock-agent" },
-          payload: { stepId, outcome: "produced-response" },
+          payload: { stepId, outcome: "produced-reply" },
         },
       ],
     };

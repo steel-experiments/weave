@@ -103,7 +103,7 @@ class RunAgentPlanner implements AgentPlanner {
   ) {}
 
   async plan(threadId: string, events: ThreadEvent[]): Promise<AgentPlan | null> {
-    if (!this.agent.run || hasTerminalAgentResponse(events)) {
+    if (!this.agent.run || hasTerminalAgentCompleted(events)) {
       return null;
     }
 
@@ -135,11 +135,14 @@ class RunAgentPlanner implements AgentPlanner {
       const output = validateAgentOutput(this.agent, rawOutput);
       const plannedEvents = context.drainEvents();
       const outputSummary = formatAgentOutput(output);
-      if (!plannedEvents.some((event) => event.type === "agent.response.produced")) {
-        plannedEvents.push(context.responseEvent("agent-run-output", outputSummary));
+      if (!plannedEvents.some((event) => event.type === "agent.reply.produced")) {
+        plannedEvents.push(context.replyEvent("agent-run-output", outputSummary));
       }
       if (output !== undefined) {
         plannedEvents.push(context.outputEvent("agent-run-output", output, outputSummary));
+      }
+      if (!plannedEvents.some((event) => event.type === "agent.completed")) {
+        plannedEvents.push(context.completedEvent("agent-run-complete"));
       }
 
       return toPlan(events, plannedEvents);
@@ -673,12 +676,12 @@ class ReplayAgentContext implements AgentContext {
     return this.parallelEffectError;
   }
 
-  responseEvent(key: string, message: string): ThreadEvent {
+  replyEvent(key: string, message: string): ThreadEvent {
     const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
     return {
-      eventId: eventKey(this.threadId, "agent.response.produced", `${this.scopeKey}:${key}`),
+      eventId: eventKey(this.threadId, "agent.reply.produced", `${this.scopeKey}:${key}`),
       threadId: this.threadId,
-      type: "agent.response.produced",
+      type: "agent.reply.produced",
       occurredAt: nowIso(),
       correlationId: cause?.correlationId,
       causationId: cause?.eventId,
@@ -686,6 +689,22 @@ class ReplayAgentContext implements AgentContext {
       stepKey: key,
       actor: this.actor,
       payload: { message },
+    };
+  }
+
+  completedEvent(key: string): ThreadEvent {
+    const cause = newestEvent([...this.options.events, ...this.pendingEvents]);
+    return {
+      eventId: eventKey(this.threadId, "agent.completed", `${this.scopeKey}:${key}`),
+      threadId: this.threadId,
+      type: "agent.completed",
+      occurredAt: nowIso(),
+      correlationId: cause?.correlationId,
+      causationId: cause?.eventId,
+      scopeKey: this.scopeKey,
+      stepKey: key,
+      actor: this.actor,
+      payload: { reason: "agent-run-complete" },
     };
   }
 
@@ -1432,9 +1451,9 @@ function capabilityDescriptors(capabilities: readonly CapabilityDeclaration[]): 
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function hasTerminalAgentResponse(events: readonly ThreadEvent[]): boolean {
+function hasTerminalAgentCompleted(events: readonly ThreadEvent[]): boolean {
   return events.some(
-    (event) => event.type === "agent.response.produced" || event.type === "agent.failed",
+    (event) => event.type === "agent.completed" || event.type === "agent.failed",
   );
 }
 

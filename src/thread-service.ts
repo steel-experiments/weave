@@ -390,7 +390,7 @@ export class ThreadService {
     };
 
     if (childProjection.status === "completed") {
-      const response = newestEventOfType(childEvents, "agent.response.produced");
+      const reply = newestEventOfType(childEvents, "agent.reply.produced");
       const output = newestEventOfType(childEvents, "agent.output.completed");
       const event: Extract<ThreadEvent, { type: "child_thread.completed" }> = {
         ...base,
@@ -401,8 +401,8 @@ export class ThreadService {
           childThreadId: input.childThreadId,
           ...(input.childAgentName ? { childAgentName: input.childAgentName } : {}),
           ...(output && "output" in output.payload ? { output: output.payload.output } : {}),
-          ...(output?.payload.summary ?? response?.payload.message
-            ? { outputSummary: output?.payload.summary ?? response?.payload.message }
+          ...(output?.payload.summary ?? reply?.payload.message
+            ? { outputSummary: output?.payload.summary ?? reply?.payload.message }
             : {}),
         },
       };
@@ -575,7 +575,7 @@ export class ThreadService {
     const events = await this.engine.read(threadId);
     for (let index = events.length - 1; index >= 0; index -= 1) {
       const event = events[index];
-      if (event && (event.type === "agent.reply.produced" || event.type === "agent.response.produced")) {
+      if (event?.type === "agent.reply.produced") {
         return { message: event.payload.message, eventId: event.eventId, occurredAt: event.occurredAt };
       }
     }
@@ -611,7 +611,7 @@ export class ThreadService {
   async resolveGate(
     threadId: string,
     gateId: string,
-    resolution: "approved" | "denied",
+    resolution: "approved" | "denied" | "expired",
     comment?: string,
     actor?: Actor,
   ): Promise<void> {

@@ -419,7 +419,7 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
        left join lateral (
          select event_id, occurred_at, payload_json
          from weave.thread_event
-         where thread_id = t.id and type in ('agent.reply.produced', 'agent.response.produced')
+         where thread_id = t.id and type = 'agent.reply.produced'
          order by seq desc
          limit 1
        ) reply on true
@@ -870,7 +870,7 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
       case "tool.failed":
       case "agent.failed":
         return "failed";
-      case "agent.response.produced":
+      case "agent.completed":
         return "completed";
       case "tool.started":
       case "tool.progress":
@@ -960,7 +960,7 @@ function inboxRoutesForEvent(event: ThreadEvent): InboxRoute[] {
     case "credential.failed":
     case "tool.failed":
     case "gate.created":
-    case "agent.response.produced":
+    case "agent.completed":
     case "agent.reply.produced":
     case "agent.output.completed":
     case "domain.event":

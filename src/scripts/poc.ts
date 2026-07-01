@@ -68,11 +68,12 @@ try {
 
   const events = await engine.read(threadId);
   const eventTypes = events.map((event) => event.type);
-  assert(eventTypes.includes("agent.response.produced"));
+  assert(eventTypes.includes("agent.reply.produced"));
+  assert(eventTypes.includes("agent.completed"));
   assert.equal(events.length, finalProjection.tailSeq);
 
-  const finalResponse = events.find((event) => event.type === "agent.response.produced");
-  assert(finalResponse?.payload.message.includes("Approved result"));
+  const finalReply = events.find((event) => event.type === "agent.reply.produced");
+  assert(finalReply?.payload.message.includes("Approved result"));
 
   console.log("PoC flow verified");
   console.log(`threadId=${threadId}`);
@@ -85,7 +86,7 @@ try {
   console.log(toMermaidTimeline(events));
   console.log("```");
   console.log(`finalStatus=${finalProjection.status}`);
-  console.log(`finalMessage=${finalResponse?.payload.message}`);
+  console.log(`finalMessage=${finalReply?.payload.message}`);
 } finally {
   await pool.end();
 }
