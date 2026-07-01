@@ -3232,6 +3232,76 @@ async function testStartSessionIdempotencyMismatch(): Promise<void> {
   );
 }
 
+async function testAppendEventFillsEnvelopeWithoutExtraCorrelationRead(): Promise<void> {
+  const engine = new MemoryThreadEngine();
+  const service = new ThreadService(engine);
+  const session = await service.startSession({
+    prompt: "Reply to the user.",
+    source: "test",
+    idempotencyKey: "append-envelope-session",
+  });
+  const readCallsAfterStart = engine.readCalls;
+
+  const event = await service.appendEvent({
+    threadId: session.threadId,
+    type: "agent.reply.produced",
+    actor: { type: "agent", id: "blade" },
+    payload: { message: "done" },
+    idempotencyKey: "reply:done",
+    scopeKey: "agent:blade",
+    stepKey: "reply",
+  });
+
+  assert.equal(engine.readCalls, readCallsAfterStart);
+  assert.equal(event.threadId, session.threadId);
+  assert.equal(event.type, "agent.reply.produced");
+  assert.equal(event.correlationId, session.correlationId);
+  assert.equal(event.eventId, deterministicUuid("thread-service-event", session.threadId, "agent.reply.produced", "reply:done"));
+  assert.equal(event.idempotencyKey, "reply:done");
+  assert.equal(event.scopeKey, "agent:blade");
+  assert.equal(event.stepKey, "reply");
+  assert.equal(event.actor.id, "blade");
+  assert.deepEqual(event.payload, { message: "done" });
+  assert.equal(typeof event.occurredAt, "string");
+}
+
+async function testAppendEventIdempotencyReusesExistingEvent(): Promise<void> {
+  const engine = new DuplicateRejectingMemoryThreadEngine();
+  const service = new ThreadService(engine);
+  const session = await service.startSession({
+    prompt: "Reply idempotently.",
+    source: "test",
+    idempotencyKey: "append-idempotent-session",
+  });
+  const input = {
+    threadId: session.threadId,
+    type: "agent.response.produced" as const,
+    actor: { type: "agent", id: "blade" } as const,
+    payload: { message: "done" },
+    idempotencyKey: "response:done",
+    scopeKey: "agent:blade",
+    stepKey: "response",
+  };
+
+  const first = await service.appendEvent(input);
+  const second = await service.appendEvent(input);
+
+  assert.equal(second.eventId, first.eventId);
+  assert.equal(second.type, first.type);
+  assert.deepEqual(second.payload, first.payload);
+  assert.equal((await engine.read(session.threadId)).filter((event) => event.idempotencyKey === "response:done").length, 1);
+  await assert.rejects(
+    async () => {
+      await service.appendEvent({
+        ...input,
+        payload: { message: "different" },
+      });
+    },
+    ReplayMismatchError,
+  );
+  assert.equal((await engine.read(session.threadId)).filter((event) => event.idempotencyKey === "response:done").length, 1);
+}
+
 async function testUnknownRootSessionAgentRecordsFailure(): Promise<void> {
   const engine = new MemoryThreadEngine();
   const service = new ThreadService(engine);
@@ -3598,6 +3668,7 @@ function integrationRuntimeContext(threadId: string) {
 
 class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
   private readonly threads = new Map<string, CreateThreadOptions & { rootThreadId: string }>();
+  readCalls = 0;
 
   constructor(readonly events: ThreadEvent[] = []) {
     this.events = events.map((event, index) => ({ ...event, seq: event.seq ?? index }) as ThreadEvent);
@@ -3628,6 +3699,7 @@ class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
   }
 
   async read(threadId: string, options: ReadOptions = {}): Promise<ThreadEvent[]> {
+    this.readCalls += 1;
     const fromSeq = options.fromSeq ?? 0;
     const events = this.events.filter((event) => event.threadId === threadId && (event.seq ?? 0) >= fromSeq);
     return options.limit === undefined ? events : events.slice(0, options.limit);
@@ -3688,6 +3760,23 @@ class MemoryThreadEngine implements ThreadEngine, ThreadLeaseStore {
   }
 
   async releaseLease(): Promise<void> {}
+}
+
+class DuplicateRejectingMemoryThreadEngine extends MemoryThreadEngine {
+  override async append(events: ThreadEvent[], options: AppendOptions = {}): Promise<AppendResult> {
+    for (const event of events) {
+      if (!event.idempotencyKey) {
+        continue;
+      }
+      const duplicate = this.events.some((existing) => {
+        return existing.threadId === event.threadId && existing.idempotencyKey === event.idempotencyKey;
+      });
+      if (duplicate) {
+        throw new Error(`Duplicate idempotency key: ${event.idempotencyKey}`);
+      }
+    }
+    return super.append(events, options);
+  }
 }
 
 function statusForEvents(events: readonly ThreadEvent[]): ThreadProjection["status"] {
@@ -3788,6 +3877,8 @@ await testRuntimePlannerFallsBackToDefaultAgent();
 await testStartSessionAgentNameDispatchesRootSession();
 await testApiCreateThreadAcceptsAgentName();
 await testStartSessionIdempotencyMismatch();
+await testAppendEventFillsEnvelopeWithoutExtraCorrelationRead();
+await testAppendEventIdempotencyReusesExistingEvent();
 await testUnknownRootSessionAgentRecordsFailure();
 await testUnknownChildSessionAgentRecordsFailure();
 await testRuntimeRegistersToolsFromAllAgents();

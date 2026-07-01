@@ -108,6 +108,20 @@ export type DeliverSignalResult = {
   waitId: string;
 };
 
+export type ThreadEventInput<Type extends ThreadEvent["type"] = ThreadEvent["type"]> = Type extends ThreadEvent["type"]
+  ? {
+      threadId: string;
+      type: Type;
+      actor: Actor;
+      payload: Extract<ThreadEvent, { type: Type }>["payload"];
+      correlationId?: string;
+      causationId?: string;
+      idempotencyKey?: string;
+      scopeKey?: string;
+      stepKey?: string;
+    }
+  : never;
+
 export type LatestReply = {
   message: string;
   eventId: string;
@@ -125,6 +139,8 @@ export type OpenGate = {
 };
 
 export class ThreadService {
+  private readonly correlationIds = new Map<string, string | undefined>();
+
   constructor(private readonly engine: ThreadEngine) {}
 
   async startSession(input: string | StartSessionInput): Promise<{ threadId: string; correlationId: string }> {
@@ -141,7 +157,9 @@ export class ThreadService {
     const existingSession = await readExistingSession(this.engine, threadId);
     if (existingSession) {
       validateStartSessionIdempotency(normalized, existingSession);
-      return toSessionResult(existingSession);
+      const result = toSessionResult(existingSession);
+      this.rememberCorrelation(threadId, result.correlationId);
+      return result;
     }
 
     const events: ThreadEvent[] = [
@@ -176,6 +194,7 @@ export class ThreadService {
 
     try {
       await this.engine.append(events);
+      this.rememberCorrelation(threadId, correlationId);
       return { threadId, correlationId };
     } catch (error) {
       if (!normalized.idempotencyKey) {
@@ -185,7 +204,9 @@ export class ThreadService {
       const concurrentSession = await readExistingSession(this.engine, threadId);
       if (concurrentSession) {
         validateStartSessionIdempotency(normalized, concurrentSession);
-        return toSessionResult(concurrentSession);
+        const result = toSessionResult(concurrentSession);
+        this.rememberCorrelation(threadId, result.correlationId);
+        return result;
       }
 
       throw error;
@@ -232,6 +253,7 @@ export class ThreadService {
 
     const existingSession = await readExistingSession(this.engine, threadId);
     const correlationId = existingSession?.correlationId ?? generatedCorrelationId;
+    this.rememberCorrelation(threadId, correlationId);
 
     if (existingSession) {
       validateChildSessionIdempotency(
@@ -505,6 +527,28 @@ export class ThreadService {
     return started?.payload.metadata ?? null;
   }
 
+  async appendEvent<Type extends ThreadEvent["type"]>(
+    input: ThreadEventInput<Type>,
+  ): Promise<Extract<ThreadEvent, { type: Type }>> {
+    const event = await this.createEvent(input);
+    try {
+      await this.engine.append([event]);
+      return event;
+    } catch (error) {
+      if (!input.idempotencyKey) {
+        throw error;
+      }
+
+      const existing = await this.findEventByIdempotencyKey(input.threadId, input.idempotencyKey);
+      if (existing) {
+        validateAppendEventIdempotency(input, existing);
+        return existing as Extract<ThreadEvent, { type: Type }>;
+      }
+
+      throw error;
+    }
+  }
+
   async getEvents(
     threadId: string,
     options: {
@@ -647,6 +691,81 @@ export class ThreadService {
     ]);
 
     return { delivered: true, eventType: "signal.received", waitId: waiting.payload.waitId };
+  }
+
+  private async createEvent<Type extends ThreadEvent["type"]>(
+    input: ThreadEventInput<Type>,
+  ): Promise<Extract<ThreadEvent, { type: Type }>> {
+    return {
+      eventId: input.idempotencyKey
+        ? deterministicUuid("thread-service-event", input.threadId, input.type, input.idempotencyKey)
+        : newEventId(),
+      threadId: input.threadId,
+      type: input.type,
+      occurredAt: nowIso(),
+      correlationId: input.correlationId ?? (await this.correlationIdFor(input.threadId)),
+      causationId: input.causationId,
+      idempotencyKey: input.idempotencyKey,
+      scopeKey: input.scopeKey,
+      stepKey: input.stepKey,
+      actor: input.actor,
+      payload: input.payload,
+    } as Extract<ThreadEvent, { type: Type }>;
+  }
+
+  private rememberCorrelation(threadId: string, correlationId: string | undefined): void {
+    this.correlationIds.set(threadId, correlationId);
+  }
+
+  private async correlationIdFor(threadId: string): Promise<string | undefined> {
+    if (this.correlationIds.has(threadId)) {
+      return this.correlationIds.get(threadId);
+    }
+
+    const [first] = await this.engine.read(threadId, { limit: 1 });
+    this.rememberCorrelation(threadId, first?.correlationId);
+    return first?.correlationId;
+  }
+
+  private async findEventByIdempotencyKey(
+    threadId: string,
+    idempotencyKey: string,
+  ): Promise<ThreadEvent | undefined> {
+    const events = await this.engine.read(threadId);
+    return events.find((event) => event.idempotencyKey === idempotencyKey);
+  }
+}
+
+function validateAppendEventIdempotency<Type extends ThreadEvent["type"]>(
+  input: ThreadEventInput<Type>,
+  existing: ThreadEvent,
+): void {
+  const mismatches: string[] = [];
+  if (existing.type !== input.type) {
+    mismatches.push("type");
+  }
+  if (stableValueHash(existing.actor) !== stableValueHash(input.actor)) {
+    mismatches.push("actor");
+  }
+  if (stableValueHash(existing.payload) !== stableValueHash(input.payload)) {
+    mismatches.push("payload");
+  }
+  if (existing.causationId !== input.causationId) {
+    mismatches.push("causationId");
+  }
+  if (existing.scopeKey !== input.scopeKey) {
+    mismatches.push("scopeKey");
+  }
+  if (existing.stepKey !== input.stepKey) {
+    mismatches.push("stepKey");
+  }
+
+  if (mismatches.length > 0) {
+    throw new ReplayMismatchError("Idempotent event append does not match the existing event", {
+      threadId: input.threadId,
+      idempotencyKey: input.idempotencyKey,
+      mismatches,
+    });
   }
 }
 

@@ -61,6 +61,7 @@ import {
 } from "weave/auth";
 import { z } from "zod";
 import * as weaveRoot from "weave";
+import { ThreadService as CoreThreadService, ThreadQueryService as CoreThreadQueryService } from "weave/core";
 
 const inputSchema = z.object({ text: z.string().min(1) });
 const outputSchema = z.object({ text: z.string().min(1) });
@@ -203,6 +204,9 @@ assert.equal(typeof ThreadService, "function");
 assert.equal(typeof ThreadQueryService, "function");
 assert.equal(typeof ThreadQueryService.prototype.listThreadInboxItems, "function");
 assert.equal(typeof ThreadQueryService.prototype.listThreadHealthSummaries, "function");
+assert.equal(typeof CoreThreadService, "function");
+assert.equal(typeof CoreThreadService.prototype.appendEvent, "function");
+assert.equal(typeof CoreThreadQueryService, "function");
 
 assert.equal(typeof PostgresThreadEngine, "function");
 assert.equal(typeof PostgresThreadEngine.prototype.requeueThreadInboxItems, "function");
