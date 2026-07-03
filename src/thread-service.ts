@@ -20,12 +20,14 @@ export type StartSessionInput = {
   agentName?: string;
   actor?: Actor;
   metadata?: SessionMetadata;
+  promptMetadata?: SessionMetadata;
   idempotencyKey?: string;
 };
 
 type NormalizedStartSessionInput = Required<Pick<StartSessionInput, "prompt" | "source" | "actor">> & {
   agentName?: string;
   metadata?: SessionMetadata;
+  promptMetadata?: SessionMetadata;
   idempotencyKey?: string;
 };
 
@@ -188,7 +190,10 @@ export class ThreadService {
         occurredAt: nowIso(),
         correlationId,
         actor: normalized.actor,
-        payload: { prompt: normalized.prompt },
+        payload: {
+          prompt: normalized.prompt,
+          ...(normalized.promptMetadata ? { metadata: normalized.promptMetadata } : {}),
+        },
       },
     ];
 
@@ -861,6 +866,7 @@ function normalizeStartSessionInput(input: string | StartSessionInput): Normaliz
     agentName: input.agentName,
     actor: input.actor ?? { type: "user", id: "demo-user" },
     metadata: input.metadata,
+    promptMetadata: input.promptMetadata,
     idempotencyKey: input.idempotencyKey,
   };
 }
@@ -907,6 +913,9 @@ function validateStartSessionIdempotency(input: NormalizedStartSessionInput, exi
   }
   if (promptPayload?.prompt !== input.prompt) {
     mismatches.push("prompt");
+  }
+  if (stableValueHash(promptPayload?.metadata) !== stableValueHash(input.promptMetadata)) {
+    mismatches.push("promptMetadata");
   }
 
   if (mismatches.length > 0) {

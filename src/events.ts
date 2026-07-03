@@ -34,6 +34,7 @@ export const SessionStartedPayloadSchema = z.object({
 
 export const PromptReceivedPayloadSchema = z.object({
   prompt: z.string().min(1),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const AgentStepStartedPayloadSchema = z.object({
