@@ -35,29 +35,9 @@
       "types": "./dist/core-entry.d.ts",
       "import": "./dist/core-entry.js"
     },
-    "./runtime": {
-      "types": "./dist/runtime-entry.d.ts",
-      "import": "./dist/runtime-entry.js"
-    },
     "./postgres": {
       "types": "./dist/postgres-entry.d.ts",
       "import": "./dist/postgres-entry.js"
-    },
-    "./server": {
-      "types": "./dist/server-entry.d.ts",
-      "import": "./dist/server-entry.js"
-    },
-    "./testing": {
-      "types": "./dist/testing-entry.d.ts",
-      "import": "./dist/testing-entry.js"
-    },
-    "./auth": {
-      "types": "./dist/auth-entry.d.ts",
-      "import": "./dist/auth-entry.js"
-    },
-    "./opencode": {
-      "types": "./dist/opencode-entry.d.ts",
-      "import": "./dist/opencode-entry.js"
     }
   },
   "files": [
@@ -65,40 +45,11 @@
     "README.md",
     "LICENSE"
   ],
-  "workspaces": [
-    "examples/*"
-  ],
   "scripts": {
-    "db:migrate": "tsx src/scripts/migrate.ts",
-    "poc": "tsx src/scripts/poc.ts",
-    "system:poc": "tsx src/scripts/system-poc.ts",
-    "auth:dry-run": "tsx examples/weave-maintainer/src/scripts/auth-gateway-slice-51-dry-run.ts",
-    "gates:list": "tsx examples/weave-maintainer/src/scripts/development-operator.ts gates:list",
-    "gates:show": "tsx examples/weave-maintainer/src/scripts/development-operator.ts gates:show",
-    "gates:approve": "tsx examples/weave-maintainer/src/scripts/development-operator.ts gates:approve",
-    "gates:reject": "tsx examples/weave-maintainer/src/scripts/development-operator.ts gates:reject",
-    "initiatives:list": "tsx examples/weave-maintainer/src/scripts/development-operator.ts initiatives:list",
-    "initiative:status": "tsx examples/weave-maintainer/src/scripts/development-operator.ts initiative:status",
-    "checkpoints:list": "tsx examples/weave-maintainer/src/scripts/development-operator.ts checkpoints:list",
-    "checkpoints:show": "tsx examples/weave-maintainer/src/scripts/development-operator.ts checkpoints:show",
-    "checkpoints:diff": "tsx examples/weave-maintainer/src/scripts/development-operator.ts checkpoints:diff",
-    "checkpoints:restore": "tsx examples/weave-maintainer/src/scripts/development-operator.ts checkpoints:restore",
-    "initiative:run": "tsx examples/weave-maintainer/src/scripts/initiative-run.ts",
-    "dashboard": "tsx examples/weave-maintainer/src/scripts/dashboard.ts",
-    "sre:demo": "tsx examples/sre-demo/src/index.ts",
-    "assistant:demo": "tsx examples/simple-assistant/src/index.ts",
-    "assistant:server": "tsx examples/simple-assistant/src/server.ts",
-    "steel:demo": "tsx examples/steel-docs-sync/src/index.ts",
-    "steel:webhook-demo": "tsx examples/steel-docs-sync/src/webhook-demo.ts",
-    "otlp:smoke": "tsx src/scripts/otlp-smoke.ts",
-    "server": "tsx src/scripts/server.ts",
-    "daemon:runner": "tsx src/scripts/runner-daemon.ts",
-    "daemon:tool": "tsx src/scripts/tool-daemon.ts",
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "prepack": "npm run build",
-    "lint:boundaries": "depcruise src --config .dependency-cruiser.cjs",
-    "typecheck": "tsc --noEmit && npm run lint:boundaries && npm --prefix examples/sre-demo run typecheck && npm --prefix examples/steel-docs-sync run typecheck && npm --prefix examples/simple-assistant run typecheck && npm --prefix examples/prompt-workflow-review run typecheck && npm --prefix examples/weave-maintainer run typecheck",
-    "test": "tsx src/tests/replay-authoring.test.ts && tsx src/tests/public-api-exports.test.ts && tsx src/tests/opencode-adapter.test.ts && tsx src/tests/auth-gateway.test.ts && tsx src/tests/authenticated-integration-ingress.test.ts && tsx src/tests/auth-audit.test.ts && tsx src/tests/auth-provider-adapter.test.ts && tsx src/tests/migration-compatibility.test.ts && tsx src/tests/daemon-heartbeat.test.ts && tsx src/tests/workspace-provider.test.ts && tsx src/tests/tool-worker-progress.test.ts && tsx src/tests/thread-service-reads.test.ts && npm --prefix examples/prompt-workflow-review run test && npm --prefix examples/weave-maintainer run test"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx src/tests/public-api-exports.test.ts && tsx src/tests/migration-compatibility.test.ts && tsx src/tests/thread-service-reads.test.ts"
   },
   "dependencies": {
     "pg": "^8.16.3",
@@ -107,7 +58,6 @@
   "devDependencies": {
     "@types/node": "^24.10.1",
     "@types/pg": "^8.15.6",
-    "dependency-cruiser": "^16.10.4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

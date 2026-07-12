@@ -14,12 +14,7 @@
     "paths": {
       "weave": ["./src/index.ts"],
       "weave/core": ["./src/core-entry.ts"],
-      "weave/runtime": ["./src/runtime-entry.ts"],
-      "weave/postgres": ["./src/postgres-entry.ts"],
-      "weave/server": ["./src/server-entry.ts"],
-      "weave/testing": ["./src/testing-entry.ts"],
-      "weave/auth": ["./src/auth-entry.ts"],
-      "weave/opencode": ["./src/opencode-entry.ts"]
+      "weave/postgres": ["./src/postgres-entry.ts"]
     }
   },
   "include": ["src/**/*.ts"]

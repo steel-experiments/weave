@@ -1,278 +1,47 @@
 import assert from "node:assert/strict";
-import {
-  agent,
-  approvalPolicy,
-  capability,
-  defineCapability,
-  defineAgent,
-  defineApprovalPolicy,
-  defineEvent,
-  defineIntegration,
-  defineTool,
-  defineWeaveApp,
-  event,
-  integration,
-  integrationEvent,
-  isCapabilityRequest,
-  policy,
-  tool,
-  weave,
-  definePolicy,
-  GitWorktreeWorkspaceProvider,
-  WorkspaceRefSchema,
-  createWorkspaceAllocateTool,
-  ThreadService,
-  ContractToolWorker,
-  ThreadRunner,
-  createWeaveRuntime,
-  ThreadQueryService,
-} from "weave/runtime";
-import {
-  PostgresThreadEngine,
-  appendTestGate,
-  createPool,
-  createTestThreadProjection,
-  migrate,
-  truncateWeaveForTest,
-} from "weave/postgres";
-import { createApiServer } from "weave/server";
-import { DeterministicMockAgent, MockAsyncToolWorker } from "weave/testing";
-import { createOpenCodeCliAdapter, opencodePermissionProfile } from "weave/opencode";
-import {
-  authGateway,
-  anonymousAuth,
-  bearerTokenAuth,
-  weaveAccessPolicy,
-  allowService,
-  allowUser,
-  allowGroup,
-  allowEveryone,
-  denyEveryone,
-  allowRole,
-  allowScope,
-  allowTenant,
-  allowOrganization,
-  defaultAccessContext,
-  toAuthSummary,
-  authRequestFromIncoming,
-  createAuthProviderAdapter,
-  jwtAuth,
-  createIdentityAdapterContractTests,
-} from "weave/auth";
-import { z } from "zod";
-import * as weaveRoot from "weave";
-import { ThreadService as CoreThreadService, ThreadQueryService as CoreThreadQueryService } from "weave/core";
+import * as root from "weave";
+import * as core from "weave/core";
+import * as postgres from "weave/postgres";
 
-const inputSchema = z.object({ text: z.string().min(1) });
-const outputSchema = z.object({ text: z.string().min(1) });
+const rootExports = root as unknown as Record<string, unknown>;
+const coreExports = core as unknown as Record<string, unknown>;
+const postgresExports = postgres as unknown as Record<string, unknown>;
 
-const githubRead = capability({
-  name: "github.read",
-  description: "Read GitHub issues and pull requests.",
-  scopes: z.object({
-    owner: z.string().min(1),
-    repo: z.string().min(1),
-  }),
-});
-const definedGitHubWrite = defineCapability({
-  name: "github.write",
-  description: "Write GitHub issues and pull requests.",
-  scopes: z.object({
-    owner: z.string().min(1),
-    repo: z.string().min(1),
-  }),
-});
-
-const echoTool = tool({
-  name: "public-api.echo",
-  description: "Echo input text.",
-  input: inputSchema,
-  output: outputSchema,
-  capabilities: [githubRead],
-  summarize(output) {
-    return output.text;
-  },
-  run(ctx) {
-    return { text: ctx.input.text };
-  },
-});
-
-const echoAgent = agent({
-  name: "public-api.agent",
-  input: inputSchema,
-  output: outputSchema,
-  tools: [echoTool],
-  async run(ctx, input) {
-    await ctx.sleep("brief-wait", { milliseconds: 0 });
-    await ctx.waitForSignal("external-ok", { signal: "public-api.ok", schema: z.object({ ok: z.literal(true) }) });
-    return ctx.tool("echo", echoTool, input);
-  },
-});
-
-const allowEchoPolicy = policy({
-  name: "public-api.allow-echo",
-  evaluate(request) {
-    return request.type === "tool" && request.toolName === "public-api.echo" ? { outcome: "allow" } : undefined;
-  },
-});
-const denyNothingPolicy = definePolicy({
-  name: "public-api.deny-nothing",
-  evaluate() {
-    return undefined;
-  },
-});
-
-const echoIntegration = integration({
-  name: "public-api.integration",
-  tools: [echoTool],
-  eventHandlers: [
-    integrationEvent({
-      type: "agent.reply.produced",
-      handle(event) {
-        assert.equal(event.payload.message.length > 0, true);
-      },
-    }),
-  ],
-});
-
-const echoApp = weave({
-  name: "public-api-app",
-  agents: [echoAgent],
-  tools: [echoTool],
-  integrations: [echoIntegration],
-  policies: [allowEchoPolicy],
-});
-
-assert.equal(defineTool(echoTool), echoTool);
-assert.equal(defineAgent(echoAgent), echoAgent);
-assert.equal(defineIntegration(echoIntegration), echoIntegration);
-assert.equal(defineWeaveApp(echoApp), echoApp);
-assert.equal(githubRead.name, "github.read");
-assert.equal(definedGitHubWrite.name, "github.write");
-const githubReadRequest = githubRead.request({ owner: "acme", repo: "agent-mailbox" });
-assert.equal(isCapabilityRequest(githubReadRequest), true);
-assert.equal(githubReadRequest.credential.name, "github.read");
-assert(Array.isArray(echoTool.capabilities));
-assert.equal(echoTool.capabilities?.[0], githubRead);
-assert.equal(allowEchoPolicy.name, "public-api.allow-echo");
-assert.equal(denyNothingPolicy.name, "public-api.deny-nothing");
-assert.equal(echoApp.policies?.[0], allowEchoPolicy);
-assert.equal(typeof GitWorktreeWorkspaceProvider, "function");
-assert.equal(typeof WorkspaceRefSchema.parse, "function");
-assert.equal(createWorkspaceAllocateTool(new GitWorktreeWorkspaceProvider()).name, "workspace.allocate");
-
-const emitted = event("agent.reply.produced", { message: "ok" });
-const defined = defineEvent("agent.reply.produced", { message: "ok" });
-const replyProduced = event({
-  type: "agent.reply.produced",
-  payload: z.object({ message: z.string().min(1) }),
-  description: "Public API reply event.",
-});
-assert.equal(emitted.type, "agent.reply.produced");
-assert.deepEqual(defined.payload, { message: "ok" });
-assert.equal(replyProduced.type, "agent.reply.produced");
-assert.equal(replyProduced.description, "Public API reply event.");
-assert.deepEqual(replyProduced({ message: "ok" }).payload, { message: "ok" });
-
-const approval = approvalPolicy({
-  name: "public-api.policy",
-  requiresApproval(input: { risky: boolean }) {
-    return input.risky;
-  },
-  gate() {
-    return { reason: "risky-remediation", proposedAction: "approve public api smoke test" };
-  },
-});
-const definedPolicy = defineApprovalPolicy({
-  name: "public-api.defined-policy",
-  requiresApproval(input: { risky: boolean }) {
-    return input.risky;
-  },
-  gate() {
-    return { reason: "risky-remediation" };
-  },
-});
-
-assert.equal(approval.evaluate({ risky: false }), undefined);
-assert.equal(approval.evaluate({ risky: true })?.reason, "risky-remediation");
-assert.equal(definedPolicy.requiresApproval({ risky: true }), true);
-
-assert.equal(typeof createWeaveRuntime, "function");
-assert.equal(typeof ThreadRunner, "function");
-assert.equal(typeof ContractToolWorker, "function");
-assert.equal(typeof ThreadService, "function");
-assert.equal(typeof ThreadQueryService, "function");
-assert.equal(typeof ThreadQueryService.prototype.listThreadInboxItems, "function");
-assert.equal(typeof ThreadQueryService.prototype.listThreadHealthSummaries, "function");
-assert.equal(typeof CoreThreadService, "function");
-assert.equal(typeof CoreThreadService.prototype.appendEvent, "function");
-assert.equal(typeof CoreThreadQueryService, "function");
-
-assert.equal(typeof PostgresThreadEngine, "function");
-assert.equal(typeof PostgresThreadEngine.prototype.requeueThreadInboxItems, "function");
-assert.equal(typeof createPool, "function");
-assert.equal(typeof migrate, "function");
-assert.equal(typeof appendTestGate, "function");
-assert.equal(typeof createTestThreadProjection, "function");
-assert.equal(typeof truncateWeaveForTest, "function");
-
-assert.equal(typeof createApiServer, "function");
-
-assert.equal(typeof authGateway, "function");
-assert.equal(typeof anonymousAuth, "function");
-assert.equal(typeof bearerTokenAuth, "function");
-assert.equal(typeof weaveAccessPolicy, "function");
-assert.equal(typeof allowService, "function");
-assert.equal(typeof allowUser, "function");
-assert.equal(typeof allowGroup, "function");
-assert.equal(typeof allowEveryone, "function");
-assert.equal(typeof denyEveryone, "function");
-assert.equal(typeof allowRole, "function");
-assert.equal(typeof allowScope, "function");
-assert.equal(typeof allowTenant, "function");
-assert.equal(typeof allowOrganization, "function");
-assert.equal(typeof defaultAccessContext, "function");
-assert.equal(typeof toAuthSummary, "function");
-assert.equal(typeof authRequestFromIncoming, "function");
-assert.equal(typeof createAuthProviderAdapter, "function");
-assert.equal(typeof jwtAuth, "function");
-assert.equal(typeof createIdentityAdapterContractTests, "function");
-
-assert.equal(typeof DeterministicMockAgent, "function");
-assert.equal(typeof MockAsyncToolWorker, "function");
-
-assert.equal(typeof createOpenCodeCliAdapter, "function");
-assert.equal(opencodePermissionProfile().type, "weave-opencode");
-
-assert.equal(echoApp.agents[0]?.name, "public-api.agent");
-assert.equal(echoApp.integrations?.[0]?.name, "public-api.integration");
-assert.deepEqual(echoIntegration.eventHandlers?.[0]?.eventTypes, ["agent.reply.produced"]);
-
-const rootExports = weaveRoot as unknown as Record<string, unknown>;
+assert.equal(typeof rootExports.deterministicUuid, "function");
+assert.equal(typeof rootExports.newEventId, "function");
+assert.equal(typeof rootExports.buildThreadSummary, "function");
+assert.equal(typeof rootExports.ReplayMismatchError, "function");
+assert.equal(typeof rootExports.WeaveError, "function");
 assert.equal(typeof rootExports.ThreadQueryService, "function");
-for (const infra of [
-  "createPool",
-  "migrate",
-  "PostgresThreadEngine",
-  "createApiServer",
-  "ThreadService",
-  "ContractToolWorker",
+
+assert.equal(typeof coreExports.ThreadService, "function");
+assert.equal(typeof coreExports.ThreadQueryService, "function");
+assert.equal(typeof coreExports.buildThreadSummary, "function");
+
+assert.equal(typeof postgresExports.PostgresThreadEngine, "function");
+assert.equal(typeof postgresExports.migrate, "function");
+assert.equal(typeof postgresExports.ThreadService, "function");
+assert.equal(typeof postgresExports.ThreadQueryService, "function");
+assert.equal(typeof postgresExports.createPool, "function");
+assert.equal(typeof postgresExports.truncateWeaveForTest, "function");
+
+for (const platform of [
   "createWeaveRuntime",
-  "DeterministicMockAgent",
+  "createApiServer",
+  "ContractToolWorker",
+  "ThreadRunner",
   "authGateway",
   "createOpenCodeCliAdapter",
+  "DeterministicMockAgent",
+  "GitWorktreeWorkspaceProvider",
   "agent",
   "tool",
   "weave",
-  "defineWeaveApp",
   "capability",
-  "policy",
-  "defineEvent",
-  "integration",
-  "ThreadRunner",
-  "GitWorktreeWorkspaceProvider",
 ]) {
-  assert.equal(rootExports[infra], undefined, `weave root (".") must not expose runtime/infra symbol: ${infra}`);
+  assert.equal(rootExports[platform], undefined, `weave root must not expose platform symbol: ${platform}`);
+  assert.equal(coreExports[platform], undefined, `weave/core must not expose platform symbol: ${platform}`);
+  assert.equal(postgresExports[platform], undefined, `weave/postgres must not expose platform symbol: ${platform}`);
 }
 
 console.log("Public API export smoke test passed");
