@@ -45,6 +45,8 @@ export const AgentStepStartedPayloadSchema = z.object({
 export const AgentStepCompletedPayloadSchema = z.object({
   stepId: z.string().uuid(),
   outcome: z.enum(["requested-tool", "created-gate", "produced-reply", "no-op"]),
+  content: z.unknown().optional(),
+  stopReason: z.string().nullable().optional(),
 });
 
 export const AgentFailedPayloadSchema = z.object({
@@ -55,7 +57,7 @@ export const AgentFailedPayloadSchema = z.object({
 export const ToolNameSchema = z.string().min(1);
 
 export const ToolRequestedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
+  toolCallId: z.string().min(1),
   toolName: ToolNameSchema,
   args: z.unknown(),
   scopeKey: z.string().min(1).optional(),
@@ -63,25 +65,25 @@ export const ToolRequestedPayloadSchema = z.object({
 });
 
 export const ToolStartedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
+  toolCallId: z.string().min(1),
   toolName: ToolNameSchema,
 });
 
 export const ToolProgressPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
+  toolCallId: z.string().min(1),
   percent: z.number().int().min(0).max(100),
   message: z.string().min(1),
 });
 
 export const ToolCompletedPayloadSchema = z.union([
   z.object({
-    toolCallId: z.string().uuid(),
+    toolCallId: z.string().min(1),
     output: z.unknown(),
     summary: z.string().min(1).optional(),
   }),
   z
     .object({
-      toolCallId: z.string().uuid(),
+      toolCallId: z.string().min(1),
       summary: z.string().min(1),
       requiresManualApproval: z.boolean(),
       data: z.unknown().optional(),
@@ -94,7 +96,7 @@ export const ToolCompletedPayloadSchema = z.union([
 ]);
 
 export const ToolFailedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
+  toolCallId: z.string().min(1),
   toolName: ToolNameSchema.optional(),
   errorCode: z.string().min(1),
   message: z.string().min(1),
@@ -152,7 +154,7 @@ export const PolicyEvaluatedPayloadSchema = z.object({
   scopeKey: z.string().min(1),
   stepKey: z.string().min(1),
   policyStepKey: z.string().min(1),
-  toolCallId: z.string().uuid(),
+  toolCallId: z.string().min(1),
   toolName: ToolNameSchema,
   inputHash: z.string().min(1),
   capabilityNames: z.array(z.string().min(1)),
@@ -165,7 +167,7 @@ export const PolicyEvaluatedPayloadSchema = z.object({
 export const CredentialKindSchema = z.enum(["secret", "delegated-identity", "scoped-token", "browser-session"]);
 
 export const CredentialRequestedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
+  toolCallId: z.string().min(1),
   credentialName: z.string().min(1),
   kind: CredentialKindSchema,
   provider: z.string().min(1).optional(),
@@ -175,7 +177,7 @@ export const CredentialRequestedPayloadSchema = z.object({
 });
 
 export const CredentialResolvedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
+  toolCallId: z.string().min(1),
   credentialName: z.string().min(1),
   kind: CredentialKindSchema,
   source: z.string().min(1),
@@ -184,7 +186,7 @@ export const CredentialResolvedPayloadSchema = z.object({
 });
 
 export const CredentialFailedPayloadSchema = z.object({
-  toolCallId: z.string().uuid(),
+  toolCallId: z.string().min(1),
   credentialName: z.string().min(1),
   kind: CredentialKindSchema,
   errorCode: z.string().min(1),
@@ -222,7 +224,9 @@ export const RunnerResumedPayloadSchema = z.object({
     "child-completed",
     "child-failed",
     "manual-retry",
+    "crash-recovery",
   ]),
+  note: z.string().min(1).optional(),
 });
 
 export const AgentReplyProducedPayloadSchema = z.object({
