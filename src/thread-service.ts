@@ -361,7 +361,7 @@ export class ThreadService {
       throw new Error(`Child thread not found for parent: ${input.childThreadId}`);
     }
 
-    const parentEvents = await this.engine.read(input.parentThreadId);
+    const parentEvents = await this.engine.readAll(input.parentThreadId);
     const spawned = parentEvents.find((event) => {
       return event.type === "child_thread.spawned" && event.payload.childThreadId === input.childThreadId;
     });
@@ -381,7 +381,7 @@ export class ThreadService {
       return { mirrored: true, eventType: existing.type };
     }
 
-    const childEvents = await this.engine.read(input.childThreadId);
+    const childEvents = await this.engine.readAll(input.childThreadId);
     const childTerminal = newestEvent(childEvents);
     const parentCause = newestEvent(parentEvents);
     const base = {
@@ -442,7 +442,7 @@ export class ThreadService {
       throw new Error(`Child thread is already completed: ${input.childThreadId}`);
     }
 
-    const childEvents = await this.engine.read(input.childThreadId);
+    const childEvents = await this.engine.readAll(input.childThreadId);
     const existingCancellation = childEvents.find((event): event is Extract<ThreadEvent, { type: "agent.failed" }> => {
       return event.type === "agent.failed" && event.payload.errorCode === "CHILD_CANCELLED";
     });
@@ -483,7 +483,7 @@ export class ThreadService {
   }
 
   async listChildren(parentThreadId: string, options: ListChildrenOptions = {}): Promise<readonly ThreadRef[]> {
-    const parentEvents = await this.engine.read(parentThreadId);
+    const parentEvents = await this.engine.readAll(parentThreadId, { types: ["child_thread.spawned"] });
     const spawnedEvents = parentEvents.filter(
       (event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => event.type === "child_thread.spawned",
     );
@@ -524,7 +524,7 @@ export class ThreadService {
   }
 
   async getSessionMetadata(threadId: string): Promise<SessionMetadata | null> {
-    const events = await this.engine.read(threadId);
+    const events = await this.engine.read(threadId, { types: ["session.started"], limit: 1 });
     const started = events.find(
       (event): event is Extract<ThreadEvent, { type: "session.started" }> =>
         event.type === "session.started",
@@ -544,7 +544,7 @@ export class ThreadService {
         throw error;
       }
 
-      const existing = await this.findEventByIdempotencyKey(input.threadId, input.idempotencyKey);
+      const existing = await this.engine.findEventByIdempotencyKey(input.threadId, input.idempotencyKey);
       if (existing) {
         validateAppendEventIdempotency(input, existing);
         return existing as Extract<ThreadEvent, { type: Type }>;
@@ -562,33 +562,33 @@ export class ThreadService {
       limit?: number;
     } = {},
   ): Promise<readonly ThreadEvent[]> {
-    const events = await this.engine.read(
-      threadId,
-      options.fromSeq !== undefined ? { fromSeq: options.fromSeq } : undefined,
-    );
     const types =
       options.type === undefined
         ? undefined
         : Array.isArray(options.type)
           ? options.type
           : [options.type];
-    const filtered = types ? events.filter((event) => types.includes(event.type)) : events;
-    return options.limit !== undefined ? filtered.slice(0, options.limit) : filtered;
+    const events = await this.engine.readAll(threadId, {
+      ...(options.fromSeq !== undefined ? { fromSeq: options.fromSeq } : {}),
+      ...(types ? { types } : {}),
+    });
+    return options.limit !== undefined ? events.slice(0, options.limit) : events;
   }
 
   async getLatestReply(threadId: string): Promise<LatestReply | null> {
-    const events = await this.engine.read(threadId);
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (event?.type === "agent.reply.produced") {
-        return { message: event.payload.message, eventId: event.eventId, occurredAt: event.occurredAt };
-      }
+    const [event] = await this.engine.read(threadId, {
+      types: ["agent.reply.produced"],
+      limit: 1,
+      direction: "desc",
+    });
+    if (event?.type === "agent.reply.produced") {
+      return { message: event.payload.message, eventId: event.eventId, occurredAt: event.occurredAt };
     }
     return null;
   }
 
   async listOpenGates(threadId: string): Promise<readonly OpenGate[]> {
-    const events = await this.engine.read(threadId);
+    const events = await this.engine.readAll(threadId, { types: ["gate.created", "gate.resolved"] });
     const resolved = new Set<string>();
     for (const event of events) {
       if (event.type === "gate.resolved") {
@@ -621,7 +621,7 @@ export class ThreadService {
     actor?: Actor,
   ): Promise<void> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const events = await readAllEvents(this.engine, threadId);
+      const events = await this.engine.readAll(threadId);
       const gateCreated = events.find(
         (event) => event.type === "gate.created" && event.payload.gateId === gateId,
       );
@@ -670,7 +670,7 @@ export class ThreadService {
       }
     }
 
-    const events = await readAllEvents(this.engine, threadId);
+    const events = await this.engine.readAll(threadId);
     if (
       events.some(
         (event) =>
@@ -685,7 +685,9 @@ export class ThreadService {
   }
 
   async deliverSignal(input: DeliverSignalInput): Promise<DeliverSignalResult> {
-    const events = await this.engine.read(input.threadId);
+    const events = await this.engine.readAll(input.threadId, {
+      types: ["signal.waiting", "signal.received"],
+    });
     const waiting = findWaitingSignal(events, input);
     const existing = events.find((event): event is Extract<ThreadEvent, { type: "signal.received" }> => {
       return event.type === "signal.received" && event.payload.waitId === waiting.payload.waitId;
@@ -763,13 +765,6 @@ export class ThreadService {
     return first?.correlationId;
   }
 
-  private async findEventByIdempotencyKey(
-    threadId: string,
-    idempotencyKey: string,
-  ): Promise<ThreadEvent | undefined> {
-    const events = await this.engine.read(threadId);
-    return events.find((event) => event.idempotencyKey === idempotencyKey);
-  }
 }
 
 function validateAppendEventIdempotency<Type extends ThreadEvent["type"]>(
@@ -1024,7 +1019,7 @@ async function ensureChildSpawnedEvent(
     metadata?: SessionMetadata;
   },
 ): Promise<void> {
-  const parentEvents = await engine.read(input.parentThreadId);
+  const parentEvents = await engine.readAll(input.parentThreadId);
   const existing = parentEvents.find((event): event is Extract<ThreadEvent, { type: "child_thread.spawned" }> => {
     return event.type === "child_thread.spawned" && event.payload.childThreadId === input.childThreadId;
   });
@@ -1059,7 +1054,9 @@ async function ensureChildSpawnedEvent(
   try {
     await engine.append([event]);
   } catch (error) {
-    const concurrentEvents = await engine.read(input.parentThreadId);
+    const concurrentEvents = await engine.readAll(input.parentThreadId, {
+      types: ["child_thread.spawned"],
+    });
     const concurrentEvent = concurrentEvents.find((candidate): candidate is Extract<ThreadEvent, { type: "child_thread.spawned" }> => {
       return candidate.type === "child_thread.spawned" && candidate.payload.childThreadId === input.childThreadId;
     });
@@ -1115,7 +1112,9 @@ async function appendChildTerminalEvent(
   try {
     await engine.append([event]);
   } catch (error) {
-    const events = await engine.read(event.threadId);
+    const events = await engine.readAll(event.threadId, {
+      types: ["child_thread.completed", "child_thread.failed"],
+    });
     const existing = events.some((candidate) => {
       return (
         candidate.type === event.type &&
@@ -1134,22 +1133,6 @@ async function appendChildTerminalEvent(
 
 function newestEvent(events: readonly ThreadEvent[]): ThreadEvent | undefined {
   return events.at(-1);
-}
-
-async function readAllEvents(engine: ThreadEngine, threadId: string): Promise<ThreadEvent[]> {
-  const events: ThreadEvent[] = [];
-  let fromSeq = 0;
-  while (true) {
-    const page = await engine.read(threadId, { fromSeq, limit: 1000 });
-    if (page.length === 0) {
-      return events;
-    }
-    events.push(...page);
-    fromSeq = nextSeq(page);
-    if (page.length < 1000) {
-      return events;
-    }
-  }
 }
 
 function nextSeq(events: readonly ThreadEvent[]): number {

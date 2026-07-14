@@ -64,6 +64,24 @@ async function appendReply(
   ]);
 }
 
+async function appendNoise(
+  engine: PostgresThreadEngine,
+  threadId: string,
+  count: number,
+): Promise<void> {
+  await engine.append(
+    Array.from({ length: count }, (_, index) => ({
+      eventId: newEventId(),
+      threadId,
+      type: "domain.event" as const,
+      occurredAt: nowIso(),
+      correlationId: randomUUID(),
+      actor: { type: "system" as const, id: "test" },
+      payload: { kind: "noise", data: { index } },
+    })),
+  );
+}
+
 async function appendCompleted(engine: PostgresThreadEngine, threadId: string): Promise<void> {
   await engine.append([
     {
@@ -316,7 +334,7 @@ test("resolveGate is idempotent under concurrent repeated resolution", async () 
     service.resolveGate(threadId, gateId, "approved", "operator-b"),
   ]);
 
-  const events = await engine.read(threadId);
+  const events = await engine.readAll(threadId);
   const resolved = events.filter((event) => event.type === "gate.resolved" && event.payload.gateId === gateId);
   assert.equal(resolved.length, 1);
   assert.equal(resolved[0]?.type === "gate.resolved" ? resolved[0].payload.resolution : null, "approved");
@@ -355,7 +373,7 @@ test("resolveGate rejects concurrent conflicting resolution", async () => {
 
   assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
   assert.equal(results.filter((result) => result.status === "rejected").length, 1);
-  const events = await engine.read(threadId);
+  const events = await engine.readAll(threadId);
   const resolved = events.filter((event) => event.type === "gate.resolved" && event.payload.gateId === gateId);
   assert.equal(resolved.length, 1);
 });
@@ -499,6 +517,43 @@ test("ThreadQueryService summarizes failed threads with latest failure metadata"
   assert.equal(summaries[0]?.errorCode, "BROKEN");
   assert.equal(summaries[0]?.message, "broken");
   assert.equal(await queries.countThreadHealthSummaries({ threadId, statuses: ["failed"] }), 1);
+});
+
+test("reads stay correct past 1000 events", async () => {
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  await appendNoise(engine, threadId, 1200);
+  await appendReply(engine, threadId, "late-reply");
+
+  const all = await engine.readAll(threadId);
+  assert.ok(all.length >= 1203);
+  assert.equal(all.at(-1)?.type, "agent.reply.produced");
+
+  const replies = await engine.readAll(threadId, { types: ["agent.reply.produced"] });
+  assert.equal(replies.length, 1);
+  assert.equal(replies[0]?.type === "agent.reply.produced" ? replies[0].payload.message : null, "late-reply");
+
+  const latest = await service.getLatestReply(threadId);
+  assert.equal(latest?.message, "late-reply");
+
+  const events = await service.getEvents(threadId);
+  assert.equal(events.length, all.length);
+});
+
+test("idempotent appendEvent finds its duplicate past 1000 events", async () => {
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const input = {
+    threadId,
+    type: "agent.reply.produced" as const,
+    idempotencyKey: "reply:dup",
+    actor: { type: "system" as const, id: "test" },
+    payload: { message: "original" },
+  };
+  const first = await service.appendEvent(input);
+  await appendNoise(engine, threadId, 1200);
+
+  const again = await service.appendEvent(input);
+  assert.equal(again.eventId, first.eventId);
+  assert.equal(again.payload.message, "original");
 });
 
 function errorMessage(error: unknown): string {

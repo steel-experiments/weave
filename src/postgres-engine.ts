@@ -12,6 +12,7 @@ import type {
   Lease,
   ThreadEngine,
   ThreadLeaseStore,
+  ReadAllOptions,
   ReadOptions,
 } from "./contracts.js";
 import {
@@ -35,6 +36,8 @@ import type {
   ThreadInboxState,
   ThreadReadModel,
 } from "./thread-query-service.js";
+
+const READ_ALL_PAGE_SIZE = 1000;
 
 export type PostgresThreadEngineOptions = {
   inboxRoutes?: InboxRouteResolver;
@@ -184,19 +187,54 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
     }
   }
 
-  async read(threadId: string, options: ReadOptions = {}): Promise<ThreadEvent[]> {
+  async read(threadId: string, options: ReadOptions): Promise<ThreadEvent[]> {
     const fromSeq = options.fromSeq ?? 0;
-    const limit = options.limit ?? 1000;
+    const order = options.direction === "desc" ? "desc" : "asc";
+    const params: unknown[] = [threadId, fromSeq, options.limit];
+    let typeFilter = "";
+    if (options.types) {
+      params.push([...options.types]);
+      typeFilter = " and type = any($4)";
+    }
     const result = await this.pool.query(
       `select *
        from weave.thread_event
-       where thread_id = $1 and seq >= $2
-       order by seq asc
+       where thread_id = $1 and seq >= $2${typeFilter}
+       order by seq ${order}
        limit $3`,
-      [threadId, fromSeq, limit],
+      params,
     );
 
     return result.rows.map((row) => this.rowToEvent(row));
+  }
+
+  async readAll(threadId: string, options: ReadAllOptions = {}): Promise<ThreadEvent[]> {
+    const events: ThreadEvent[] = [];
+    let fromSeq = options.fromSeq ?? 0;
+    for (;;) {
+      const page = await this.read(threadId, {
+        fromSeq,
+        limit: READ_ALL_PAGE_SIZE,
+        ...(options.types ? { types: options.types } : {}),
+      });
+      events.push(...page);
+      const last = page.at(-1);
+      if (page.length < READ_ALL_PAGE_SIZE || last?.seq === undefined) {
+        return events;
+      }
+      fromSeq = last.seq + 1;
+    }
+  }
+
+  async findEventByIdempotencyKey(threadId: string, idempotencyKey: string): Promise<ThreadEvent | null> {
+    const result = await this.pool.query(
+      `select *
+       from weave.thread_event
+       where thread_id = $1 and idempotency_key = $2`,
+      [threadId, idempotencyKey],
+    );
+    const row = result.rows[0];
+    return row ? this.rowToEvent(row) : null;
   }
 
   async *follow(threadId: string, cursor: FollowCursor = {}): AsyncIterable<ThreadEvent> {

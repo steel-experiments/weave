@@ -12,7 +12,14 @@ export type AppendResult = {
 
 export type ReadOptions = {
   fromSeq?: number;
-  limit?: number;
+  limit: number;
+  types?: readonly ThreadEvent["type"][];
+  direction?: "asc" | "desc";
+};
+
+export type ReadAllOptions = {
+  fromSeq?: number;
+  types?: readonly ThreadEvent["type"][];
 };
 
 export type FollowCursor = {
@@ -54,7 +61,9 @@ export type CreateThreadOptions = {
 export interface ThreadEngine {
   createThread(threadId: string, options?: CreateThreadOptions): Promise<void>;
   append(events: ThreadEvent[], options?: AppendOptions): Promise<AppendResult>;
-  read(threadId: string, options?: ReadOptions): Promise<ThreadEvent[]>;
+  read(threadId: string, options: ReadOptions): Promise<ThreadEvent[]>;
+  readAll(threadId: string, options?: ReadAllOptions): Promise<ThreadEvent[]>;
+  findEventByIdempotencyKey(threadId: string, idempotencyKey: string): Promise<ThreadEvent | null>;
   follow(threadId: string, cursor?: FollowCursor): AsyncIterable<ThreadEvent>;
   getTail(threadId: string): Promise<{ tailSeq: number; updatedAt: string }>;
   getProjection(threadId: string): Promise<ThreadProjection | null>;

@@ -51,7 +51,7 @@ async function testMainEraSchemaMigratesWithoutReset(): Promise<void> {
     assert.equal(projection.parentScopeKey, null);
     assert.equal(projection.parentStepKey, null);
 
-    const events = await engine.read("legacy-thread");
+    const events = await engine.readAll("legacy-thread");
     assert.equal(events.length, 5);
     const completed = events.find((event) => event.type === "tool.completed");
     assert(completed?.type === "tool.completed");
