@@ -12,6 +12,8 @@ const connectionString =
   process.env.DATABASE_URL ?? "postgres://dev:password@localhost:5432/dev";
 const pool = new Pool({ connectionString, max: 2, connectionTimeoutMillis: 2_000 });
 
+const TEST_ACTOR = { type: "user", id: "test-user" } as const;
+
 try {
   await pool.query("select 1");
 } catch (error) {
@@ -34,6 +36,7 @@ test("getSessionMetadata returns the session.started metadata", async () => {
     prompt: "hello",
     source: "api",
     agentName: "assistant",
+    actor: TEST_ACTOR,
     metadata: { role: "dev", actor: "slack:U1" },
   });
   const meta = await service.getSessionMetadata(threadId);
@@ -97,7 +100,7 @@ async function appendCompleted(engine: PostgresThreadEngine, threadId: string): 
 }
 
 test("getEvents filters by type and preserves order", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   await appendReply(engine, threadId, "first");
   await appendReply(engine, threadId, "second");
 
@@ -116,7 +119,7 @@ test("getEvents filters by type and preserves order", async () => {
 });
 
 test("ThreadQueryService paginates filtered thread events with opaque cursors", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   await engine.append(
     Array.from({ length: 1000 }, (_, index) => ({
       eventId: newEventId(),
@@ -168,7 +171,7 @@ test("custom inbox routes can deliver host consumers", async () => {
     },
   });
   const routedService = new ThreadService(routedEngine);
-  const { threadId } = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const { threadId } = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   await appendReply(routedEngine, threadId, "egress me");
 
   const items = await routedEngine.claimInbox(consumer, "test-egress", 10, 10_000);
@@ -193,13 +196,13 @@ test("ThreadQueryService lists and requeues dead-letter and stale claimed inbox 
   const routedService = new ThreadService(routedEngine);
   const routedQueries = new ThreadQueryService(routedEngine);
 
-  const deadLetterSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const deadLetterSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   await appendReply(routedEngine, deadLetterSession.threadId, "dead letter me");
   const [deadLetterItem] = await routedEngine.claimInbox(consumer, "dead-letter-owner", 10, 10_000);
   assert.ok(deadLetterItem);
   await routedEngine.deadLetterInbox([deadLetterItem.id], "dead-letter-owner", "TEST_DEAD", "dead");
 
-  const staleSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const staleSession = await routedService.startSession({ prompt: "p", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   await appendReply(routedEngine, staleSession.threadId, "stale me");
   const [staleItem] = await routedEngine.claimInbox(consumer, "stale-owner", 10, -60_000);
   assert.ok(staleItem);
@@ -252,7 +255,7 @@ test("ThreadQueryService lists and requeues dead-letter and stale claimed inbox 
 });
 
 test("getLatestReply returns the newest reply message", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   assert.equal(await service.getLatestReply(threadId), null);
 
   await appendReply(engine, threadId, "turn-1");
@@ -269,6 +272,7 @@ test("listOpenGates returns open gates and excludes resolved ones", async () => 
     prompt: "p",
     source: "api",
     agentName: "assistant",
+    actor: TEST_ACTOR,
   });
   const gateId = randomUUID();
   await engine.append([
@@ -298,7 +302,7 @@ test("listOpenGates returns open gates and excludes resolved ones", async () => 
   assert.equal(gate.stepKey, "approval:42");
   assert.equal(gate.proposedAction, "PUT repos/o/r/pulls/1/merge");
 
-  await service.resolveGate(threadId, gateId, "approved", "ok");
+  await service.resolveGate(threadId, gateId, "approved", TEST_ACTOR, "ok");
   open = await service.listOpenGates(threadId);
   assert.equal(open.length, 0);
 });
@@ -308,6 +312,7 @@ test("resolveGate is idempotent under concurrent repeated resolution", async () 
     prompt: "p",
     source: "api",
     agentName: "assistant",
+    actor: TEST_ACTOR,
   });
   const gateId = randomUUID();
   await engine.append([
@@ -330,8 +335,8 @@ test("resolveGate is idempotent under concurrent repeated resolution", async () 
   ]);
 
   await Promise.all([
-    service.resolveGate(threadId, gateId, "approved", "operator-a"),
-    service.resolveGate(threadId, gateId, "approved", "operator-b"),
+    service.resolveGate(threadId, gateId, "approved", { type: "human", id: "operator-a" }),
+    service.resolveGate(threadId, gateId, "approved", { type: "human", id: "operator-b" }),
   ]);
 
   const events = await engine.readAll(threadId);
@@ -345,6 +350,7 @@ test("resolveGate rejects concurrent conflicting resolution", async () => {
     prompt: "p",
     source: "api",
     agentName: "assistant",
+    actor: TEST_ACTOR,
   });
   const gateId = randomUUID();
   await engine.append([
@@ -367,8 +373,8 @@ test("resolveGate rejects concurrent conflicting resolution", async () => {
   ]);
 
   const results = await Promise.allSettled([
-    service.resolveGate(threadId, gateId, "approved", "operator-a"),
-    service.resolveGate(threadId, gateId, "denied", "operator-b"),
+    service.resolveGate(threadId, gateId, "approved", { type: "human", id: "operator-a" }),
+    service.resolveGate(threadId, gateId, "denied", { type: "human", id: "operator-b" }),
   ]);
 
   assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
@@ -383,6 +389,7 @@ test("ThreadQueryService lists thread heads with metadata and children", async (
     prompt: "parent",
     source: "api",
     agentName: "assistant",
+    actor: TEST_ACTOR,
     metadata: { role: "default", prompt: "parent brief" },
   });
   const child = await service.startChildSession({
@@ -411,6 +418,7 @@ test("ThreadQueryService lists ancestors from child to root", async () => {
     prompt: "root",
     source: "api",
     agentName: "assistant",
+    actor: TEST_ACTOR,
     metadata: { prompt: "root" },
   });
   const child = await service.startChildSession({
@@ -429,7 +437,7 @@ test("ThreadQueryService lists ancestors from child to root", async () => {
 });
 
 test("ThreadQueryService finds latest child reply by metadata", async () => {
-  const parent = await service.startSession({ prompt: "parent", source: "api", agentName: "assistant" });
+  const parent = await service.startSession({ prompt: "parent", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   const reviewer = await service.startChildSession({
     parentThreadId: parent.threadId,
     agentName: "assistant",
@@ -462,7 +470,7 @@ test("ThreadQueryService finds latest child reply by metadata", async () => {
 });
 
 test("ThreadQueryService lists recent events with a total count", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   await engine.append([
     {
       eventId: newEventId(),
@@ -488,7 +496,7 @@ test("ThreadQueryService lists recent events with a total count", async () => {
 });
 
 test("ThreadQueryService summarizes failed threads with latest failure metadata", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   await engine.append([
     {
       eventId: newEventId(),
@@ -520,7 +528,7 @@ test("ThreadQueryService summarizes failed threads with latest failure metadata"
 });
 
 test("reads stay correct past 1000 events", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   await appendNoise(engine, threadId, 1200);
   await appendReply(engine, threadId, "late-reply");
 
@@ -540,7 +548,7 @@ test("reads stay correct past 1000 events", async () => {
 });
 
 test("idempotent appendEvent finds its duplicate past 1000 events", async () => {
-  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant" });
+  const { threadId } = await service.startSession({ prompt: "p", source: "api", agentName: "assistant", actor: TEST_ACTOR });
   const input = {
     threadId,
     type: "agent.reply.produced" as const,

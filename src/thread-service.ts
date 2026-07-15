@@ -16,19 +16,13 @@ import {
 
 export type StartSessionInput = {
   prompt: string;
-  source?: SessionSource;
+  source: SessionSource;
   agentName?: string;
-  actor?: Actor;
+  actor: Actor;
   metadata?: SessionMetadata;
   promptMetadata?: SessionMetadata;
   idempotencyKey?: string;
-};
-
-type NormalizedStartSessionInput = Required<Pick<StartSessionInput, "prompt" | "source" | "actor">> & {
-  agentName?: string;
-  metadata?: SessionMetadata;
-  promptMetadata?: SessionMetadata;
-  idempotencyKey?: string;
+  promptIdempotencyKey?: string;
 };
 
 type ExistingSession = {
@@ -145,20 +139,19 @@ export class ThreadService {
 
   constructor(private readonly engine: ThreadEngine) {}
 
-  async startSession(input: string | StartSessionInput): Promise<{ threadId: string; correlationId: string }> {
-    const normalized = normalizeStartSessionInput(input);
-    const threadId = normalized.idempotencyKey
-      ? deterministicUuid("session-thread", normalized.source, normalized.idempotencyKey)
+  async startSession(input: StartSessionInput): Promise<{ threadId: string; correlationId: string }> {
+    const threadId = input.idempotencyKey
+      ? deterministicUuid("session-thread", input.source, input.idempotencyKey)
       : randomUUID();
-    const correlationId = normalized.idempotencyKey
-      ? deterministicUuid("session-correlation", normalized.source, normalized.idempotencyKey)
+    const correlationId = input.idempotencyKey
+      ? deterministicUuid("session-correlation", input.source, input.idempotencyKey)
       : randomUUID();
 
     await this.engine.createThread(threadId);
 
     const existingSession = await readExistingSession(this.engine, threadId);
     if (existingSession) {
-      validateStartSessionIdempotency(normalized, existingSession);
+      validateStartSessionIdempotency(input, existingSession);
       const result = toSessionResult(existingSession);
       this.rememberCorrelation(threadId, result.correlationId);
       return result;
@@ -166,33 +159,34 @@ export class ThreadService {
 
     const events: ThreadEvent[] = [
       {
-        eventId: normalized.idempotencyKey
-          ? deterministicUuid("session-started", threadId, normalized.idempotencyKey)
+        eventId: input.idempotencyKey
+          ? deterministicUuid("session-started", threadId, input.idempotencyKey)
           : newEventId(),
         threadId,
         type: "session.started",
         occurredAt: nowIso(),
         correlationId,
-        idempotencyKey: normalized.idempotencyKey,
+        idempotencyKey: input.idempotencyKey ? `session:${input.idempotencyKey}` : undefined,
         actor: { type: "system", id: "thread-service" },
         payload: {
-          source: normalized.source,
-          agentName: normalized.agentName,
-          metadata: normalized.metadata,
+          source: input.source,
+          agentName: input.agentName,
+          metadata: input.metadata,
         },
       },
       {
-        eventId: normalized.idempotencyKey
-          ? deterministicUuid("prompt-received", threadId, normalized.idempotencyKey)
+        eventId: input.idempotencyKey
+          ? deterministicUuid("prompt-received", threadId, input.idempotencyKey)
           : newEventId(),
         threadId,
         type: "prompt.received",
         occurredAt: nowIso(),
         correlationId,
-        actor: normalized.actor,
+        idempotencyKey: input.promptIdempotencyKey,
+        actor: input.actor,
         payload: {
-          prompt: normalized.prompt,
-          ...(normalized.promptMetadata ? { metadata: normalized.promptMetadata } : {}),
+          prompt: input.prompt,
+          ...(input.promptMetadata ? { metadata: input.promptMetadata } : {}),
         },
       },
     ];
@@ -202,13 +196,13 @@ export class ThreadService {
       this.rememberCorrelation(threadId, correlationId);
       return { threadId, correlationId };
     } catch (error) {
-      if (!normalized.idempotencyKey) {
+      if (!input.idempotencyKey) {
         throw error;
       }
 
       const concurrentSession = await readExistingSession(this.engine, threadId);
       if (concurrentSession) {
-        validateStartSessionIdempotency(normalized, concurrentSession);
+        validateStartSessionIdempotency(input, concurrentSession);
         const result = toSessionResult(concurrentSession);
         this.rememberCorrelation(threadId, result.correlationId);
         return result;
@@ -617,8 +611,8 @@ export class ThreadService {
     threadId: string,
     gateId: string,
     resolution: "approved" | "denied" | "expired",
+    actor: Actor,
     comment?: string,
-    actor?: Actor,
   ): Promise<void> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const events = await this.engine.readAll(threadId);
@@ -655,7 +649,7 @@ export class ThreadService {
               idempotencyKey: `gate-resolved:${gateId}`,
               scopeKey: gateCreated.scopeKey,
               stepKey: gateCreated.stepKey,
-              actor: actor ?? { type: "human", id: "demo-approver" },
+              actor,
               payload: { gateId, resolution, comment },
             },
           ],
@@ -846,26 +840,6 @@ function matchesFilter<Value extends string>(value: Value | undefined, filter: V
   return Array.isArray(filter) ? filter.includes(value) : filter === value;
 }
 
-function normalizeStartSessionInput(input: string | StartSessionInput): NormalizedStartSessionInput {
-  if (typeof input === "string") {
-    return {
-      prompt: input,
-      source: "test",
-      actor: { type: "user", id: "demo-user" },
-    };
-  }
-
-  return {
-    prompt: input.prompt,
-    source: input.source ?? "test",
-    agentName: input.agentName,
-    actor: input.actor ?? { type: "user", id: "demo-user" },
-    metadata: input.metadata,
-    promptMetadata: input.promptMetadata,
-    idempotencyKey: input.idempotencyKey,
-  };
-}
-
 async function readExistingSession(
   engine: ThreadEngine,
   threadId: string,
@@ -892,7 +866,7 @@ async function readExistingSession(
   };
 }
 
-function validateStartSessionIdempotency(input: NormalizedStartSessionInput, existing: ExistingSession): void {
+function validateStartSessionIdempotency(input: StartSessionInput, existing: ExistingSession): void {
   const sessionPayload = existing.sessionStarted?.payload;
   const promptPayload = existing.promptReceived?.payload;
   const mismatches: string[] = [];
