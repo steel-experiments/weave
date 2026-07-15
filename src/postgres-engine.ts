@@ -631,6 +631,25 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
     );
   }
 
+  async releaseInbox(ids: number[], ownerId: string, visibleAt?: string): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+
+    await this.pool.query(
+      `update weave.thread_inbox
+       set state = 'pending',
+           claimed_by = null,
+           claimed_until = null,
+           visible_at = coalesce($3::timestamptz, now()),
+           updated_at = now()
+       where id = any($1::bigint[])
+         and claimed_by = $2
+         and state = 'claimed'`,
+      [ids, ownerId, visibleAt ?? null],
+    );
+  }
+
   async deadLetterInbox(
     ids: number[],
     ownerId: string,
@@ -932,8 +951,7 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
     event: ThreadEvent,
   ): Promise<void> {
     const routes = [
-      ...inboxRoutesForEvent(event),
-      ...(this.options.inboxRoutes?.(event) ?? []),
+      ...(this.options.inboxRoutes ? this.options.inboxRoutes(event) : inboxRoutesForEvent(event)),
     ].map(validateInboxRoute);
 
     for (const route of routes) {

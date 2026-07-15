@@ -49,7 +49,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "prepack": "npm run build",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/tests/public-api-exports.test.ts && tsx src/tests/migration-compatibility.test.ts && tsx src/tests/thread-service-reads.test.ts"
+    "test": "tsx src/tests/public-api-exports.test.ts && tsx src/tests/migration-compatibility.test.ts && tsx src/tests/thread-service-reads.test.ts && tsx src/tests/inbox-routing-release.test.ts"
   },
   "dependencies": {
     "pg": "^8.16.3",
