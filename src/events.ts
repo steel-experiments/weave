@@ -383,6 +383,14 @@ const RunnerResumedEventSchema = EventEnvelopeBaseSchema.extend({
   payload: RunnerResumedPayloadSchema,
 });
 
+export const RunnerIdledPayloadSchema = z.object({});
+export type RunnerIdledPayload = z.infer<typeof RunnerIdledPayloadSchema>;
+
+const RunnerIdledEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal("runner.idled"),
+  payload: RunnerIdledPayloadSchema,
+});
+
 const AgentReplyProducedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal("agent.reply.produced"),
   payload: AgentReplyProducedPayloadSchema,
@@ -441,6 +449,7 @@ export const ThreadEventSchema = z.discriminatedUnion("type", [
   GateResolvedEventSchema,
   DomainEventSchema,
   RunnerResumedEventSchema,
+  RunnerIdledEventSchema,
   AgentReplyProducedEventSchema,
   AgentCompletedEventSchema,
   AgentOutputCompletedEventSchema,

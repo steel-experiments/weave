@@ -893,6 +893,7 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
       case "session.started":
         return currentStatus ?? "idle";
       case "prompt.received":
+        return "waiting";
       case "tool.requested":
       case "tool.completed":
       case "gate.resolved":
@@ -924,6 +925,11 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
         return "waiting";
       case "runner.resumed":
         return "running";
+      case "runner.idled":
+        if (currentStatus === "completed" || currentStatus === "failed") {
+          return currentStatus;
+        }
+        return "idle";
       case "gate.created":
         await client.query(
           `insert into weave.thread_gate(gate_id, thread_id, status, gate_type)
