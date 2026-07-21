@@ -911,7 +911,14 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
             `update weave.thread_gate
              set status = 'resolved', resolved_at = now(), resolution_json = $3
              where thread_id = $1 and gate_id = $2`,
-            [threadId, event.payload.gateId, JSON.stringify(event.payload)],
+            [
+              threadId,
+              event.payload.gateId,
+              JSON.stringify({
+                ...event.payload,
+                actor: event.actor?.id ?? null,
+              }),
+            ],
           );
         }
         return "waiting";
