@@ -969,9 +969,13 @@ export class PostgresThreadEngine implements ThreadEngine, ThreadLeaseStore, Thr
 
     for (const route of routes) {
       await client.query(
-        `insert into weave.thread_inbox(thread_id, consumer, event_seq, state, visible_at)
-         values ($1, $2, $3, 'pending', coalesce($4::timestamptz, now()))
-         on conflict (thread_id, consumer, event_seq) do nothing`,
+        `with ins as (
+           insert into weave.thread_inbox(thread_id, consumer, event_seq, state, visible_at)
+           values ($1, $2, $3, 'pending', coalesce($4::timestamptz, now()))
+           on conflict (thread_id, consumer, event_seq) do nothing
+           returning 1
+         )
+         select pg_notify('weave_inbox', $2) from ins`,
         [threadId, route.consumer, seq, route.visibleAt ?? null],
       );
     }

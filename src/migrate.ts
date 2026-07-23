@@ -39,6 +39,12 @@ create index if not exists thread_parent_thread_idx
 create index if not exists thread_root_thread_idx
   on weave.thread(root_thread_id);
 
+create index if not exists thread_status_updated_idx
+  on weave.thread(status, updated_at);
+
+create index if not exists thread_created_idx
+  on weave.thread(created_at);
+
 create table if not exists weave.thread_event (
   thread_id text not null references weave.thread(id) on delete cascade,
   seq integer not null,
